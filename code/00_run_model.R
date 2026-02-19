@@ -1,8 +1,5 @@
 rm(list=ls()) 
 
-# setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
-# setwd(paste0("C:/Users/wrgar/OneDrive - UW/02Work/ResolveToSaveLives/GitHub/UW-RTSL-100MLives/"))
-
 #libraries
 library(dplyr)
 library(data.table)
@@ -20,7 +17,7 @@ library(gmodels)
 # For forecasting mortality
 library(forecast)
 
-wd <- "C:/Users/wrgar/OneDrive - UW/02Work/ResolveToSaveLives/100MLives/Github/UW-RTSL-100MLives/"
+wd <- "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/"
 
 wd_code <- paste0(wd,"code/")
 
@@ -43,9 +40,7 @@ setwd(wd_code)
 # 0. Functions and parameters-----
 #...........................................................
 
-source("functions_review_6_100.R")
-#source("functions_review_6_dm.R")
-#source("functions_review_6.R")
+source("01_utils.R")
 
 run_calibration_par <- TRUE # set to TRUE to run parallel calibration
 
@@ -66,12 +61,7 @@ run_CF_trend_80   <- TRUE
 
 run_CF_trend_ihme  <- FALSE
 
-
-
 # Remove unnecessary dx
-# dx_include <- c("All causes","Ischemic heart disease",
-#                 "Ischemic stroke","Intracerebral hemorrhage",
-#                 "Alzheimer's disease and other dementias","Hypertensive heart disease")
 
 dx_include <- c("All causes",
                 "Ischemic heart disease",
@@ -91,50 +81,25 @@ cause_map <- c(
 cause_cols <- names(cause_map)
 
 #...........................................................
-# 1. Base rates (State and Risks)-----
+# 02. Load inputs-----
 #...........................................................
 
-source("1.get_base_population_100.R")
-source("1.get_base_rates_100.R")
+source("02_load_inputs.R")
 
 #...........................................................
-# 2. Transition Probabilities-----
+# 03. Clean and process inputs-----
 #...........................................................
 
-source("2.get_tps_100.R")
-source("2.get_tps_bgmx_100")
+source("03_clean_inputs.R")
 
 #...........................................................
-# 3. Risk Factors-----
+# 04. Build baseline ----
 #...........................................................
 
-source("3.risk_factors_100.R")
+source("04_build_baseline.R")
 
 #...........................................................
-# 4. Interventions-----
+# 05. Run model ----
 #...........................................................
 
-#source("4.interventions_100.R")
-# load tfa2 statins 2
-source("4.interventions_100_tfa2_statins2.R")
-
-
-#...........................................................
-# 5. Calibration-----
-#...........................................................
-
-source("5.calibration_100.R")
-
-#...........................................................
-# 6. Adjustments-----
-#...........................................................
-
-source("6.adjustments_100.R")
-
-#...........................................................
-# 7. Model-----
-#...........................................................
-
-source("7.model_100_multiplicative_func_new3.R")
-
-
+source("05_run_scenarios.R")
