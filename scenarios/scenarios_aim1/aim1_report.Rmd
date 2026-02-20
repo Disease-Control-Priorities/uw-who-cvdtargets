@@ -1,0 +1,1147 @@
+---
+title: "Projected Health Outcomes of Achieving WHO Targets for Cardiovascular Risk-Factor Control: A Modelling Study"
+date: "`r Sys.Date()`"
+author: "University of Washington"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: hide
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  error   = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.height = 5,
+  fig.width  = 9,
+  fig.align  = "center"
+)
+```
+
+```{r libraries, message=FALSE, warning=FALSE, echo=FALSE}
+library(data.table)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(DT)
+library(scales)
+library(openxlsx)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+```
+
+```{r paths, message=FALSE, warning=FALSE, echo=FALSE}
+# ── Working paths ──────────────────────────────────────────────────────────────
+# Adjust wd to repo root if running outside of here::here()
+wd       <- "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/"
+wd_data  <- paste0(wd, "data/processed/")
+wd_outp  <- paste0(wd, "output/")
+wd_scen  <- paste0(wd, "scenarios/scenarios_aim1/")
+```
+
+```{r helpers, message=FALSE, warning=FALSE, echo=FALSE}
+# ── Helper: format point estimate + 95% UI in millions ────────────────────────
+fmt_ci <- function(est, lo, hi, digits = 1) {
+  f <- function(x) formatC(round(x / 1e6, digits), format = "f",
+                            digits = digits, big.mark = ",")
+  paste0(f(est), " (", f(lo), "\u2013", f(hi), ")")
+}
+
+fmt_m  <- function(x, digits = 1)
+  formatC(round(x / 1e6, digits), format = "f", digits = digits, big.mark = ",")
+
+fmt_k  <- function(x, digits = 0)
+  formatC(round(x / 1e3, digits), format = "f", digits = digits, big.mark = ",")
+
+# ── Cause labels ──────────────────────────────────────────────────────────────
+cause_map <- c(
+  ihd     = "Ischemic heart disease",
+  istroke = "Ischemic stroke",
+  hstroke = "Intracerebral hemorrhage",
+  hhd     = "Hypertensive heart disease"
+)
+
+# ── Intervention display labels (matching what 05_run_scenarios.R produces) ───
+int_labels <- c(
+  "b.a.u"                         = "Business-as-Usual",
+  "Improved Hypertension Control" = "Improved Hypertension Control",
+  "Population Sodium Reduction"   = "Population Sodium Reduction",
+  "TFA Elimination"               = "TFA Elimination",
+  "Improved Statin Uptake"        = "Improved Statin Uptake",
+  "All Interventions"             = "All Interventions"
+)
+
+int_order <- c(
+  "Improved Hypertension Control",
+  "Population Sodium Reduction",
+  "TFA Elimination",
+  "Improved Statin Uptake",
+  "All Interventions"
+)
+
+# ── Colour palettes ───────────────────────────────────────────────────────────
+int_cols <- c(
+  "Improved Hypertension Control" = "#1f78b4",
+  "Population Sodium Reduction"   = "#33a02c",
+  "TFA Elimination"               = "#ff7f00",
+  "Improved Statin Uptake"        = "#e31a1c",
+  "All Interventions"             = "#6a3d9a",
+  "Business-as-Usual"             = "#999999"
+)
+
+cause_cols <- c(
+  ihd     = "#56B4E9",
+  istroke = "#CC79A7",
+  hstroke = "#F0E442",
+  hhd     = "#E69F00"
+)
+
+cause_labels_plot <- c(
+  ihd     = "Ischemic heart disease",
+  istroke = "Ischemic stroke",
+  hstroke = "Intracerebral hemorrhage",
+  hhd     = "Hypertensive heart disease"
+)
+
+# ── WHO standard population (ages 20–95+) for ASMR ───────────────────────────
+full_who_std <- data.table(
+  age    = 0:100,
+  weight = c(
+    rep(0.013, 10), rep(0.014, 10), rep(0.013, 10), rep(0.012, 10),
+    rep(0.011, 10), rep(0.009, 10), rep(0.007, 10), rep(0.005, 10),
+    rep(0.003, 10), rep(0.001, 10), 0.001
+  )
+)
+who_std <- full_who_std[age >= 20 & age <= 94]
+who_std <- rbind(
+  who_std,
+  data.table(age = 95, weight = full_who_std[age >= 95, sum(weight)])
+)
+who_std[, weight := weight / sum(weight)]
+
+calculate_asmr <- function(dt, std_pop = who_std,
+                            deaths_col = "deaths_dx",
+                            population_col = "Nx",
+                            disagg_var = "intervention") {
+  dt <- copy(dt)
+  dt[, age := as.integer(gsub("\\+", "", age))]
+  dt <- merge(dt, std_pop, by = "age", all.x = TRUE)
+  dt[, rate          := get(deaths_col) / get(population_col)]
+  dt[, weighted_rate := rate * weight]
+  group_vars <- c("year", disagg_var)
+  dt[, .(ASMR = sum(weighted_rate, na.rm = TRUE) * 1e5), by = group_vars]
+}
+
+# ── deaths_summary: reusable deaths-delayed calculator ───────────────────────
+deaths_summary <- function(dt,
+                           baseline_label = "b.a.u",
+                           by_cols = c("age_group", "sex", "year",
+                                       "location", "cause", "age"),
+                           value_col = "dead") {
+  stopifnot(is.data.table(dt))
+
+  n_interventions <- uniqueN(
+    dt[intervention != baseline_label, intervention]
+  )
+
+  # Baseline join keys: exclude "intervention" so baseline aggregates cleanly
+  baseline_cols <- setdiff(by_cols, "intervention")
+
+  baseline <- dt[intervention == baseline_label,
+                 .(baseline_deaths = sum(get(value_col), na.rm = TRUE)),
+                 by = baseline_cols]
+
+  nonbaseline <- dt[intervention != baseline_label,
+                    .(deaths_projected = sum(get(value_col), na.rm = TRUE)),
+                    by = by_cols]
+
+  if (!("intervention" %in% by_cols))
+    nonbaseline[, deaths_projected := deaths_projected / n_interventions]
+
+  merged <- merge(nonbaseline, baseline, by = baseline_cols,
+                  all.x = TRUE, allow.cartesian = TRUE)
+  merged[, deaths_delayed     := baseline_deaths - deaths_projected]
+  merged[, deaths_delayed_ave := deaths_delayed / 25]
+  merged[, deaths_delayed_pct := deaths_delayed / baseline_deaths]
+  merged[]
+}
+```
+
+```{r country-metadata, message=FALSE, warning=FALSE, echo=FALSE}
+# ── Country groupings (Super-region and income from Country_groupings) ────────
+# NOTE: adjust path to your actual country groupings CSV
+
+countries_dt <- fread(paste0(wd_data, "Country_groupings_extended.csv"))
+# 
+# countries_dt <- tryCatch({
+#   dt <- fread(paste0(wd_data, "Transversals/Country_groupings_extended.csv"))
+#   dt <- dt[, .(iso3, location = location_wb, region = Super_region)]
+# 
+#   # Name harmonisation (GBD names used in model output)
+#   dt[location == "United States of America",         location := "United States"]
+#   dt[location == "Egypt, Arab Rep.",                 location := "Egypt"]
+#   dt[location == "Congo, Dem. Rep.",                 location := "Democratic Republic of the Congo"]
+#   dt[location == "Congo, Rep.",                      location := "Congo"]
+#   dt[location == "Yemen, Rep.",                      location := "Yemen"]
+#   dt[location == "Slovak Republic",                  location := "Slovakia"]
+#   dt[location == "Venezuela, RB",                    location := "Venezuela (Bolivarian Republic of)"]
+#   dt[location == "Vietnam",                          location := "Viet Nam"]
+#   dt[location == "Cote d'Ivoire",                    location := "Ivory Coast"]
+#   dt[location == "Korea, Rep.",                      location := "Republic of Korea"]
+#   dt[location == "Iran, Islamic Rep.",               location := "Iran (Islamic Republic of)"]
+#   dt[location == "Czech Republic",                   location := "Czechia"]
+#   dt[location == "Bahamas, The",                     location := "Bahamas"]
+#   dt[location == "Gambia, The",                      location := "Gambia"]
+#   dt[location == "Lao PDR",                          location := "Lao People's Democratic Republic"]
+#   dt[location == "Moldova",                          location := "Republic of Moldova"]
+#   dt[location == "Micronesia, Fed. Sts.",            location := "Micronesia (Federated States of)"]
+#   dt[location == "South Sudan",                      iso3     := "SDS"]
+# 
+#   # Add missing countries
+#   extra <- data.table(
+#     iso3     = c("LCA","PRK","VCT","KGZ","PSE","TWN"),
+#     location = c("Saint Lucia","Democratic People's Republic of Korea",
+#                  "Saint Vincent and the Grenadines","Kyrgyzstan",
+#                  "Palestine","Taiwan (Province of China)"),
+#     region   = c("Latin America and Caribbean",
+#                  "Southeast Asia, East Asia, and Oceania",
+#                  "Latin America and Caribbean",
+#                  "Central Europe, Eastern Europe, and Central Asia",
+#                  "North Africa and Middle East",
+#                  "Southeast Asia, East Asia, and Oceania")
+#   )
+#   rbind(dt, extra, use.names = TRUE)
+# },
+# error = function(e) {
+#   message("Country groupings file not found – using stub. Check path: ",
+#           paste0(wd_data, "Transversals/Country_groupings_extended.csv"))
+#   data.table(iso3 = character(0), location = character(0), region = character(0))
+# })
+```
+
+```{r load-model-output, message=FALSE, warning=FALSE, echo=FALSE}
+# ── Load all country-level model output RDS files ────────────────────────────
+out_model_path <- paste0(wd_outp, "out_model/")
+
+files <- list.files(path = out_model_path, pattern = "\\.rds$",
+                    full.names = TRUE)
+
+if (length(files) == 0) {
+  stop(paste0(
+    "No .rds files found in: ", out_model_path, "\n",
+    "Run 00_run_model.R (or 05_run_scenarios.R) first to generate model output."
+  ))
+}
+
+dt_list <- lapply(files, function(f) {
+  dt <- readRDS(f)
+  setDT(dt)
+  dt
+})
+
+data.out <- rbindlist(dt_list, use.names = TRUE, fill = TRUE)
+data.out  <- data.out[!is.na(location)]
+
+# Drop effect-ratio tracking columns (not needed for output report)
+data.out[, c("eff_ir", "eff_cf") := NULL]
+
+# ── Age groups ────────────────────────────────────────────────────────────────
+data.out[, age_group := cut(
+  age,
+  breaks         = c(0, 70, 80, 90, Inf),
+  labels         = c("<70", "70-79", "80-89", "90+"),
+  right          = FALSE,
+  include.lowest = TRUE
+)]
+
+# ── Standardise intervention labels ───────────────────────────────────────────
+# Map from 05_run_scenarios.R internal names → display names
+data.out[intervention %in% c("BP","Antihypertensive therapy","bp_only"),
+         intervention := "Improved Hypertension Control"]
+data.out[intervention %in% c("Salt","Salt reduction","sodium_only"),
+         intervention := "Population Sodium Reduction"]
+data.out[intervention %in% c("TFA","tfa_only"),
+         intervention := "TFA Elimination"]
+data.out[intervention %in% c("Statins","statins_only"),
+         intervention := "Improved Statin Uptake"]
+data.out[intervention %in% c("BP + Salt + TFA + Statins","all_four"),
+         intervention := "All Interventions"]
+data.out[intervention %in% c("baseline","BAU"),
+         intervention := "b.a.u"]
+
+# Drop intermediate combination scenarios not used in main output
+data.out <- data.out[!(intervention %in% c("Both","BP + Salt","BP + Salt + TFA",
+                                           "bp_sodium","bp_sodium_tfa"))]
+
+# ── Merge region metadata ─────────────────────────────────────────────────────
+if (nrow(countries_dt) > 0) {
+  data.out <- merge(data.out, countries_dt[, .(location, region)],
+                    by = "location", all.x = TRUE)
+} else {
+  data.out[, region := NA_character_]
+}
+# Ensure region column always exists (fallback if merge produced no matches)
+if (!"region" %in% names(data.out))
+  data.out[, region := NA_character_]
+
+# ── Cause labels ──────────────────────────────────────────────────────────────
+cause_map_full <- c(
+  ihd     = "Ischemic heart disease",
+  istroke = "Ischemic stroke",
+  hstroke = "Intracerebral hemorrhage",
+  hhd     = "Hypertensive heart disease"
+)
+num_causes <- length(unique(cause_map_full))
+
+# ── Study countries count ─────────────────────────────────────────────────────
+n_countries  <- uniqueN(data.out$location)
+study_years  <- paste0(min(data.out$year[data.out$year >= 2025]),
+                       "\u2013", max(data.out$year))
+```
+
+---
+
+# Background
+
+This report presents modelled projections of cardiovascular disease (CVD) mortality under
+four WHO-endorsed risk-factor control interventions. The central research question is:
+
+> *What would be the projected health impact — in terms of deaths averted and
+> life-years gained — of achieving WHO targets for hypertension control,
+> dietary sodium reduction, trans-fatty acid (TFA) elimination, and statin therapy
+> coverage, applied simultaneously across `r n_countries` countries from 2025 to 2050?*
+
+Four causes of CVD death are modelled jointly: ischemic heart disease (IHD), ischemic
+stroke, intracerebral hemorrhage (hemorrhagic stroke), and hypertensive heart disease (HHD).
+A discrete-time multi-state transition model (Well → Sick → Dead) is calibrated to GBD 2023
+data and projected forward to 2050 using UNWPP 2024 population estimates.
+
+---
+
+# Policy Scenarios
+
+## Hypertension Control
+
+```{r policy-bp, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+covfxn <- tryCatch(
+  fread(paste0(wd_data, "covfxn2.csv")),
+  error = function(e) NULL
+)
+
+if (!is.null(covfxn)) {
+  dt_plot <- covfxn[, .(Country, Year,
+                         scenario_value = Progress)]
+  g <- ggplot(dt_plot,
+              aes(x = Year, y = scenario_value * 100, group = Country)) +
+    geom_line(color = "grey70", linewidth = 0.6, alpha = 0.7) +
+    scale_x_continuous(breaks = seq(2020, 2050, 5),
+                       limits = c(2020, 2051), expand = c(0, 0)) +
+    scale_y_continuous(limits = c(0, 100), expand = c(0, 0)) +
+    labs(title = "Hypertension Control Scale-up by Country (Progress Scenario)",
+         x = "Year", y = "Hypertension Control Rate (%)") +
+    theme_minimal(base_size = 13) +
+    theme(plot.title   = element_text(face = "bold"),
+          panel.grid.minor = element_blank())
+  print(g)
+  ggsave(paste0(wd_outp, "aim1_policy_htn.png"), plot = g,
+         width = 11, height = 5, dpi = 300)
+} else {
+  message("covfxn2.csv not found – skipping HTN scale-up plot.")
+}
+```
+
+## Dietary Sodium Reduction
+
+```{r policy-sodium, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+dt_sodium <- tryCatch(
+  readRDS(paste0(wd_data, "Sodium/sodium_policy_scenarios.rds")),
+  error = function(e) NULL
+)
+
+if (!is.null(dt_sodium) && !is.null(covfxn)) {
+  dt_sodium <- dt_sodium[location %in% unique(covfxn$location)]
+  dt_sodium[sodium_current < 2, sodium_current := 2]
+  dt_sodium[sodium_target_asp < 2, sodium_target_asp := 2]
+
+  g <- ggplot(dt_sodium, aes(x = year, y = sodium_target_asp,
+                              group = location)) +
+    geom_line(color = "grey70", linewidth = 0.6, alpha = 0.7) +
+    scale_x_continuous(breaks = seq(2020, 2050, 5),
+                       limits = c(2020, 2051), expand = c(0, 0)) +
+    labs(title = "Population Sodium Reduction Trajectory by Country",
+         x = "Year", y = "Mean Sodium Intake (g/day)") +
+    theme_minimal(base_size = 13) +
+    theme(plot.title = element_text(face = "bold"),
+          panel.grid.minor = element_blank())
+  print(g)
+  ggsave(paste0(wd_outp, "aim1_policy_sodium.png"), plot = g,
+         width = 11, height = 5, dpi = 300)
+} else {
+  message("Sodium policy scenario file not found – skipping plot.")
+}
+```
+
+## Trans-Fatty Acid Elimination
+
+```{r policy-tfa, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+dt_tfa_scen <- tryCatch(
+  readRDS(paste0(wd_data, "TFAPolicy/tfa_policy_scenarios.rds")),
+  error = function(e) NULL
+)
+
+if (!is.null(dt_tfa_scen) && !is.null(covfxn)) {
+  dt_tfa_scen <- dt_tfa_scen[location %in% unique(covfxn$location) &
+                                year >= 2019]
+  g <- ggplot(dt_tfa_scen, aes(x = year, y = tfa_target * 100,
+                                group = location)) +
+    geom_line(color = "grey70", linewidth = 0.6, alpha = 0.7) +
+    scale_x_continuous(breaks = seq(2020, 2050, 5),
+                       limits = c(2020, 2051), expand = c(0, 0)) +
+    labs(title = "TFA Elimination Trajectory by Country",
+         x = "Year", y = "Mean TFA Intake (%E)") +
+    theme_minimal(base_size = 13) +
+    theme(plot.title = element_text(face = "bold"),
+          panel.grid.minor = element_blank())
+  print(g)
+  ggsave(paste0(wd_outp, "aim1_policy_tfa.png"), plot = g,
+         width = 11, height = 5, dpi = 300)
+} else {
+  message("TFA policy scenario file not found – skipping plot.")
+}
+```
+
+## Statin Therapy Scale-up
+
+```{r policy-statins, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+dt_statin_scen <- tryCatch(
+  readRDS(paste0(wd_data, "Statins/statin_data.rds")),
+  error = function(e) NULL
+)
+
+if (!is.null(dt_statin_scen)) {
+  g <- ggplot(dt_statin_scen, aes(x = year, y = statins_uptake * 100,
+                                   group = location)) +
+    geom_line(color = "grey70", linewidth = 0.6, alpha = 0.7) +
+    scale_x_continuous(breaks = seq(2020, 2050, 5),
+                       limits = c(2020, 2051), expand = c(0, 0)) +
+    scale_y_continuous(limits = c(0, 100), expand = c(0, 0)) +
+    labs(title = "Statin Therapy Scale-up by Country",
+         x = "Year", y = "Risk Population with Statin Therapy (%)") +
+    theme_minimal(base_size = 13) +
+    theme(plot.title = element_text(face = "bold"),
+          panel.grid.minor = element_blank())
+  print(g)
+  ggsave(paste0(wd_outp, "aim1_policy_statins.png"), plot = g,
+         width = 11, height = 5, dpi = 300)
+} else {
+  message("Statin data file not found – skipping plot.")
+}
+```
+
+---
+
+# Disease Trends (Baseline)
+
+## Incidence and Prevalence Over Time
+
+```{r disease-trends, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+# Baseline new cases and sick (prevalent) over time
+dt_trend <- data.out[intervention == "b.a.u" & year >= 2019,
+                     .(new_cases = sum(newcases, na.rm = TRUE),
+                       sick      = sum(sick,     na.rm = TRUE),
+                       pop       = sum(pop,       na.rm = TRUE)),
+                     by = year]
+
+dt_melt <- melt(dt_trend, id.vars = "year",
+                measure.vars  = c("new_cases", "sick"),
+                variable.name = "metric",
+                value.name    = "count")
+
+dt_melt[, metric_lbl := fifelse(metric == "new_cases",
+                                "Incident cases", "Prevalent cases")]
+
+g <- ggplot(dt_melt, aes(x = year, y = count / 1e6,
+                          color = metric_lbl,
+                          linetype = year > 2019)) +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = c("Incident cases" = "steelblue",
+                                "Prevalent cases" = "tomato"),
+                     name = NULL) +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"),
+                        guide = "none") +
+  scale_y_continuous(labels = comma) +
+  labs(title = "Global Incident and Prevalent CVD Cases — Business-as-Usual",
+       subtitle = "All four causes combined; solid = observed, dashed = projected",
+       x = "Year", y = "Persons (millions)",
+       caption = "Source: Model output; ages 20–95+") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_disease_trend.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+## Age-Standardised Mortality Rate by Cause
+
+```{r asmr-cause, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=6}
+# ASMR by cause — baseline only
+dt_asmr_in <- data.out[intervention == "b.a.u" & year >= 2019,
+                        .(deaths_dx = sum(dead, na.rm = TRUE),
+                          well      = sum(well, na.rm = TRUE),
+                          sick      = sum(sick, na.rm = TRUE)),
+                        by = .(cause, age, year)]
+dt_asmr_in[, Nx := well + sick]
+
+asmr_cause <- calculate_asmr(dt_asmr_in,
+                              deaths_col     = "deaths_dx",
+                              population_col = "Nx",
+                              disagg_var     = "cause")
+
+# Index to 2019
+asmr_base <- asmr_cause[year == 2019, .(cause, ASMR_base = ASMR)]
+asmr_cause <- merge(asmr_cause, asmr_base, by = "cause")
+asmr_cause[, index := ASMR / ASMR_base * 100]
+
+asmr_cause[, cause_lbl := fcase(
+  cause == "ihd",     "Ischemic heart disease",
+  cause == "istroke", "Ischemic stroke",
+  cause == "hstroke", "Intracerebral hemorrhage",
+  cause == "hhd",     "Hypertensive heart disease",
+  default = cause
+)]
+
+g <- ggplot(asmr_cause, aes(x = year, y = index, color = cause_lbl,
+                             linetype = year > 2019)) +
+  geom_line(linewidth = 1) +
+  geom_hline(yintercept = 100, linetype = "dotted", color = "grey50") +
+  scale_color_manual(values = setNames(cause_cols, cause_labels_plot),
+                     name = "Cause of death") +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"),
+                        guide = "none") +
+  labs(title = "Age-Standardised CVD Mortality Rate Index — Business-as-Usual",
+       subtitle = "Index: 2019 = 100; solid = observed, dashed = projected",
+       x = "Year",
+       y = "ASMR Index (2019 = 100)",
+       caption = "WHO World Standard Population (2000–2025), rescaled to ages 20–95+") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_asmr_cause.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+---
+
+# Projected Deaths Averted (2025–2050)
+
+```{r compute-deaths-averted, message=FALSE, warning=FALSE, echo=FALSE}
+# ── Core: deaths delayed by intervention × year ───────────────────────────────
+dt_base <- data.out[intervention == "b.a.u" & year >= 2025,
+                    .(baseline_deaths = sum(dead, na.rm = TRUE)),
+                    by = .(age_group, sex, year, location, cause, age)]
+
+dt_nonbase <- data.out[intervention != "b.a.u" & year >= 2025,
+                       .(dead = sum(dead, na.rm = TRUE)),
+                       by = .(age_group, sex, year, location, cause, age,
+                               intervention)]
+
+dt_merged <- merge(dt_nonbase, dt_base,
+                   by = c("age_group", "sex", "year", "location",
+                           "cause", "age"),
+                   all.x = TRUE)
+dt_merged[, deaths_delayed := baseline_deaths - dead]
+
+# ── Cumulative deaths delayed by intervention ─────────────────────────────────
+dt_cumul <- dt_merged[, .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+                       by = intervention]
+
+# ── Time-series (annual) by intervention ──────────────────────────────────────
+dt_annual <- dt_merged[, .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+                        by = .(intervention, year)]
+
+dt_annual[, intervention := factor(intervention, levels = int_order)]
+
+# ── Cumulative time-series ────────────────────────────────────────────────────
+setorder(dt_annual, intervention, year)
+dt_annual[, cum_deaths_delayed := cumsum(deaths_delayed), by = intervention]
+
+# ── All-interventions total for inline text ───────────────────────────────────
+total_all <- dt_cumul[intervention == "All Interventions", deaths_delayed]
+total_bp  <- dt_cumul[intervention == "Improved Hypertension Control", deaths_delayed]
+```
+
+Between 2025 and 2050, full scale-up of all four interventions combined is projected to
+avert approximately **`r fmt_m(total_all)` million deaths** globally. Improved hypertension
+control alone would avert `r fmt_m(total_bp)` million deaths — the single largest
+individual contribution.
+
+## Table 1 — Cumulative Deaths Averted by Intervention (2025–2050)
+
+```{r table1, message=FALSE, warning=FALSE, echo=FALSE}
+tab1 <- copy(dt_cumul)
+tab1 <- tab1[intervention != "b.a.u"]
+tab1[, intervention := factor(intervention, levels = int_order)]
+setorder(tab1, intervention)
+
+tab1[, deaths_M      := round(deaths_delayed / 1e6, 2)]
+tab1[, deaths_annual := round(deaths_delayed / 25 / 1e3, 1)]
+
+tab1_fmt <- tab1[, .(
+  Intervention              = intervention,
+  deaths_averted_millions   = comma(deaths_M,      accuracy = 0.01),
+  avg_per_year_thousands    = comma(deaths_annual, accuracy = 0.1)
+)]
+setnames(tab1_fmt,
+         c("deaths_averted_millions", "avg_per_year_thousands"),
+         c("Deaths averted (2025\u20132050, millions)", "Average per year (thousands)"))
+
+kable(tab1_fmt,
+      caption = "Table 1. Cumulative deaths averted (2025\u20132050) by intervention scenario.",
+      align   = "lrr") |>
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, font_size = 13) |>
+  column_spec(1, width = "9cm") |>
+  row_spec(0, bold = TRUE) |>
+  footnote(general = paste0(
+    "Deaths averted = deaths in business-as-usual scenario minus deaths under ",
+    "each intervention, summed over 2025\u20132050. ",
+    "Causes: ischemic heart disease, ischemic stroke, intracerebral hemorrhage, ",
+    "hypertensive heart disease."
+  ))
+
+# Save for Excel export
+dt_excel_tab1 <- copy(tab1_fmt)
+```
+
+## Figure 1 — Deaths Averted by Intervention (Bar Chart)
+
+```{r figure1, message=FALSE, warning=FALSE, echo=FALSE, fig.width=9, fig.height=5}
+dt_fig1 <- tab1[, .(
+  intervention   = factor(intervention, levels = rev(int_order)),
+  deaths_delayed = deaths_delayed
+)]
+
+g <- ggplot(dt_fig1, aes(x = deaths_delayed / 1e6, y = intervention,
+                          fill = as.character(intervention))) +
+  geom_col(width = 0.65) +
+  scale_fill_manual(values = int_cols, guide = "none") +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = "Projected Deaths Averted by Intervention, 2025\u20132050",
+    x     = "Deaths averted (millions)",
+    y     = NULL,
+    caption = "Deaths averted vs. business-as-usual scenario; all causes combined."
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(plot.title = element_text(face = "bold"),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank())
+print(g)
+ggsave(paste0(wd_outp, "aim1_fig1_deaths_intervention.png"), plot = g,
+       width = 9, height = 5, dpi = 300)
+```
+
+## Table 2 — Cumulative Deaths Averted by Intervention and Cause
+
+```{r table2, message=FALSE, warning=FALSE, echo=FALSE}
+dt_tab2 <- dt_merged[
+  intervention %in% int_order,
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(intervention, cause)
+]
+
+# Suppress cells where intervention does not affect cause
+dt_tab2 <- dt_tab2[!(cause %in% c("istroke","hstroke","hhd") &
+                        intervention == "TFA Elimination")]
+dt_tab2 <- dt_tab2[!(cause %in% c("hstroke","hhd") &
+                        intervention == "Improved Statin Uptake")]
+
+dt_tab2[, cause_lbl := fcase(
+  cause == "ihd",     "Ischemic heart disease",
+  cause == "istroke", "Ischemic stroke",
+  cause == "hstroke", "Intracerebral hemorrhage",
+  cause == "hhd",     "Hypertensive heart disease",
+  default = cause
+)]
+
+dt_tab2_wide <- dcast(
+  dt_tab2,
+  intervention ~ cause_lbl,
+  value.var = "deaths_delayed",
+  fill = NA
+)
+dt_tab2_wide[, intervention := factor(intervention, levels = int_order)]
+setorder(dt_tab2_wide, intervention)
+
+# Format cells
+for (col in names(dt_tab2_wide)[names(dt_tab2_wide) != "intervention"]) {
+  dt_tab2_wide[, (col) := fifelse(
+    is.na(get(col)),
+    "–",
+    comma(round(get(col) / 1e6, 2), accuracy = 0.01)
+  )]
+}
+
+kable(dt_tab2_wide,
+      caption = "Table 2. Cumulative deaths averted (millions, 2025\u20132050) by intervention and cause of death.",
+      align   = c("l", rep("r", ncol(dt_tab2_wide) - 1))) |>
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 13) |>
+  add_header_above(setNames(c(1L, ncol(dt_tab2_wide) - 1L),
+                            c(" ", paste0("Deaths averted, millions (2025",
+                                          "\u2013", "2050)")))) |>
+  row_spec(0, bold = TRUE) |>
+  footnote(
+    general = paste0(
+      "\u2013 = intervention does not affect this cause. ",
+      "TFA elimination affects IHD only; statins affect IHD and ischemic stroke."
+    )
+  )
+
+dt_excel_tab2 <- copy(dt_tab2_wide)
+```
+
+## Figure 2 — Deaths Averted by Cause (Stacked Bar)
+
+```{r figure2, message=FALSE, warning=FALSE, echo=FALSE, fig.width=9, fig.height=5}
+dt_fig2 <- dt_merged[
+  intervention %in% int_order & cause %in% names(cause_map_full),
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(intervention, cause)
+]
+dt_fig2[, intervention := factor(intervention, levels = int_order)]
+dt_fig2[, cause_lbl := cause_labels_plot[cause]]
+dt_fig2[, cause_lbl := factor(cause_lbl, levels = unname(cause_labels_plot))]
+
+g <- ggplot(dt_fig2, aes(x = deaths_delayed / 1e6, y = intervention,
+                          fill = cause_lbl)) +
+  geom_col(width = 0.65) +
+  scale_fill_manual(values = setNames(cause_cols, cause_labels_plot),
+                    name = "Cause of death") +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
+  labs(
+    title = "Deaths Averted by Cause of Death and Intervention, 2025\u20132050",
+    x     = "Deaths averted (millions)",
+    y     = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position    = "bottom",
+        panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.title         = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_fig2_deaths_cause.png"), plot = g,
+       width = 9, height = 5, dpi = 300)
+```
+
+## Figure 3 — Time Series: Annual Deaths Averted by Intervention
+
+```{r figure3-annual, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+g <- ggplot(dt_annual[intervention %in% int_order],
+            aes(x = year, y = deaths_delayed / 1e6,
+                color = intervention, fill = intervention)) +
+  geom_area(position = "stack", alpha = 0.7, color = "grey20", linewidth = 0.15) +
+  scale_color_manual(values = int_cols, name = NULL) +
+  scale_fill_manual(values  = int_cols, name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title   = "Annual Deaths Averted by Intervention, 2025\u20132050",
+    x       = "Year",
+    y       = "Deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_fig3_annual_averted.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+## Figure 4 — Cumulative Deaths Averted Over Time
+
+```{r figure4-cumulative, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+g <- ggplot(dt_annual[intervention %in% int_order],
+            aes(x = year, y = cum_deaths_delayed / 1e6,
+                color = intervention)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = int_cols, name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Cumulative Deaths Averted by Intervention, 2025\u20132050",
+    x     = "Year",
+    y     = "Cumulative deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_fig4_cum_averted.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+---
+
+# Outputs by Demographics
+
+## By Sex and Age Group
+
+```{r demo-age-sex, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+dt_age_sex <- dt_merged[
+  intervention %in% int_order,
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(intervention, age_group, sex)
+]
+
+# Order interventions by total deaths delayed
+order_lvls <- dt_age_sex[,
+  .(total = sum(deaths_delayed, na.rm = TRUE)),
+  by = intervention
+][order(total), intervention]
+
+dt_age_sex[, intervention := factor(intervention, levels = order_lvls)]
+
+g <- ggplot(dt_age_sex,
+            aes(x = deaths_delayed / 1e6, y = intervention,
+                fill = age_group)) +
+  geom_col(width = 0.7) +
+  facet_wrap(~sex, nrow = 1) +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = "Deaths Averted by Age Group, Sex, and Intervention (2025\u20132050)",
+    x     = "Deaths averted (millions)",
+    y     = NULL,
+    fill  = "Age group"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        panel.border    = element_rect(color = "black", fill = NA, linewidth = 0.5),
+        strip.text      = element_text(face = "bold"),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_fig5_demo_age.png"), plot = g,
+       width = 10, height = 5, dpi = 300)
+```
+
+## Table 3 — Deaths Averted by Age Group and Intervention
+
+```{r table3-age, message=FALSE, warning=FALSE, echo=FALSE}
+dt_tab3 <- deaths_summary(
+  data.out[year >= 2025],
+  baseline_label = "b.a.u",
+  by_cols        = c("age_group", "intervention")
+)
+dt_tab3 <- dt_tab3[intervention %in% int_order]
+dt_tab3[, intervention := factor(intervention, levels = int_order)]
+setorder(dt_tab3, age_group, intervention)
+
+dt_tab3_fmt <- dt_tab3[, .(
+  `Age group`                     = age_group,
+  Intervention                    = intervention,
+  `Projected deaths`              = comma(deaths_projected, accuracy = 1),
+  `Baseline deaths`               = comma(baseline_deaths,  accuracy = 1),
+  `Deaths averted`                = comma(deaths_delayed,    accuracy = 1),
+  `Deaths averted/year`           = comma(deaths_delayed_ave, accuracy = 1),
+  `% averted`                     = percent(deaths_delayed_pct, accuracy = 0.1)
+)]
+
+kable(dt_tab3_fmt,
+      caption = "Table 3. Cumulative deaths averted (2025\u20132050) by age group and intervention.",
+      align   = c("l","l","r","r","r","r","r")) |>
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 12) |>
+  row_spec(0, bold = TRUE)
+
+dt_excel_tab3 <- copy(dt_tab3_fmt)
+```
+
+---
+
+# Outputs by Geography
+
+## Table 4 — Deaths Averted by Country (All Interventions)
+
+```{r table4-country, message=FALSE, warning=FALSE, echo=FALSE}
+dt_tab4_base <- data.out[year >= 2025 & intervention == "b.a.u",
+                          .(baseline_deaths = sum(dead, na.rm = TRUE)),
+                          by = .(region, location)]
+
+dt_tab4_int  <- data.out[year >= 2025 & intervention == "All Interventions",
+                          .(deaths_projected = sum(dead, na.rm = TRUE)),
+                          by = .(region, location)]
+
+dt_tab4 <- merge(dt_tab4_int, dt_tab4_base,
+                 by = c("region", "location"), all.x = TRUE)
+dt_tab4[, deaths_delayed     := baseline_deaths - deaths_projected]
+dt_tab4[, deaths_delayed_ave := deaths_delayed / 25]
+dt_tab4[, deaths_delayed_pct := deaths_delayed / baseline_deaths]
+setorder(dt_tab4, region, -deaths_delayed)
+
+dt_tab4_fmt <- dt_tab4[, .(
+  Region                = region,
+  Country               = location,
+  `Projected deaths`    = comma(deaths_projected,  accuracy = 1),
+  `Baseline deaths`     = comma(baseline_deaths,   accuracy = 1),
+  `Deaths averted`      = comma(deaths_delayed,    accuracy = 1),
+  `Deaths averted/year` = comma(deaths_delayed_ave, accuracy = 1),
+  `% averted`           = percent(deaths_delayed_pct, accuracy = 0.1)
+)]
+
+# Interactive table for country-level data
+datatable(
+  dt_tab4_fmt,
+  caption  = htmltools::tags$caption(
+    style = "caption-side: top; text-align: left;",
+    "Table 4. Country-level deaths averted under all four interventions, 2025\u20132050."
+  ),
+  filter   = "top",
+  rownames = FALSE,
+  options  = list(pageLength = 15, scrollX = TRUE,
+                  dom = "lftipr")
+)
+
+dt_excel_tab4 <- copy(dt_tab4_fmt)
+```
+
+## Figure 5 — Top 20 Countries by Deaths Averted
+
+```{r figure5-top20, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=7}
+dt_top20 <- dt_tab4[order(-deaths_delayed)][1:min(20, .N)]
+dt_top20[, location := factor(location, levels = rev(location))]
+
+g <- ggplot(dt_top20,
+            aes(x = deaths_delayed / 1e6, y = location,
+                fill = region)) +
+  geom_col(width = 0.7) +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = "Top 20 Countries by Projected Deaths Averted\n(All Four Interventions, 2025\u20132050)",
+    x     = "Deaths averted (millions)",
+    y     = NULL,
+    fill  = "Region"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "right",
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_fig5_top20_countries.png"), plot = g,
+       width = 10, height = 7, dpi = 300)
+```
+
+## Figure 6 — World Map: Deaths Averted per 100,000 Population
+
+```{r figure6-map, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=5}
+# Load UNWPP 2019 population for rate denominator
+wpp <- tryCatch(
+  as.data.table(readRDS(paste0(wd_data, "PopulationsSingleAge0050.rds"))),
+  error = function(e) NULL
+)
+
+if (!is.null(wpp)) {
+  pop_2019 <- wpp[year_id == 2019 & age >= 20,
+                  .(pop = sum(Nx, na.rm = TRUE)),
+                  by = location]
+
+  dt_map <- merge(dt_tab4, pop_2019, by = "location", all.x = TRUE)
+  dt_map[, da_per100k := deaths_delayed / pop * 1e5]
+
+  if (nrow(countries_dt) > 0) {
+    world <- ne_countries(scale = "medium", returnclass = "sf")
+    world_dt <- merge(world,
+                      merge(dt_map, countries_dt[, .(location, iso3)],
+                            by = "location", all.x = TRUE),
+                      by.x = "adm0_a3", by.y = "iso3", all.x = TRUE)
+
+    g <- ggplot(world_dt) +
+      geom_sf(aes(fill = da_per100k), color = "grey80", linewidth = 0.1) +
+      scale_fill_viridis_c(
+        name     = "per 100,000",
+        na.value = "grey90",
+        option   = "C",
+        direction = -1
+      ) +
+      labs(
+        title   = "Deaths Averted per 100,000 Population, 2025\u20132050",
+        subtitle = "All four interventions combined",
+        caption = "Source: Model output; denominator = UNWPP 2024 age 20+ population"
+      ) +
+      theme_void(base_size = 12) +
+      theme(legend.position = "right",
+            plot.title    = element_text(face = "bold"),
+            plot.subtitle = element_text(color = "grey40"))
+    print(g)
+    ggsave(paste0(wd_outp, "aim1_fig6_map.png"), plot = g,
+           width = 11, height = 5, dpi = 300)
+  }
+} else {
+  message("Population file not found — skipping map.")
+}
+```
+
+## Table 5 — Deaths Averted by Region (All Interventions)
+
+```{r table5-region, message=FALSE, warning=FALSE, echo=FALSE}
+#if ("region" %in% names(data.out)) {
+  dt_tab5_base <- data.out[year >= 2025 & intervention == "b.a.u",
+                            .(baseline_deaths = sum(dead, na.rm = TRUE)),
+                            by = region]
+
+  dt_tab5_int  <- data.out[year >= 2025 & intervention == "All Interventions",
+                            .(deaths_projected = sum(dead, na.rm = TRUE)),
+                            by = region]
+
+  dt_tab5 <- merge(dt_tab5_int, dt_tab5_base, by = "region", all.x = TRUE)
+  dt_tab5[, deaths_delayed     := baseline_deaths - deaths_projected]
+  dt_tab5[, deaths_delayed_ave := deaths_delayed / 25]
+  dt_tab5[, deaths_delayed_pct := deaths_delayed / baseline_deaths]
+  setorder(dt_tab5, -deaths_delayed)
+
+  dt_tab5_fmt <- dt_tab5[, .(
+    Region                = region,
+    `Projected deaths`    = comma(deaths_projected,  accuracy = 1),
+    `Baseline deaths`     = comma(baseline_deaths,   accuracy = 1),
+    `Deaths averted`      = comma(deaths_delayed,    accuracy = 1),
+    `Deaths averted/year` = comma(deaths_delayed_ave, accuracy = 1),
+    `% averted`           = percent(deaths_delayed_pct, accuracy = 0.1)
+  )]
+
+  kable(dt_tab5_fmt,
+        caption = "Table 5. Deaths averted by region under all four interventions, 2025\u20132050.",
+        align   = c("l","r","r","r","r","r")) |>
+    kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                  full_width = FALSE, font_size = 13) |>
+    row_spec(0, bold = TRUE)
+
+  dt_excel_tab5 <- copy(dt_tab5_fmt)
+# } else {
+#   message("Region variable not available in data.out – skipping Table 5.")
+#   dt_excel_tab5 <- data.table()
+# }
+```
+
+---
+
+# ASMR Under Intervention Scenarios
+
+```{r asmr-interventions, message=FALSE, warning=FALSE, echo=FALSE, fig.width=12, fig.height=7}
+# Age-standardised CVD mortality rate by intervention scenario
+dt_asmr2 <- data.out[year >= 2019,
+                      .(dead = sum(dead, na.rm = TRUE),
+                        well = sum(well, na.rm = TRUE),
+                        sick = sum(sick, na.rm = TRUE)),
+                      by = .(intervention, age, year)]
+dt_asmr2[, Nx := well + sick]
+
+asmr_int <- calculate_asmr(dt_asmr2,
+                            deaths_col     = "dead",
+                            population_col = "Nx",
+                            disagg_var     = "intervention")
+
+asmr_int[, intervention := factor(
+  intervention,
+  levels = c("b.a.u", int_order)
+)]
+
+asmr_int[, int_lbl := fcase(
+  intervention == "b.a.u", "Business-as-Usual",
+  default = as.character(intervention)
+)]
+
+g <- ggplot(asmr_int, aes(x = year, y = ASMR,
+                           color     = int_lbl,
+                           linetype  = year > 2019)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = c(
+    "Business-as-Usual" = "#999999",
+    int_cols
+  ), name = NULL) +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"),
+                        guide = "none") +
+  labs(
+    title    = "Age-Standardised CVD Mortality Rate by Intervention Scenario",
+    subtitle = "All causes combined; solid = calibration period, dashed = projection",
+    x        = "Year",
+    y        = "ASMR (per 100,000 population)",
+    caption  = "WHO World Standard Population (2000\u20132025), rescaled to ages 20\u201395+"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_asmr_interventions.png"), plot = g,
+       width = 12, height = 6, dpi = 300)
+```
+
+---
+
+# Excel Export
+
+```{r excel-export, message=FALSE, warning=FALSE, echo=FALSE}
+# ── Build workbook ─────────────────────────────────────────────────────────────
+wb <- createWorkbook()
+
+add_sheet <- function(wb, sheet_name, dat, title_str) {
+  addWorksheet(wb, sheet_name)
+  writeData(wb, sheet_name, title_str, startRow = 1, startCol = 1)
+  addStyle(wb, sheet_name,
+           style = createStyle(fontSize = 12, textDecoration = "bold"),
+           rows = 1, cols = 1)
+  writeData(wb, sheet_name, dat, startRow = 3, startCol = 1,
+            headerStyle = createStyle(
+              textDecoration = "bold",
+              fgFill         = "#2E75B6",
+              fontColour     = "white",
+              border         = "Bottom"
+            ))
+  setColWidths(wb, sheet_name,
+               cols   = seq_len(ncol(dat)),
+               widths = "auto")
+}
+
+add_sheet(wb, "T1_Deaths_by_Intervention",
+          as.data.frame(dt_excel_tab1),
+          "Table 1. Cumulative deaths averted (2025-2050) by intervention scenario.")
+
+add_sheet(wb, "T2_Deaths_by_Cause",
+          as.data.frame(dt_excel_tab2),
+          "Table 2. Deaths averted (millions) by intervention and cause of death.")
+
+add_sheet(wb, "T3_Deaths_by_Age",
+          as.data.frame(dt_excel_tab3),
+          "Table 3. Deaths averted by age group and intervention.")
+
+add_sheet(wb, "T4_Deaths_by_Country",
+          as.data.frame(dt_excel_tab4),
+          "Table 4. Country-level deaths averted (All Interventions, 2025-2050).")
+
+if (exists("dt_excel_tab5") && nrow(dt_excel_tab5) > 0)
+  add_sheet(wb, "T5_Deaths_by_Region",
+            as.data.frame(dt_excel_tab5),
+            "Table 5. Deaths averted by region (All Interventions, 2025-2050).")
+
+out_xlsx <- paste0(wd_scen, "aim1_results_tables.xlsx")
+saveWorkbook(wb, out_xlsx, overwrite = TRUE)
+message("Tables exported to: ", out_xlsx)
+```
+
+---
+
+*Report generated on `r Sys.time()` using R `r R.version$major`.`r R.version$minor`.*

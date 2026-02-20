@@ -9,3 +9,6 @@ data/raw/**/*.*
 
 # Claude Code worktrees
 .claude/worktrees/
+
+# Model output files
+output/out_model/
