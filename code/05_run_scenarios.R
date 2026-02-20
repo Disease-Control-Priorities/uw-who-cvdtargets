@@ -60,7 +60,7 @@ dt_gbd_rr <- copy(dt_expanded)
 #   rr_per_10mmhg = c(0.83, 0.72, 0.73, 0.73, 0.93)
 # )
 
-ETIHAD_RR <- fread(paste0(wd, "ettehad_rr_bp_reduction_10mmHg.csv"))
+ETIHAD_RR <- fread(paste0(wd_data, "ettehad_rr_bp_reduction_10mmHg.csv"))
 
 # rename to cause column
 ETIHAD_RR[, cause := fcase(
@@ -215,7 +215,7 @@ calculate_aggregate_coverage <- function(dt,
 }
 
 # Import from excel .xlsx file ettehad_rr_bp_reduction_effects
-ETIHAD_RR_BIN<- as.data.table(read_excel(paste0(wd, "ettehad_rr_bp_reduction_effects.xlsx"), 
+ETIHAD_RR_BIN<- as.data.table(read_excel(paste0(wd_data, "ettehad_rr_bp_reduction_effects.xlsx"), 
                                          sheet = "Sheet1")) 
 
 # Calculate cumulative ETIHAD effect size for BP bins
@@ -438,7 +438,7 @@ apply_coverage_adjustment <- function(effect_size,
 ## Anti hypertensive therapy ----
 #...........................................................
 
-dt_hbp_control <- readRDS(file = paste0(wd_data,"BloodPressure/", "hbp_control_data.rds"))
+dt_hbp_control <- readRDS(file = paste0(wd_data,"hbp_control_data.rds"))
 
 calculate_antihypertensive_impact_etihad <- function(intervention_rates, 
                                                      Country, 
@@ -631,7 +631,7 @@ calculate_antihypertensive_impact_etihad <- function(intervention_rates,
 # }
 
 prepare_sodium_data <- function(data.in, wd_data) {
-  dt_sodium_scenarios <- readRDS(file = paste0(wd_data, "Sodium/", "sodium_policy_scenarios.rds"))
+  dt_sodium_scenarios <- readRDS(file = paste0(wd_data,"sodium_policy_scenarios.rds"))
   dt_sodium_scenarios <- dt_sodium_scenarios[year == 2024, .(location, sodium_current)]
   
   data.in <- merge(data.in, dt_sodium_scenarios, by = "location", all.x = TRUE)
@@ -835,7 +835,7 @@ calculate_sodium_impact_etihad <- function(intervention_rates,
 ## TFA Policy ----
 #...........................................................
 
-dt_tfa_scenarios <- as.data.table(readRDS(file = paste0(wd_data,"TFAPolicy/", "tfa_policy_scenarios.rds")))
+dt_tfa_scenarios <- as.data.table(readRDS(file = paste0(wd_data,"tfa_policy_scenarios.rds")))
 
 # subset from base year   
 dt_tfa_scenarios <- dt_tfa_scenarios[year>=2017,]
@@ -939,7 +939,7 @@ calculate_tfa_impact <- function(dt_tfa_scenarios,
 #...........................................................
 
 # Compute scale up scenario targeting DM high risk population
-dt_statin_scenarios <- readRDS(file = paste0(wd_data,"Statins/", "statin_data.rds"))
+dt_statin_scenarios <- readRDS(file = paste0(wd_data,"statin_data.rds"))
 
 # # Add Diabetes Proportion
 # dt_diabetes <- data.in[,c("location","age","sex","diabetes"),with=F]
@@ -949,7 +949,7 @@ dt_statin_scenarios <- readRDS(file = paste0(wd_data,"Statins/", "statin_data.rd
 # High Fasting Plasma Glucose Attributable Fraction 
 # for IHD and ischaemic stroke, using country- & cause-specific AFs supplied in dt_af_statins.
 
-dt_af_statins <- readRDS(file = paste0(wd_data,"Statins/","af_statins.rds"))
+dt_af_statins <- readRDS(file = paste0(wd_data,"af_statins.rds"))
 
 # Function to calculate statins impact on IHD and stroke
 
@@ -1981,7 +1981,7 @@ clusterEvalQ(cl, {
 locs <- unique(data.in$location)
 locs <- locs[!locs %in% c("Greenland", "Bermuda")]  # Exclusions
 
-# locs <- c("China", "India", "Indonesia", "Russian Federation", "Pakistan", "Bangladesh")
+#locs <- c("China", "India", "Indonesia", "Russian Federation", "Pakistan", "Bangladesh")
 
 scenarios <- list(
   baseline = character(0),

@@ -22,7 +22,7 @@ wd <- "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/"
 wd_code <- paste0(wd,"code/")
 
 # Raw data not available on GitHub
-wd_raw <- paste0("C:/Users/wrgar/OneDrive - UW/02Work/ResolveToSaveLives/","100MLives/data/raw/")
+wd_raw <- paste0(wd,"data/raw/")
 
 # Processed data (from base rates and tps)
 wd_data <- paste0(wd,"data/processed/")
