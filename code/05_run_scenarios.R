@@ -440,6 +440,11 @@ apply_coverage_adjustment <- function(effect_size,
 
 dt_hbp_control <- readRDS(file = paste0(wd_data,"hbp_control_data.rds"))
 
+
+# For aim 2 (150 million more controlled people) upload targets file
+
+dt_hbp_targets <- fread(paste0(wd_data,"htn_control_targets_by_loc.csv"))
+
 calculate_antihypertensive_impact_etihad <- function(intervention_rates, 
                                                      Country, 
                                                      DT.in,
@@ -1168,19 +1173,19 @@ calculate_statins_impact <- function(dt_statin_scenarios,
 # drugcov <- "p75"
 # intervention <- "sodium"
 # interventions <- c("statins","tfa")
-# 
+#
 # baseline_ctrl  <- 0.1585683
 # #baseline_ctrl  <- 0
 # target_control <- 0.5
-# 
+#
 # control_start_year  <- 2025
 # control_target_year <- 2030
-# 
+#
 # coverage_0 <- baseline_ctrl
 # target_year <- control_target_year
 # start_year <- control_start_year
-# 
-# 
+#
+#
 # tfa
 # tfa_target_tfa        <- 0         # target % energy from TFA
 # tfa_policy_start_year <- 2026      # flexible start year
@@ -1215,6 +1220,7 @@ project.all <- function(Country,
                         #Implicit hypertension control parameters
                         drugcov = "p75",  ## this not binding but keep temporally
                         baseline_ctrl = NULL,   # use provided or extract from dt_hbp_control
+                        dt_hbp_targets = NULL, # optional data.table with country-specific HTN control targets (location, htncov2_2030)
                         # implicit statins parameters
                         baseline_statin_coverage = NULL
 ) {
@@ -1265,6 +1271,18 @@ project.all <- function(Country,
             "a_change2",
             "ideal",
             "drugaroc") := 0]
+  
+  #...............................................................
+  # specific targets for htn control
+  
+  # Priority: country-specific target > user-defined target > default (0.50)
+  if (!is.null(dt_hbp_targets) && Country %in% dt_hbp_targets$location) {
+    target_control <- dt_hbp_targets[location == Country, htncov2_2030]
+    cat("  HTN target: country-specific =", round(target_control, 4), "\n")
+  } else {
+    target_control <- target_control
+    cat("  HTN target: user-defined =", round(target_control, 4), "\n")
+  }
   
   #...............................................................
   # Baseline for sodium intervention
@@ -1627,6 +1645,7 @@ run_multiple_scenarios <- function(Country,
                                    #Implicit hypertension control parameters
                                    drugcov = "p75",  ## this not binding but keep temporally
                                    baseline_ctrl       = NULL,   # use provided or extract from dt_hbp_control
+                                   dt_hbp_targets = dt_hbp_targets, # optional data.table with country-specific HTN control targets (location, htncov2_2030)
                                    baseline_statin_coverage = NULL
                                    ) {
   #' Run multiple intervention scenarios in one call
@@ -1677,7 +1696,8 @@ run_multiple_scenarios <- function(Country,
       #Implicit hypertension control parameters
       drugcov = drugcov,
       baseline_ctrl       = NULL,   # use provided or extract from dt_hbp_control
-      baseline_statin_coverage = NULL
+      baseline_statin_coverage = NULL,
+      dt_hbp_targets = dt_hbp_targets
     )
   }
   
@@ -1699,13 +1719,20 @@ scenarios <- list(
   all_four = c("antihypertensive", "sodium", "tfa", "statins")
 )
 
+# # Example: Run multiple scenarios
+scenarios <- list(
+  baseline = character(0),
+  bp_only = "antihypertensive"
+)
+
+
 # all_results <- run_multiple_scenarios(
 #   Country = "China",
 #   scenario_list = scenarios,
 #   #explicit hypertension control parameters
 #   target_control = 0.5,
 #   control_start_year = 2026,
-#   control_target_year = 2040,
+#   control_target_year = 2030,
 #   # explicit statins parameters
 #   statin_target_coverage = 0.60,
 #   statin_start_year      = 2026,
@@ -1723,7 +1750,8 @@ scenarios <- list(
 #   #Implicit hypertension control parameters
 #   drugcov = "p75",
 #   baseline_ctrl       = NULL,
-#   baseline_statin_coverage = NULL
+#   baseline_statin_coverage = NULL,
+#   dt_hbp_targets = dt_hbp_targets
 # )
 
 #...........................................................
@@ -1896,7 +1924,7 @@ validate_intervention_results <- function(results_dt) {
 # explicit hypertension control parameters
 target_control <- 0.5
 control_start_year <- 2026
-control_target_year <- 2040
+control_target_year <- 2030
 
 # explicit sodium reduction parameters
 saltmet <- "percent"
@@ -1918,6 +1946,9 @@ adherence_cf <- 0.664
 
 #baseline_statin_coverage <- NULL   # let project.all infer from dt_statin_scenarios
 
+# --- Select aim here ---
+aim <- 2   # change to 1 or 2
+
 # 2. Detect and start cluster
 #ncores <- max(1, parallel::detectCores() - 1)
 ncores <- 6
@@ -1931,6 +1962,7 @@ clusterExport(
     ## Main drivers ----
     "project.all",
     "run_multiple_scenarios",
+    "aim",
     
     ## BP probability + RR calcs ----
     "get.bp.prob",
@@ -1959,6 +1991,7 @@ clusterExport(
     "b_rates",
     "inc",
     "dt_hbp_control",
+    "dt_hbp_targets",
     "dt_gbd_rr",
     "ETIHAD_RR",
     "ETIHAD_RR_BIN",
@@ -1981,18 +2014,33 @@ clusterEvalQ(cl, {
 locs <- unique(data.in$location)
 locs <- locs[!locs %in% c("Greenland", "Bermuda")]  # Exclusions
 
-#locs <- c("China", "India", "Indonesia", "Russian Federation", "Pakistan", "Bangladesh")
+locs <- c("China", "India", "Indonesia", "Russian Federation", "Pakistan", "Bangladesh")
 
-scenarios <- list(
-  baseline = character(0),
-  bp_only = "antihypertensive",
-  sodium_only = "sodium",
-  tfa_only = "tfa",
-  statins_only = "statins",
-  bp_sodium = c("antihypertensive", "sodium"),
+# --- Aim 1: all interventions ---
+scenarios_aim1 <- list(
+  baseline      = character(0),
+  bp_only       = "antihypertensive",
+  sodium_only   = "sodium",
+  tfa_only      = "tfa",
+  statins_only  = "statins",
+  bp_sodium     = c("antihypertensive", "sodium"),
   bp_sodium_tfa = c("antihypertensive", "sodium", "tfa"),
-  all_four = c("antihypertensive", "sodium", "tfa", "statins")
+  all_four      = c("antihypertensive", "sodium", "tfa", "statins")
 )
+
+# --- Aim 2: hypertension control only ---
+scenarios_aim2 <- list(
+  baseline = character(0),
+  bp_only  = "antihypertensive"
+)
+
+scenarios <- switch(as.character(aim),
+                    "1" = scenarios_aim1,
+                    "2" = scenarios_aim2,
+                    stop("aim must be 1 or 2")
+)
+
+cat("Running Aim", aim, "with scenarios:", paste(names(scenarios), collapse = ", "), "\n")
 
 # 6. Parallel execution
 time_start <- Sys.time()
@@ -2037,7 +2085,8 @@ results_list <- foreach(country = locs,
                               #Implicit hypertension control parameters
                               drugcov = drugcov,
                               baseline_ctrl       = NULL,   # use provided or extract from dt_hbp_control
-                              baseline_statin_coverage = NULL
+                              baseline_statin_coverage = NULL,
+                              dt_hbp_targets  = if (aim == 2) dt_hbp_targets else NULL  # aim-specific 
                             )
                           }, error = function(e) {
                             cat("Not OK Error in", country, ":", e$message, "\n")
