@@ -1,0 +1,648 @@
+---
+title: "**Mathematical Description**"
+output: 
+  word_document:
+    toc: true
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+```
+
+# Hypertension Control Intervention Model
+
+The model quantifies the impact of scaling up antihypertensive treatment on cardiovascular disease incidence and case fatality. It integrates three key components:
+
+* **GBD relative risks** to establish baseline disease burden by blood pressure category
+* **Trial effect sizes** to model treatment impact accounting for diabetes prevalence
+* **Linear scale-up** from baseline to target control rates over a specified period
+
+Throughout this section, we reserve the notation $\varepsilon$ for multiplicative effect ratios applied directly to transition rates, while all coverage-adjusted quantities and reduction factors are treated as intermediate components used to construct these ratios.
+
+## Input Parameters
+
+### Baseline Data (t=0)
+
+* $IR_{a,s,c}$: Incidence rate for age $a$, sex $s$, and cause $c$
+* $CF_{a,s,c}$: Case fatality rate
+* $P(\text{BP}_{\text{cat}})$: Probability distribution across BP categories
+* $N_{a,s,t}$: Population size by age, sex, and year $t$
+
+### Treatment Parameters
+
+* $C_{\text{baseline}}$: Baseline control rate (proportion with BP $<$140/90 among treated hypertensives)
+* $C_{\text{target}}$: Target control rate
+* $T_{\text{start}}$: Scale-up start year (default: 2025)
+* $T_{\text{end}}$: Target achievement year (default: 2050)
+
+### Blood Pressure Categories
+
+The model uses eight BP categories (in mmHg):
+
+<120, 120-129, 130-139, 140-149, 150-159, 160-169, 170-179, 180+
+
+**Hypertensive bins** (eligible for treatment): 140-149, 150-159, 160-169, 170-179, 180+ mmHg
+
+## Step 1: Baseline BP Distribution
+
+Obtain BP probability distribution without treatment intervention:
+
+$$P(\text{BP}_{\text{cat}} \mid a, s, t) = \text{get.bp.prob}(\text{rx}=0)$$
+
+This represents the natural BP distribution in the population before any treatment scale-up.
+
+## Step 2: Baseline Incidence by BP Category
+
+Calculate cause-specific incidence for each BP bin using GBD relative risks.
+
+**GBD Relative Risk (per 10 mmHg increase)**
+
+$$RR_{\text{GBD}}(\text{BP}_{\text{cat}}, a, c) = RR_{\text{per10mmHg}}^{\Delta/10}$$
+
+where $\Delta = \text{BP}_{\text{midpoint}} - 120$ mmHg (reference category).
+
+**Normalization Factor**
+
+$$\alpha_{a,s,c,t} = \sum_{\text{BP}_{\text{cat}}} \left[ P(\text{BP}_{\text{cat}}) \times RR_{\text{GBD}}(\text{BP}_{\text{cat}}, a, c) \right]$$
+
+**Bin-Specific Baseline Incidence**
+
+$$IR_{\text{bin}}(\text{BP}_{\text{cat}}, a, s, c, t) = \frac{RR_{\text{GBD}}(\text{BP}_{\text{cat}}, a, c) \times IR_{a,s,c}}{\alpha_{a,s,c,t}}$$
+
+## Step 3: Trial Effect Sizes
+
+Calculate diabetes-weighted effect size for BP reduction in each bin.
+
+**Diabetes-Weighted Effect**
+
+$$E_{\text{trial}}(\text{BP}_{\text{cat}}, c, d) = (1-w_{\text{DM}}) \times E_{\text{noDM}} + w_{\text{DM}} \times E_{\text{DM}}$$
+
+where $w_{\text{DM}}$ = diabetes proportion (default: 0.1), and $E$ values are from Ettehad trials meta-analysis.
+
+## Step 4: Coverage Scale-Up
+
+Model linear increase in treatment coverage above baseline. The implementation ensures that only the *incremental* coverage above baseline is scaled up, preventing double-counting of existing treatment effects.
+
+### Incremental Coverage Target
+
+$$\Delta C_{\text{target}} = \max(C_{\text{target}} - C_{\text{baseline}}, 0)$$
+
+This represents the additional coverage to be achieved above the existing baseline control rate.
+
+### Time-Varying Incremental Coverage
+
+The model first calculates the scale-up trajectory *as if* baseline were zero, then adds baseline coverage:
+
+$$\Delta C_{\text{increment}}(t) = \Delta C_{\text{target}} \times \min\left[\frac{t - T_{\text{start}}}{T_{\text{end}} - T_{\text{start}}}, 1\right]$$
+
+**Boundary conditions for incremental coverage:**
+
+* For $t < T_{\text{start}}$: $\Delta C_{\text{increment}}(t) = 0$
+* For $T_{\text{start}} \leq t \leq T_{\text{end}}$: Linear interpolation
+* For $t > T_{\text{end}}$: $\Delta C_{\text{increment}}(t) = \Delta C_{\text{target}}$
+
+### Coverage at Time t (Baseline and Current)
+
+For hypertensive BP bins, two coverage values are tracked:
+
+$$C_0(\text{BP}_{\text{cat}}) = C_{\text{baseline}} \quad \text{(baseline coverage)}$$
+
+$$C_t(t, \text{BP}_{\text{cat}}) = C_{\text{baseline}} + \Delta C_{\text{increment}}(t) \quad \text{(current coverage)}$$
+
+where $\text{BP}_{\text{cat}} \in \{$140-149, 150-159, 160-169, 170-179, 180+$\}$.
+
+For non-hypertensive BP bins ($<$140 mmHg), coverage is always zero:
+
+$$C_0(\text{BP}_{\text{cat}}) = C_t(t, \text{BP}_{\text{cat}}) = 0 \quad \text{if } \text{BP}_{\text{cat}} \notin \text{hypertensive bins}$$
+
+## Step 5: Coverage-Adjusted Effect Sizes
+
+Apply incremental coverage to trial effect sizes:
+
+$$E_{\text{adjusted}}(t) = \frac{E_{\text{trial}} \times (C(t) - C_{\text{baseline}})}{1 - E_{\text{trial}} \times C_{\text{baseline}}}$$
+
+**Special case:** If $C_{\text{baseline}} = 0$ (no prior treatment), simplifies to:
+
+$$E_{\text{adjusted}}(t) = E_{\text{trial}} \times C(t)$$
+
+## Step 6: New Bin-Specific Incidence
+
+Apply coverage-adjusted effect to each BP bin:
+
+$$IR_{\text{bin,new}}(\text{BP}_{\text{cat}}, a, s, c, t) = IR_{\text{bin}}(\text{BP}_{\text{cat}}) \times [1 - E_{\text{adjusted}}(t, \text{BP}_{\text{cat}}, c)]$$
+
+## Step 7: Population-Weighted Incidence
+
+Aggregate across BP bins using baseline population distribution:
+
+$$IR_{\text{new}}(a, s, c, t) = \sum_{\text{BP}_{\text{cat}}} \left[ IR_{\text{bin,new}}(\text{BP}_{\text{cat}}) \times P(\text{BP}_{\text{cat}}) \right]$$
+
+## Step 8: Incidence Effect Ratio
+
+The incidence intervention effect is summarized as a multiplicative incidence effect ratio, defined as the proportional change in the cause-specific incidence rate induced by improved blood pressure control:
+
+$$\varepsilon_{IR}(a, s, c, t) = \frac{IR_{\text{new}}}{IR_{\text{original}}}$$
+
+This ratio is the sole estimand passed to the state transition model to modify baseline incidence rates. Values of $\varepsilon_{IR} < 1$ indicate reductions in disease incidence attributable to the intervention.
+
+## Step 9: Case Fatality Reduction
+
+Case fatality reductions are modeled using intermediate proportional reductions based on incremental hypertensive coverage above baseline. These intermediate quantities are used to construct a multiplicative case-fatality effect ratio, ensuring that pre-existing treatment effects embedded in baseline case fatality rates are not double-counted.
+
+### Incremental Coverage Delta
+
+First, calculate the incremental coverage change for each individual:
+
+$$\Delta C_{\text{delta}}(t, \text{BP}_{\text{cat}}) = \max(C_t(t, \text{BP}_{\text{cat}}) - C_0(\text{BP}_{\text{cat}}), 0)$$
+
+This represents only the *new* coverage achieved through the intervention, not the pre-existing baseline coverage.
+
+### Aggregate Hypertensive Coverage
+
+Calculate the population-weighted average of incremental coverage across hypertensive BP bins:
+
+$$C_{\text{agg}}^{\Delta}(a, s, c, t) = \frac{\sum_{\text{BP}_{\text{cat}} \in \text{hypertensive bins}} [\Delta C_{\text{delta}}(t, \text{BP}_{\text{cat}}) \times P(\text{BP}_{\text{cat}})]}{\sum_{\text{BP}_{\text{cat}} \in \text{hypertensive bins}} P(\text{BP}_{\text{cat}})}$$
+
+The calculation is restricted to hypertensive bins only (BP $\geq$ 140 mmHg), as these are the bins eligible for treatment.
+
+### CF Reduction Factors
+
+| Cause | CF Reduction Factor ($\rho_{CF}$) |
+|-------|-----------------------------------|
+| IHD | 0.24 |
+| Ischemic stroke | 0.36 |
+| Hemorrhagic stroke | 0.76 |
+| HHD | 0.20 |
+
+Table: Case fatality reduction factors per unit control
+
+### New Case Fatality
+
+Apply the CF reduction using only the incremental coverage:
+
+$$CF_{\text{new}}(a, s, c, t) = CF_{\text{original}} \times [1 - \rho_{CF,c} \times C_{\text{agg}}^{\Delta}(a, s, c, t)]$$
+
+where $\rho_{CF,c}$ is the cause-specific CF reduction factor and $C_{\text{agg}}^{\Delta}$ is the *incremental* aggregate coverage. The term $\rho_{CF,c} \times C_{\text{agg}}^{\Delta}$ represents an intermediate proportional reduction in case fatality, not the estimand itself.
+
+## Step 10: Case Fatality Effect Ratio
+
+The overall effect of antihypertensive treatment on disease-specific mortality is summarized as a multiplicative case-fatality effect ratio:
+
+$$\varepsilon_{CF}(a, s, c, t) = \frac{CF_{\text{new}}}{CF_{\text{original}}}$$
+
+This ratio is the estimand applied to baseline case fatality rates in the state transition model.
+
+## Effect Ratios
+
+The antihypertensive intervention produces two multiplicative effect ratios, which are the only quantities used to modify baseline transition rates in the state transition model:
+
+### Incidence Effect Ratio
+
+$$\varepsilon_{IR,\text{BP}}(a, s, c, t) = \frac{IR_{\text{new}}(a, s, c, t)}{IR_{\text{original}}(a, s, c, t)}$$
+
+This ratio is applied to baseline incidence rates in the state transition model. Values less than 1 indicate reduction in disease incidence due to improved BP control.
+
+### Case Fatality Effect Ratio
+
+$$\varepsilon_{CF,\text{BP}}(a, s, c, t) = \frac{CF_{\text{new}}(a, s, c, t)}{CF_{\text{original}}(a, s, c, t)}$$
+
+This ratio is applied to baseline case fatality rates. Values of $\varepsilon_{CF,\text{BP}} < 1$ indicate improved survival among individuals with disease due to antihypertensive treatment. These outputs feed into the state transition model to project disease burden under treatment scale-up scenarios.
+
+# Sodium Reduction Intervention Model
+
+The sodium reduction intervention uses the same trial framework as antihypertensive therapy, but applies effects through blood pressure reduction achieved via dietary sodium intake changes.
+
+## Overview
+
+Sodium reduction operates through:
+
+* Linear scale-up of sodium intake reduction from baseline to target
+* Filippini dose-response relationship: BP reduction per gram of sodium reduced
+* Ettehad effect sizes applied based on achieved BP reduction
+* No direct effect on case fatality (only through incidence reduction)
+
+## Input Parameters
+
+* $S_{\text{current}}$: Current sodium intake (grams/day)
+* $S_{\text{eff}}$: Sodium reduction parameter
+* $S_{\text{method}}$: Reduction method (percent, target, or absolute)
+* $T_{\text{salt,start}}$: Intervention start year (default: 2025)
+* $T_{\text{salt,end}}$: Full implementation year (default: 2030+)
+* $\phi_{\text{hyp}}$: Proportion with raised BP (hypertensive individuals)
+
+## Sodium Reduction Target Calculation
+
+Based on reduction method:
+
+$$S_{\text{target}} = \begin{cases}
+S_{\text{current}} \times S_{\text{eff}} & \text{if method = "percent"} \\
+\min(S_{\text{current}}, S_{\text{eff}}) & \text{if method = "target"} \\
+\max(0, S_{\text{current}} - S_{\text{eff}}) & \text{if method = "app"}
+\end{cases}$$
+
+**Minimum intake constraint:** If $S_{\text{current}} - S_{\text{target}} < 2$ grams/day, the model enforces a minimum intake floor: $S_{\text{target}} = S_{\text{current}} - 2$.
+
+## Time-Varying Sodium Reduction
+
+Linear scale-up of sodium reduction:
+
+$$S_{\text{reduction}}(t) = \begin{cases}
+0 & \text{if } t < T_{\text{salt,start}} \\
+S_{\text{target}} \times \frac{t - T_{\text{salt,start}} + 1}{T_{\text{salt,end}} - T_{\text{salt,start}} + 1} & \text{if } T_{\text{salt,start}} \leq t \leq T_{\text{salt,end}} \\
+S_{\text{target}} & \text{if } t > T_{\text{salt,end}}
+\end{cases}$$
+
+## Dose-Response: SBP Reduction
+
+Blood pressure reduction from sodium intake reduction:
+
+$$\Delta SBP(a, s, t) = [2.8 \times \phi_{\text{hyp}}(a,s) + 1.0 \times (1 - \phi_{\text{hyp}}(a,s))] \times S_{\text{reduction}}(t)$$
+
+where:
+
+* 2.8 mmHg reduction per gram for hypertensive individuals
+* 1.0 mmHg reduction per gram for normotensive individuals
+
+## Trial Effect Size for Sodium-Mediated BP Reduction
+
+The sodium-mediated effect on incidence uses Ettehad relative risks:
+
+$$E_{\text{sodium}}(\text{BP}_{\text{cat}}, c, a, s, t) = (1 - RR_{\text{trial},c,\text{BP}_{\text{cat}}}) \times 0.1 \times \Delta SBP(a, s, t)$$
+
+This represents the proportional reduction in disease risk for each mmHg of BP reduction (scaled by 0.1 for per-mmHg effect).
+
+## Modified Incidence
+
+Sodium reduction affects disease burden exclusively through reductions in incidence, mediated by blood pressure lowering. At the BP-bin level, sodium-induced blood pressure changes generate an intermediate proportional reduction in incidence, denoted $E^{IR}_{\text{sodium}}(a,s,c,t,\text{BP}_{\text{cat}})$.
+
+$$IR_{\text{bin,sodium}}(\text{BP}_{\text{cat}}, a, s, c, t) = IR_{\text{bin}}(\text{BP}_{\text{cat}}, a, s, c, t) \times \left[1 - E^{IR}_{\text{sodium}}(a,s,c,t,\text{BP}_{\text{cat}})\right]$$
+
+$$IR_{\text{new}}(a, s, c, t) = \sum_{\text{BP}_{\text{cat}}} IR_{\text{bin,sodium}}(\text{BP}_{\text{cat}}, a, s, c, t) \times P(\text{BP}_{\text{cat}})$$
+
+## Case Fatality
+
+Sodium reduction has no direct secondary effect on case fatality in this model:
+
+$$CF_{\text{new}} = CF_{\text{original}}, \quad \varepsilon_{CF} = 1$$
+
+Accordingly, the sodium intervention generates no case-fatality effect ratio and modifies mortality exclusively through reductions in disease incidence.
+
+## Effect Ratios
+
+The sodium reduction intervention is summarized by a single multiplicative incidence effect ratio, which is the sole quantity passed to the state transition model:
+
+**Incidence Effect Ratio**
+
+$$\varepsilon_{IR,\text{sodium}}(a, s, c, t) = \frac{IR_{\text{new}}(a, s, c, t)}{IR_{\text{original}}(a, s, c, t)}$$
+
+This ratio captures the reduction in disease incidence achieved through sodium-mediated blood pressure lowering. Values less than 1 indicate incidence reduction.
+
+**Case Fatality Effect Ratio**
+
+$$\varepsilon_{CF,\text{sodium}}(a, s, c, t) = 1 \quad \text{(no direct effect)}$$
+
+Sodium intervention has no modeled secondary effect on case fatality, only on incidence through BP reduction.
+
+# Trans Fat (TFA) Policy Intervention Model
+
+The TFA policy intervention models the impact of reducing industrial trans fatty acid intake on ischemic heart disease mortality.
+
+## Overview
+
+TFA policy operates through:
+
+* Age-specific relative risks per 1% of energy from trans fats
+* Instantaneous policy implementation (no gradual scale-up)
+* Effect only on **case fatality** of IHD (no effect on incidence)
+* Based on GBD risk factor attribution
+
+## Input Parameters
+
+* $TFA_{\text{current}}(t)$: Current trans fat intake (% of total energy)
+* $TFA_{\text{target}}$: Target trans fat intake (typically 0)
+* $T_{\text{TFA,start}}$: Policy start year (default: 2027)
+
+## TFA Exposure Reduction
+
+$$\Delta TFA(t) = \begin{cases}
+0 & \text{if } t < T_{\text{TFA,start}} \\
+\max(TFA_{\text{current}}(t) - TFA_{\text{target}}, 0) & \text{if } t \geq T_{\text{TFA,start}}
+\end{cases}$$
+
+## Age-Specific Relative Risks
+
+Relative risk per 1% of energy from trans fats (from Wang et. al 2016):
+
+| Age Group | RR per 1% |
+|-----------|-----------|
+| 20-24 | 1.21 |
+| 25-29 | 1.20 |
+| 30-34 | 1.19 |
+| 35-39 | 1.18 |
+| 40-44 | 1.17 |
+| 45-49 | 1.16 |
+| 50-54 | 1.15 |
+| 55-59 | 1.14 |
+| 60-64 | 1.13 |
+| 65-69 | 1.11 |
+| 70-74 | 1.10 |
+| 75-79 | 1.09 |
+| 80+ | 1.07 |
+
+Table: Age-specific relative risks for trans fat intake
+
+## Effect Size Calculation
+
+$$E_{\text{TFA}}(a, t) = \frac{\Delta TFA(t) \times (RR_{\text{TFA},a} - 1)}{TFA_{\text{current}}(t) \times (RR_{\text{TFA},a} - 1) + 1}$$
+
+This formula ensures:
+
+* Effect size remains in [0, 1]
+* Consistent scaling across heterogeneous baseline exposures
+* Proper accounting for current exposure levels
+
+## Case Fatality Reduction
+
+$$CF_{\text{new}}(a, s, c, t) = \begin{cases}
+CF_{\text{original}}(a, s, c, t) \times [1 - E_{\text{TFA}}(a, t)] & \text{if } c = \text{ihd} \\
+CF_{\text{original}}(a, s, c, t) & \text{otherwise}
+\end{cases}$$
+
+**Critical restriction:** TFA policy affects **only IHD case fatality**, with no measured effects on: disease incidence (IR), Other cardiovascular causes (stroke, HHD), and Non-CVD outcomes.
+
+## Effect Ratios
+
+The trans fat policy intervention enters the state transition model exclusively through multiplicative effect ratios. No incidence effect is modeled, while case fatality reductions apply only to ischemic heart disease.
+
+$$\varepsilon_{IR,\text{TFA}}(a, s, c, t) = 1 \qquad \text{(no incidence effect)}$$
+
+$$\varepsilon_{CF,\text{TFA}}(a, s, c, t) = \begin{cases}
+1 - E^{CF}_{\text{TFA}}(a, t) & \text{if } c = \text{ihd} \\
+1 & \text{otherwise}
+\end{cases}$$
+
+# Statin Therapy Intervention Model
+
+The statin intervention models the impact of scaling up statin therapy among adults, with effects applied to IHD) and ischemic stroke for ages $\geq 40$ years. The implementation: (i) scales up *incremental* coverage above baseline (to avoid double-counting), (ii) applies *attributable fractions (AF)* only for incidence (primary prevention mechanism), and (iii) applies *trial-based relative risks directly* for case fatality (secondary prevention mechanism), with ischemic stroke case-fatality effects restricted to the atherosclerotic fraction.
+
+## Overview
+
+Statin therapy operates through:
+
+* Linear scale-up of statin coverage from a baseline coverage at $T_{\text{stat,start}}$ to a target coverage by $T_{\text{stat,end}}$
+* Effects on both incidence ($IR$) and case fatality ($CF$) for IHD and ischemic stroke
+* Restriction to adults aged $\geq 40$ years
+* Incidence effects scaled by cause- and location-specific attributable fractions ($AF_{c,\ell}$)
+* Case fatality effects *do not* use attributable fractions; ischemic stroke CF effects are further scaled by the atherosclerotic proportion
+
+## Input Parameters
+
+* $U_{0,\ell}$: Baseline statin coverage at start year (coverage already in place)
+* $U_{\text{target}}$: Target total statin coverage by $T_{\text{stat,end}}$
+* $T_{\text{stat,start}}$: Scale-up start year (default: 2026)
+* $T_{\text{stat,end}}$: Target achievement year (default: 2050)
+* $\Delta U(t,\ell)$: Incremental statin coverage above baseline at time $t$
+* $\alpha_{IR}$: Adherence for incidence effects (primary prevention adherence; default: 1)
+* $\alpha_{CF}$: Adherence for case fatality effects (secondary prevention adherence; default: 1)
+* $AF_{c,\ell}$: Attributable fraction for incidence effects (cause $c$, location $\ell$)
+* $\psi_{\text{athero}}$: Proportion of ischemic stroke that is atherosclerotic (default: 0.60)
+
+## Trial-Based Relative Risks
+
+Per $\approx$1 mmol/L LDL-C reduction (major statin trial evidence), the model uses:
+
+| Outcome | RR (Incidence) | RR (Case Fatality) |
+|---------|----------------|---------------------|
+| IHD | 0.74 | 0.80 |
+| Ischemic stroke | 0.80 | 0.96 |
+
+Table: Statin relative risks used in the model
+
+Define the corresponding *risk reductions*:
+
+$$\delta^{IR}_{c} = 1 - RR^{IR}_{c}, \qquad \delta^{CF}_{c} = 1 - RR^{CF}_{c}.$$
+
+## Coverage Scale-Up Above Baseline
+
+Let $U_{0,\ell}\in[0,1]$ denote baseline statin coverage at $T_{\text{stat,start}}$ (either user-specified or inferred from data). Let the target total coverage be $U_{\text{target}}\in[0,1]$. The *incremental target* is:
+
+$$\Delta U_{\text{target},\ell} = \max(U_{\text{target}} - U_{0,\ell},\,0).$$
+
+A linear scale-up for incremental coverage is applied:
+
+$$\Delta U(t,\ell) = \Delta U_{\text{target},\ell}\; \min\!\left[ \frac{t - T_{\text{stat,start}} + 1}{T_{\text{stat,end}} - T_{\text{stat,start}} + 1},\; 1 \right],$$
+
+with boundary conditions:
+
+$$\Delta U(t,\ell)=0 \;\text{for}\; t < T_{\text{stat,start}}, \qquad \Delta U(t,\ell)=\Delta U_{\text{target},\ell}\;\text{for}\; t > T_{\text{stat,end}}.$$
+
+## Effect Sizes for Incidence
+
+Incidence effects are modeled as an attributable-fraction-scaled risk reduction among the newly covered population, with a baseline-coverage adjustment in the denominator to avoid double-counting.
+
+For $c\in\{\text{ihd},\text{istroke}\}$:
+
+$$E^{IR}_{c,\ell}(t) = \frac{ AF_{c,\ell}\;\delta^{IR}_{c}\;\Delta U(t,\ell)\;\alpha_{IR} }{ 1 - \delta^{IR}_{c}\;U_{0,\ell}\;\alpha_{IR} }.$$
+
+## Effect Sizes for Case Fatality
+
+Case fatality effects are modeled directly from trial-based risk reductions for those newly covered, without AF. For ischemic stroke, only the atherosclerotic fraction contributes to statin-responsive mortality.
+
+$$E^{CF}_{c,\ell}(t) = \begin{cases}
+\dfrac{ \delta^{CF}_{\text{ihd}}\;\Delta U(t,\ell)\;\alpha_{CF} }{ 1 - \delta^{CF}_{\text{ihd}}\;U_{0,\ell}\;\alpha_{CF} }, & c=\text{ihd}, \\[1.25em]
+\dfrac{ \psi_{\text{athero}}\;\delta^{CF}_{\text{istroke}}\;\Delta U(t,\ell)\;\alpha_{CF} }{ 1 - \delta^{CF}_{\text{istroke}}\;U_{0,\ell}\;\alpha_{CF} }, & c=\text{istroke}.
+\end{cases}$$
+
+## Apply to Rates (Age $\geq 40$ Only)
+
+For ages $a \geq 40$ and $c\in\{\text{ihd},\text{istroke}\}$:
+
+$$IR_{\text{new}}(a,s,c,t) = IR(a,s,c,t)\,[1 - E^{IR}_{c,\ell}(t)],$$
+
+$$CF_{\text{new}}(a,s,c,t) = CF(a,s,c,t)\,[1 - E^{CF}_{c,\ell}(t)].$$
+
+For ages $a < 40$ or causes $c\notin\{\text{ihd},\text{istroke}\}$:
+
+$$IR_{\text{new}} = IR, \qquad CF_{\text{new}} = CF.$$
+
+## Effect Ratios
+
+The statin intervention enters the state transition model exclusively through multiplicative effect ratios for incidence and case fatality:
+
+$$\varepsilon_{IR,\text{statin}}(a,s,c,t) = \frac{IR_{\text{new}}(a,s,c,t)}{IR_{\text{original}}(a,s,c,t)} = \begin{cases}
+1 - E^{IR}_{c,\ell}(t), & a \geq 40,\; c \in \{\text{ihd}, \text{istroke}\} \\
+1, & \text{otherwise}
+\end{cases}$$
+
+$$\varepsilon_{CF,\text{statin}}(a,s,c,t) = \frac{CF_{\text{new}}(a,s,c,t)}{CF_{\text{original}}(a,s,c,t)} = \begin{cases}
+1 - E^{CF}_{c,\ell}(t), & a \geq 40,\; c \in \{\text{ihd}, \text{istroke}\} \\
+1, & \text{otherwise}
+\end{cases}$$
+
+# Multi-State Transition Model
+
+All intervention effects feed into a discrete-time, age-structured, multi-state transition model that projects disease burden over time.
+
+## Model Structure
+
+The population is divided into three mutually exclusive states:
+
+* **Well** ($W_{a,s,c,t}$): Disease-free individuals
+* **Sick** ($K_{a,s,c,t}$): Individuals living with disease $c$
+* **Dead** ($D_{a,s,c,t}$): Disease-specific deaths
+
+## Transition Probabilities
+
+The model uses annual transition rates modified by intervention effects:
+
+| Transition | Rate |
+|------------|------|
+| Well → Sick | $IR_{\text{new}}(a,s,c,t) = IR(a,s,c,t) \times \varepsilon_{IR}$ |
+| Sick → Dead (disease) | $CF_{\text{new}}(a,s,c,t) = CF(a,s,c,t) \times \varepsilon_{CF}$ |
+| Well → Dead (background) | $BG.mx(a,s,c,t)$ |
+| Sick → Dead (background) | $BG.mx(a,s,c,t)$ |
+| All → Dead (COVID-19) | $covid.mx(a,s,t)$ (2020-2021 only) |
+
+Table: Annual transition rates in the multi-state model
+
+## State Transitions
+
+For each year $t$ and age $a$, the model updates states in annual time as follows:
+
+### New Cases
+
+$$\text{NewCases}_{a,s,c,t} = W_{a-1,s,c,t-1} \times IR_{\text{new}}(a-1,s,c,t-1)$$
+
+### Sick Population
+
+$$K_{a,s,c,t} = K_{a-1,s,c,t-1} \times [1 - CF_{\text{new}} - BG.mx - covid.mx] + W_{a-1,s,c,t-1} \times IR_{\text{new}}$$
+
+### Disease Deaths
+
+$$D_{a,s,c,t} = K_{a-1,s,c,t-1} \times CF_{\text{new}}(a-1,s,c,t-1)$$
+
+### Total Population
+
+$$N_{a,s,c,t} = N_{a-1,s,c,t-1} - \text{ALL.mx}_{a-1,s,c,t-1}$$
+
+where:
+
+$$\text{ALL.mx}_{a,s,c,t} = \sum_c D_{a,s,c,t} + N_{a,s,c,t} \times BG.mx.all(a,s,t) + N_{a,s,c,t} \times covid.mx(a,s,t)$$
+
+### Well Population
+
+$$W_{a,s,c,t} = N_{a,s,c,t} - \text{ALL.mx}_{a,s,c,t} - K_{a,s,c,t}$$
+
+## Initial Conditions (Year 2019, Age 20)
+
+$$K_{20,s,c,2019} = N_{20,s,c,2019} \times \text{PREV}_{20,s,c,2019}$$
+
+$$D_{20,s,c,2019} = N_{20,s,c,2019} \times \text{DIS.mx}_{20,s,c,2019}$$
+
+$$W_{20,s,c,2019} = N_{20,s,c,2019} \times [1 - \text{PREV}_{20,s,c,2019} - BG.mx_{20,s,c,2019}]$$
+
+## Age and Time Structure
+
+* Ages: 20 to 95 years (single-year ages)
+* Time: 2019 to 2050 (annual time steps, 31 years)
+* Age advancement: Each year, individuals age by 1 year
+* New cohorts: Enter at age 20 each year
+
+## Intervention Combination
+
+When multiple interventions are applied simultaneously, effect ratios combine multiplicatively:
+
+$$\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{salt}} \times \varepsilon_{IR,\text{TFA}} \times \varepsilon_{IR,\text{statin}}$$
+
+$$\varepsilon_{CF,\text{total}} = \varepsilon_{CF,\text{BP}} \times \varepsilon_{CF,\text{salt}} \times \varepsilon_{CF,\text{TFA}} \times \varepsilon_{CF,\text{statin}}$$
+
+**BP-related interventions:** Antihypertensive therapy and sodium reduction are combined first (multiplicatively) as both operate through BP mechanisms, then combined with TFA and statins.
+
+## Model Outputs
+
+The model generates annual projections of:
+
+* Disease incidence (new cases)
+* Disease prevalence (sick population)
+* Disease-specific mortality (deaths)
+* Cumulative deaths averted (vs. baseline scenario)
+* Life-years gained
+* Population size by health state
+
+## Boundary Conditions
+
+To ensure numerical stability:
+
+* $CF \leq 0.99$ (capped to prevent division issues)
+* $IR \leq 0.99$ (capped to prevent invalid probabilities)
+* All state populations $\geq 0$ (negative values set to zero)
+* COVID-19 mortality: $covid.mx \leq 0.9$ (capped)
+
+# Mathematical Notation Summary
+
+| Symbol | Description |
+|--------|-------------|
+| *Core Variables* | |
+| $a, s, c, t, \ell$ | Age, sex, cause, time (year), location |
+| $\text{BP}_{\text{cat}}$ | Blood pressure category |
+| $IR_{\text{original}}, CF_{\text{original}}$ | Baseline -Business as usual- incidence rate and case fatality rate (inputs to the transition model) |
+| $IR_{\text{new}}, CF_{\text{new}}$ | Post-intervention incidence rate and case fatality rate |
+| $W, K, D$ | Well, sick, dead populations |
+| $N$ | Total population |
+| *Antihypertensive Therapy (BP Control)* | |
+| $C_{\text{baseline}}, C_{\text{target}}$ | Baseline and target hypertension control rates |
+| $C_0, C_t$ | Baseline coverage and coverage at time $t$ |
+| $\Delta C_{\text{target}}$ | Total required incremental change to reach target |
+| $\Delta C_{\text{increment}}$ | Time-varying annual incremental coverage (scale-up path) |
+| $\Delta C_{\text{delta}}$ | Coverage delta at time $t$ ($C_t - C_0$) |
+| $C_{\text{agg}}^{\Delta}$ | Aggregate incremental coverage for modifying CF |
+| $P(\text{BP}_{\text{cat}})$ | Distribution of population across BP categories |
+| $w_{\text{DM}}$ | Diabetes prevalence weight applied to Ettehad effects |
+| $E_{\text{trial}}$ | Ettehad effect size per 10 mmHg SBP reduction |
+| $RR_{\text{GBD}}$ | GBD relative risk per 10 mmHg SBP increase |
+| $\alpha_{\text{inc}}$ | Incidence normalization factor to anchor baseline IR |
+| $\rho_{CF}$ | Case-fatality reduction factor per unit coverage gained |
+| $\varepsilon_{IR,\text{BP}}, \varepsilon_{CF,\text{BP}}$ | BP-control effect ratios applied to $IR_{\text{original}}$ and $CF_{\text{original}}$ |
+| $T_{\text{start}}, T_{\text{end}}$ | Scale-up start and end years |
+| $\Delta SBP_{\text{treated}}$ | Expected SBP reduction among newly controlled hypertensives |
+| $f_{\text{scale}}(t)$ | Generic scale-up function mapping $t$ to $C_t$ |
+| *Sodium Reduction* | |
+| $S_{\text{current}}, S_{\text{target}}$ | Current and target sodium intake (g/day) |
+| $S_{\text{eff}}$ | Sodium reduction parameter |
+| $S_{\text{reduction}}$ | Time-varying sodium reduction |
+| $\Delta SBP$ | Blood pressure reduction from sodium |
+| $\phi_{\text{hyp}}$ | Proportion with raised BP |
+| $T_{\text{salt,start}}, T_{\text{salt,end}}$ | Sodium intervention start and end years |
+| $E^{IR}_{\text{sodium}}$ | Sodium-mediated intermediate proportional reduction in incidence (BP-bin specific, if indexed) |
+| $\varepsilon_{IR,\text{sodium}}$ | Sodium incidence effect ratio passed to the transition model |
+| $\varepsilon_{CF,\text{sodium}}$ | Sodium case-fatality effect ratio (set to 1 in this model) |
+| *Trans Fat Policy* | |
+| $TFA_{\text{current}}, TFA_{\text{target}}$ | Current and target trans fat intake (% energy) |
+| $\Delta TFA$ | Trans fat reduction |
+| $RR_{\text{TFA}}$ | Age-specific RR per 1% trans fat |
+| $E_{\text{TFA}}$ | TFA intermediate proportional reduction in IHD case fatality |
+| $T_{\text{TFA,start}}$ | TFA policy start year |
+| $\varepsilon_{IR,\text{TFA}}$ | TFA incidence effect ratio (set to 1 in this model) |
+| $\varepsilon_{CF,\text{TFA}}$ | TFA case-fatality effect ratio (IHD only; 1 otherwise) |
+| *Statin Therapy* | |
+| $U_{0,\ell}$ | Baseline statin coverage at $T_{\text{stat,start}}$ (coverage already in place) |
+| $U_{\text{target}}$ | Target total statin coverage by $T_{\text{stat,end}}$ |
+| $\Delta U(t,\ell)$ | Incremental statin coverage above baseline at time $t$ |
+| $T_{\text{stat,start}}, T_{\text{stat,end}}$ | Statin scale-up start and end years |
+| $\alpha_{IR}, \alpha_{CF}$ | Adherence for incidence (primary) and case fatality (secondary) effects |
+| $AF_{c,\ell}$ | Cause- and location-specific attributable fraction (used for incidence only) |
+| $\psi_{\text{athero}}$ | Proportion of ischemic stroke that is atherosclerotic (applies to CF only) |
+| $RR^{IR}_{c}, RR^{CF}_{c}$ | Trial-based relative risks for incidence and case fatality |
+| $\delta^{IR}_{c}, \delta^{CF}_{c}$ | Risk reductions $=1-RR$ for incidence and case fatality |
+| $E^{IR}_{c,\ell}(t), E^{CF}_{c,\ell}(t)$ | Incremental effect sizes applied to $IR$ and $CF$ (baseline-adjusted denominators) |
+| $\varepsilon_{IR,\text{statin}}, \varepsilon_{CF,\text{statin}}$ | Statin effect ratios passed to the transition model |
+| *Combined Effects* | |
+| $\varepsilon_{IR,j}, \varepsilon_{CF,j}$ | Generic effect ratios for intervention $j\in\{\text{BP},\text{sodium},\text{TFA},\text{statin}\}$ |
+| $\varepsilon_{IR,\text{total}}, \varepsilon_{CF,\text{total}}$ | Combined effect ratios (multiplicative across interventions) |
+| *State Transition Model* | |
+| $BG.mx, BG.mx.all$ | Background mortality (cause-specific, all-cause) |
+| $covid.mx$ | COVID-19 mortality (2020--2021) |
+| $\text{PREV}$ | Baseline disease prevalence |
+| $\text{DIS.mx}$ | Baseline disease mortality |
+| $\text{ALL.mx}$ | All-cause mortality |
+
+Table: Comprehensive mathematical notation for all model components

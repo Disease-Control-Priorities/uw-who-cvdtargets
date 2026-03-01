@@ -1,0 +1,144 @@
+% ============================================================
+%  beamer_preamble.tex  (DEFAULT Beamer look + colored boxes)
+%  - Keeps your font choices (Calibri) and scenario palette
+%  - Restores default Beamer colors (no UW purple background, no white titles)
+%  - Keeps colored blocks + scenario highlight macro + colored bullets
+% ============================================================
+
+% ── Beamer theme (keep default look) ─────────────────────────────────────────
+\usetheme{default}
+\usecolortheme{default}
+\usefonttheme{professionalfonts}
+
+% ── XeLaTeX fonts (requires xelatex engine) ─────────────────────────────────
+\usepackage{fontspec}
+\setmainfont{Calibri}[
+  BoldFont       = Calibri Bold,
+  ItalicFont     = Calibri Italic,
+  BoldItalicFont = Calibri Bold Italic
+]
+\setsansfont{Calibri}
+\setmonofont{Courier New}
+
+% ── Packages ────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{soul}          % for \hl highlighting
+\usepackage{colortbl}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{ragged2e}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+% ── Project colour palette (definitions only) ───────────────────────────────
+% Keep UW colors defined (useful for occasional accents), but we do NOT apply
+% them globally to titles/backgrounds.
+\definecolor{uwpurple}{HTML}{4B2E83}      % UW brand purple (defined, not global)
+\definecolor{uwgold}{HTML}{85754D}        % UW brand gold  (defined, not global)
+
+% Scenario / figure colors
+\definecolor{ambitiousblue}{HTML}{2171B5} % headline scenario
+\definecolor{progressgreen}{HTML}{74C476}
+\definecolor{aspirationalpurple}{HTML}{6A3D9A}
+\definecolor{baugrey}{HTML}{999999}
+\definecolor{highlightblue}{HTML}{DBEAFE} % table row highlight
+
+% ── HARD RESET: ensure default Beamer colors (no purple canvas / white titles)
+% These lines intentionally avoid overriding Beamer's defaults.
+% Reset structure color to default black
+\setbeamercolor{structure}{fg=black}
+
+% Ensure title elements are black
+\setbeamercolor{title}{fg=black}
+\setbeamercolor{subtitle}{fg=black}
+\setbeamercolor{author}{fg=black}
+\setbeamercolor{date}{fg=black}
+\setbeamercolor{institute}{fg=black}
+\setbeamercolor{frametitle}{fg=black}
+\setbeamercolor{normal text}{fg=black}
+
+% IMPORTANT: do NOT set a custom background template (keeps default)
+% \setbeamertemplate{background}{...}     % intentionally NOT used
+
+% IMPORTANT: do NOT override the frametitle template (keeps default)
+% \setbeamertemplate{frametitle}{...}     % intentionally NOT used
+
+% ── Colored blocks (boxes) ──────────────────────────────────────────────────
+% Default "block" = neutral/BAU-style
+\setbeamercolor{block title}{bg=baugrey!15, fg=black}
+\setbeamercolor{block body}{bg=baugrey!6}
+
+% Alert blocks = red
+\setbeamercolor{block title alerted}{bg=red!15, fg=red!70!black}
+\setbeamercolor{block body alerted}{bg=red!6}
+
+% Example blocks = ambitious blue
+\setbeamercolor{block title example}{bg=ambitiousblue!15, fg=ambitiousblue!85!black}
+\setbeamercolor{block body example}{bg=ambitiousblue!6}
+
+% Optional: custom block environments for Progress / Aspirational
+\newenvironment{progressblock}[1]{%
+  \setbeamercolor{block title}{bg=progressgreen!18, fg=progressgreen!80!black}%
+  \setbeamercolor{block body}{bg=progressgreen!6}%
+  \begin{block}{#1}%
+}{\end{block}}
+
+\newenvironment{aspirationalblock}[1]{%
+  \setbeamercolor{block title}{bg=aspirationalpurple!15, fg=aspirationalpurple!80!black}%
+  \setbeamercolor{block body}{bg=aspirationalpurple!5}%
+  \begin{block}{#1}%
+}{\end{block}}
+
+\newenvironment{baublock}[1]{%
+  \setbeamercolor{block title}{bg=baugrey!18, fg=black}%
+  \setbeamercolor{block body}{bg=baugrey!6}%
+  \begin{block}{#1}%
+}{\end{block}}
+
+% ── Bullet style (accent without changing global theme) ─────────────────────
+\setbeamertemplate{itemize item}{\textcolor{ambitiousblue}{\textbullet}}
+\setbeamertemplate{itemize subitem}{\textcolor{ambitiousblue}{--}}
+\setbeamertemplate{enumerate item}{\textcolor{ambitiousblue}{\insertenumlabel.}}
+
+% ── Headline scenario highlight command ─────────────────────────────────────
+% \hlambitious{text} -- blue-boxed highlight for the Ambitious scenario
+\newcommand{\hlambitious}[1]{%
+  \colorbox{ambitiousblue!20}{\textcolor{ambitiousblue}{\textbf{#1}}}%
+}
+
+% ── Optional: keep a clean footer (NOT purple background) ───────────────────
+% Comment out this entire block if you want Beamer's default footer.
+\setbeamertemplate{footline}{%
+  \leavevmode
+  \hbox{%
+    \begin{beamercolorbox}[wd=0.45\paperwidth, ht=2.25ex, dp=1ex, left]{author in head/foot}%
+      \hspace{1em}\usebeamerfont{author in head/foot}%
+      \textcolor{black!60}{\footnotesize UW -- WHO CVD Targets 2030}%
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=0.45\paperwidth, ht=2.25ex, dp=1ex, center]{title in head/foot}%
+      \usebeamerfont{title in head/foot}%
+      \textcolor{black!60}{\footnotesize Aim 2: HTN Control Scenarios}%
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=0.10\paperwidth, ht=2.25ex, dp=1ex, right]{date in head/foot}%
+      \usebeamerfont{date in head/foot}%
+      \textcolor{black!60}{\footnotesize \insertframenumber{}/\inserttotalframenumber}%
+      \hspace{0.5em}%
+    \end{beamercolorbox}%
+  }%
+  \vskip0pt%
+}
+\setbeamertemplate{navigation symbols}{}
+
+% ── Section slide (auto-generated by # headers) ─────────────────────────────
+% Keeps default look (no purple canvas); uses a subtle neutral box.
+\AtBeginSection[]{%
+  \begin{frame}
+    \vfill
+    \centering
+    \begin{beamercolorbox}[sep=8pt, center, shadow=false, rounded=true]{block title}
+      \usebeamerfont{title}\insertsectionhead\par
+    \end{beamercolorbox}
+    \vfill
+  \end{frame}
+}

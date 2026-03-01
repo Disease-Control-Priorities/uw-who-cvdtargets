@@ -1,0 +1,1472 @@
+---
+title: "Projected Health Outcomes of Hypertension Control Under Alternative WHO Targets: A Modelling Study"
+date: "`r Sys.Date()`"
+author: "University of Washington"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: hide
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(
+  echo    = TRUE,
+  error   = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.height = 5,
+  fig.width  = 9,
+  fig.align  = "center"
+)
+```
+
+```{r libraries, message=FALSE, warning=FALSE, echo=FALSE}
+library(data.table)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(DT)
+library(scales)
+library(openxlsx)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+```
+
+```{r paths, message=FALSE, warning=FALSE, echo=FALSE}
+wd       <- "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/"
+wd_data  <- paste0(wd, "data/processed/")
+wd_outp  <- paste0(wd, "output/")
+wd_scen  <- paste0(wd, "scenarios/scenarios_aim2/")
+```
+
+```{r helpers, message=FALSE, warning=FALSE, echo=FALSE}
+fmt_ci <- function(est, lo, hi, digits = 1) {
+  f <- function(x) formatC(round(x / 1e6, digits), format = "f",
+                            digits = digits, big.mark = ",")
+  paste0(f(est), " (", f(lo), "\u2013", f(hi), ")")
+}
+
+fmt_m <- function(x, digits = 1)
+  formatC(round(x / 1e6, digits), format = "f", digits = digits, big.mark = ",")
+
+fmt_k <- function(x, digits = 0)
+  formatC(round(x / 1e3, digits), format = "f", digits = digits, big.mark = ",")
+
+# ── Cause labels ──────────────────────────────────────────────────────────────
+cause_map_full <- c(
+  ihd     = "Ischemic heart disease",
+  istroke = "Ischemic stroke",
+  hstroke = "Intracerebral hemorrhage",
+  hhd     = "Hypertensive heart disease"
+)
+
+cause_cols <- c(
+  ihd     = "#56B4E9",
+  istroke = "#CC79A7",
+  hstroke = "#F0E442",
+  hhd     = "#E69F00"
+)
+
+cause_labels_plot <- c(
+  ihd     = "Ischemic heart disease",
+  istroke = "Ischemic stroke",
+  hstroke = "Intracerebral hemorrhage",
+  hhd     = "Hypertensive heart disease"
+)
+
+# ── HTN target scenario labels and ordering ───────────────────────────────────
+htn_target_cols  <- c("htncov2_progress", "htncov2_ambitious", "htncov2_aspirational")
+
+htn_labels <- c(
+  htncov2_progress      = "Progress",
+  htncov2_ambitious     = "Ambitious",
+  htncov2_aspirational  = "Aspirational"
+)
+
+htn_cols <- c(
+  "b.a.u"        = "#999999",
+  "Progress"     = "#74c476",
+  "Ambitious"    = "#2171b5",
+  "Aspirational" = "#6a3d9a"
+)
+
+# ── WHO standard population (ages 20–95+) for ASMR ───────────────────────────
+full_who_std <- data.table(
+  age    = 0:100,
+  weight = c(
+    rep(0.013, 10), rep(0.014, 10), rep(0.013, 10), rep(0.012, 10),
+    rep(0.011, 10), rep(0.009, 10), rep(0.007, 10), rep(0.005, 10),
+    rep(0.003, 10), rep(0.001, 10), 0.001
+  )
+)
+who_std <- full_who_std[age >= 20 & age <= 94]
+who_std <- rbind(
+  who_std,
+  data.table(age = 95, weight = full_who_std[age >= 95, sum(weight)])
+)
+who_std[, weight := weight / sum(weight)]
+
+calculate_asmr <- function(dt, std_pop = who_std,
+                            deaths_col     = "dead",
+                            population_col = "Nx",
+                            disagg_var     = "htn_scenario") {
+  dt <- copy(dt)
+  dt[, age := as.integer(gsub("\\+", "", age))]
+  dt <- merge(dt, std_pop, by = "age", all.x = TRUE)
+  dt[, rate          := get(deaths_col) / get(population_col)]
+  dt[, weighted_rate := rate * weight]
+  group_vars <- c("year", disagg_var)
+  dt[, .(ASMR = sum(weighted_rate, na.rm = TRUE) * 1e5), by = group_vars]
+}
+
+# ── deaths_summary helper ─────────────────────────────────────────────────────
+deaths_summary_htn <- function(dt,
+                               baseline_label = "b.a.u",
+                               by_cols = c("age_group", "sex", "year",
+                                           "location", "cause", "age"),
+                               value_col = "dead") {
+  stopifnot(is.data.table(dt))
+  baseline_cols <- setdiff(by_cols, "htn_scenario")
+
+  baseline <- dt[htn_scenario == baseline_label,
+                 .(baseline_deaths = sum(get(value_col), na.rm = TRUE)),
+                 by = baseline_cols]
+
+  nonbaseline <- dt[htn_scenario != baseline_label,
+                    .(deaths_projected = sum(get(value_col), na.rm = TRUE)),
+                    by = c(by_cols, "htn_scenario")]
+
+  merged <- merge(nonbaseline, baseline, by = baseline_cols,
+                  all.x = TRUE, allow.cartesian = TRUE)
+  merged[, deaths_delayed     := baseline_deaths - deaths_projected]
+  merged[, deaths_delayed_ave := deaths_delayed / 25]
+  merged[, deaths_delayed_pct := deaths_delayed / baseline_deaths]
+  merged[]
+}
+```
+
+```{r country-metadata, message=FALSE, warning=FALSE, echo=FALSE}
+countries_dt <- fread(paste0(wd_data, "Country_groupings_extended.csv"))
+```
+
+```{r load-model-output, message=FALSE, warning=FALSE, echo=FALSE}
+# ── Load all country-level model output RDS files ────────────────────────────
+# Files are named: model_output_{Country}_{htn_target_col}.rds
+# Each contains columns: scenario, htn_target_scenario, location, year, ...
+
+out_model_path <- paste0(wd_outp, "out_model/")
+
+files <- list.files(path = out_model_path, pattern = "\\.rds$", full.names = TRUE)
+
+if (length(files) == 0)
+  stop("No .rds files found in: ", out_model_path)
+
+dt_list <- lapply(files, function(f) {
+  dt <- readRDS(f)
+  setDT(dt)
+  dt
+})
+
+data.out <- rbindlist(dt_list, use.names = TRUE, fill = TRUE)
+data.out  <- data.out[!is.na(location)]
+
+# Drop unused tracking columns
+data.out[, c("eff_ir", "eff_cf") := NULL]
+
+# ── Build unified scenario column ─────────────────────────────────────────────
+# Files contain:
+#   scenario             = "baseline" | "bp_only"
+#   htn_target_scenario  = "htncov2_progress" | "htncov2_ambitious" | "htncov2_aspirational"
+#
+# Logic:
+#   baseline rows → htn_scenario = "b.a.u"  (regardless of target column)
+#   bp_only  rows → htn_scenario = human-readable target label
+
+data.out[scenario == "baseline",
+         htn_scenario := "b.a.u"]
+
+data.out[scenario == "bp_only",
+         htn_scenario := htn_labels[htn_target_scenario]]
+
+# Deduplicate baseline: multiple target files produce identical baseline rows
+data.out <- data.out[!(scenario == "baseline" &
+                         duplicated(data.out[scenario == "baseline",
+                                             .(location, year, age, sex, cause)]))]
+
+# Scenario ordering for plots/tables
+htn_order <- c("b.a.u", "Progress", "Ambitious", "Aspirational")
+data.out[, htn_scenario := factor(htn_scenario, levels = htn_order)]
+
+# ── Age groups ────────────────────────────────────────────────────────────────
+data.out[, age_group := cut(
+  age,
+  breaks         = c(0, 70, 80, 90, Inf),
+  labels         = c("<70", "70-79", "80-89", "90+"),
+  right          = FALSE,
+  include.lowest = TRUE
+)]
+
+# ── Merge region metadata ─────────────────────────────────────────────────────
+if (nrow(countries_dt) > 0) {
+  data.out <- merge(data.out, countries_dt[, .(location, region)],
+                    by = "location", all.x = TRUE)
+} else {
+  data.out[, region := NA_character_]
+}
+if (!"region" %in% names(data.out)) data.out[, region := NA_character_]
+
+# ── Summary counts ────────────────────────────────────────────────────────────
+n_countries <- uniqueN(data.out$location)
+study_years <- paste0(min(data.out$year[data.out$year >= 2025]),
+                      "\u2013", max(data.out$year))
+```
+
+---
+
+# Background
+
+This report presents modelled projections of cardiovascular disease (CVD) mortality under
+three alternative hypertension control target scenarios. The central research question is:
+
+> *What would be the projected health impact — in terms of deaths averted — of achieving
+> Progress, Ambitious, or Aspirational hypertension control targets by 2030, across
+> `r n_countries` countries from 2025 to 2050?*
+
+Four causes of CVD death are modelled jointly: ischemic heart disease (IHD), ischemic
+stroke, intracerebral hemorrhage, and hypertensive heart disease (HHD). A discrete-time
+multi-state transition model (Well → Sick → Dead) is calibrated to GBD 2023 data and
+projected forward to 2050 using UNWPP 2024 population estimates.
+
+---
+
+# HTN Control Target Scenarios
+
+The three scenarios differ in the level of hypertension control achieved by 2030:
+
+```{r scenario-description, echo=FALSE}
+desc <- data.table(
+  Scenario      = c("Progress", "Ambitious", "Aspirational"),
+  `Column`      = c("htncov2_progress", "htncov2_ambitious", "htncov2_aspirational"),
+  `Description` = c(
+    "Continuation of current trends in hypertension control",
+    "Accelerated scale-up toward WHO interim targets",
+    "Full achievement of WHO 2030 hypertension control targets"
+  )
+)
+kable(desc, align = "lll") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 13) |>
+  row_spec(0, bold = TRUE)
+```
+
+## HTN Control Scale-up by Scenario
+
+```{r policy-htn-scenarios, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=5}
+dt_hbp_targets <- tryCatch(
+  fread(paste0(wd_data, "htn_control_targets_by_loc.csv")),
+  error = function(e) NULL
+)
+
+if (!is.null(dt_hbp_targets)) {
+  dt_targets_long <- melt(
+    dt_hbp_targets,
+    id.vars       = "location",
+    measure.vars  = c("htncov2_progress", "htncov2_ambitious", "htncov2_aspirational"),
+    variable.name = "target_col",
+    value.name    = "target_value"
+  )
+  dt_targets_long[, scenario_lbl := htn_labels[target_col]]
+  dt_targets_long[, scenario_lbl := factor(scenario_lbl,
+                                           levels = c("Progress","Ambitious","Aspirational"))]
+
+  g <- ggplot(dt_targets_long,
+              aes(x = scenario_lbl, y = target_value * 100,
+                  fill = scenario_lbl)) +
+    geom_boxplot(alpha = 0.7, outlier.size = 1) +
+    scale_fill_manual(values = htn_cols[c("Progress","Ambitious","Aspirational")],
+                      guide  = "none") +
+    scale_y_continuous(limits = c(0, 100), expand = c(0, 0)) +
+    labs(
+      title = "Distribution of Country-Level HTN Control Targets by 2030",
+      x     = "Scenario",
+      y     = "HTN Control Rate (%)"
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(plot.title = element_text(face = "bold"),
+          panel.grid.minor = element_blank())
+  print(g)
+  ggsave(paste0(wd_outp, "aim2_policy_htn_targets.png"), plot = g,
+         width = 8, height = 5, dpi = 300)
+} else {
+  message("htn_control_targets_by_loc.csv not found – skipping target distribution plot.")
+}
+```
+
+---
+
+# Disease Trends (Baseline)
+
+## Incidence and Prevalence Over Time
+
+```{r disease-trends, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+dt_trend <- data.out[htn_scenario == "b.a.u" & year >= 2019,
+                     .(new_cases = sum(newcases, na.rm = TRUE),
+                       sick      = sum(sick,     na.rm = TRUE),
+                       pop       = sum(pop,      na.rm = TRUE)),
+                     by = year]
+
+dt_melt <- melt(dt_trend, id.vars = "year",
+                measure.vars  = c("new_cases", "sick"),
+                variable.name = "metric",
+                value.name    = "count")
+dt_melt[, metric_lbl := fifelse(metric == "new_cases",
+                                "Incident cases", "Prevalent cases")]
+
+g <- ggplot(dt_melt, aes(x = year, y = count / 1e6,
+                          color    = metric_lbl,
+                          linetype = year > 2019)) +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = c("Incident cases"  = "steelblue",
+                                "Prevalent cases" = "tomato"),
+                     name = NULL) +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"),
+                        guide  = "none") +
+  scale_y_continuous(labels = comma) +
+  labs(title    = "Global Incident and Prevalent CVD Cases — Business-as-Usual",
+       subtitle = "All four causes combined; solid = observed, dashed = projected",
+       x        = "Year",
+       y        = "Persons (millions)",
+       caption  = "Source: Model output; ages 20–95+") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position  = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_disease_trend.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+## Age-Standardised Mortality Rate by Cause (Baseline)
+
+```{r asmr-cause, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=6}
+dt_asmr_in <- data.out[htn_scenario == "b.a.u" & year >= 2019,
+                        .(dead = sum(dead, na.rm = TRUE),
+                          well = sum(well, na.rm = TRUE),
+                          sick = sum(sick, na.rm = TRUE)),
+                        by = .(cause, age, year)]
+dt_asmr_in[, Nx := well + sick]
+
+asmr_cause <- calculate_asmr(dt_asmr_in,
+                              deaths_col     = "dead",
+                              population_col = "Nx",
+                              disagg_var     = "cause")
+
+asmr_base  <- asmr_cause[year == 2019, .(cause, ASMR_base = ASMR)]
+asmr_cause <- merge(asmr_cause, asmr_base, by = "cause")
+asmr_cause[, index := ASMR / ASMR_base * 100]
+asmr_cause[, cause_lbl := cause_labels_plot[cause]]
+
+g <- ggplot(asmr_cause, aes(x = year, y = index,
+                             color    = cause_lbl,
+                             linetype = year > 2019)) +
+  geom_line(linewidth = 1) +
+  geom_hline(yintercept = 100, linetype = "dotted", color = "grey50") +
+  scale_color_manual(values = setNames(cause_cols, cause_labels_plot),
+                     name   = "Cause of death") +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"),
+                        guide  = "none") +
+  labs(title    = "Age-Standardised CVD Mortality Rate Index — Business-as-Usual",
+       subtitle = "Index: 2019 = 100; solid = observed, dashed = projected",
+       x        = "Year",
+       y        = "ASMR Index (2019 = 100)",
+       caption  = "WHO World Standard Population (2000–2025), rescaled to ages 20–95+") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position  = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_asmr_cause.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+---
+
+# Projected Deaths Averted (2025–2050)
+
+```{r compute-deaths-averted, message=FALSE, warning=FALSE, echo=FALSE}
+# Intervention scenarios only (exclude b.a.u)
+htn_scenarios <- c("Progress", "Ambitious", "Aspirational")
+
+dt_base <- data.out[htn_scenario == "b.a.u" & year >= 2025,
+                    .(baseline_deaths = sum(dead, na.rm = TRUE)),
+                    by = .(age_group, sex, year, location, cause, age)]
+
+dt_nonbase <- data.out[htn_scenario %in% htn_scenarios & year >= 2025,
+                       .(dead = sum(dead, na.rm = TRUE)),
+                       by = .(age_group, sex, year, location, cause, age, htn_scenario)]
+
+dt_merged <- merge(dt_nonbase, dt_base,
+                   by  = c("age_group", "sex", "year", "location", "cause", "age"),
+                   all.x = TRUE)
+dt_merged[, deaths_delayed := baseline_deaths - dead]
+
+# ── Cumulative by scenario ────────────────────────────────────────────────────
+dt_cumul <- dt_merged[, .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+                       by = htn_scenario]
+dt_cumul[, htn_scenario := factor(htn_scenario, levels = htn_scenarios)]
+setorder(dt_cumul, htn_scenario)
+
+# ── Annual time series ────────────────────────────────────────────────────────
+dt_annual <- dt_merged[, .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+                        by = .(htn_scenario, year)]
+dt_annual[, htn_scenario := factor(htn_scenario, levels = htn_scenarios)]
+setorder(dt_annual, htn_scenario, year)
+dt_annual[, cum_deaths_delayed := cumsum(deaths_delayed), by = htn_scenario]
+
+# ── Inline totals ─────────────────────────────────────────────────────────────
+total_progress     <- dt_cumul[htn_scenario == "Progress",     deaths_delayed]
+total_ambitious    <- dt_cumul[htn_scenario == "Ambitious",    deaths_delayed]
+total_aspirational <- dt_cumul[htn_scenario == "Aspirational", deaths_delayed]
+```
+
+Between 2025 and 2050, achieving the **Aspirational** hypertension control target is
+projected to avert approximately **`r fmt_m(total_aspirational)` million deaths** globally,
+compared to **`r fmt_m(total_ambitious)` million** under the Ambitious scenario and
+**`r fmt_m(total_progress)` million** under the Progress scenario.
+
+## Table 1 — Cumulative Deaths Averted by HTN Target Scenario (2025–2050)
+
+```{r table1, message=FALSE, warning=FALSE, echo=FALSE}
+tab1 <- copy(dt_cumul)
+tab1[, deaths_M      := round(deaths_delayed / 1e6, 2)]
+tab1[, deaths_annual := round(deaths_delayed / 25 / 1e3, 1)]
+
+tab1_fmt <- tab1[, .(
+  `HTN Target Scenario`            = htn_scenario,
+  `Deaths averted (millions)`      = comma(deaths_M,      accuracy = 0.01),
+  `Average per year (thousands)`   = comma(deaths_annual, accuracy = 0.1)
+)]
+
+kable(tab1_fmt,
+      caption = "Table 1. Cumulative deaths averted (2025\u20132050) by HTN control target scenario.",
+      align   = "lrr") |>
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, font_size = 13) |>
+  column_spec(1, width = "7cm") |>
+  row_spec(0, bold = TRUE) |>
+  footnote(general = paste0(
+    "Deaths averted = deaths in business-as-usual scenario minus deaths under ",
+    "each HTN target scenario, summed over 2025\u20132050. ",
+    "Causes: ischemic heart disease, ischemic stroke, intracerebral hemorrhage, ",
+    "hypertensive heart disease."
+  ))
+
+dt_excel_tab1 <- copy(tab1_fmt)
+```
+
+## Figure 1 — Deaths Averted by HTN Target Scenario
+
+```{r figure1, message=FALSE, warning=FALSE, echo=FALSE, fig.width=8, fig.height=4}
+dt_fig1 <- copy(dt_cumul)
+dt_fig1[, htn_scenario := factor(htn_scenario, levels = rev(htn_scenarios))]
+
+g <- ggplot(dt_fig1,
+            aes(x = deaths_delayed / 1e6,
+                y = htn_scenario,
+                fill = as.character(htn_scenario))) +
+  geom_col(width = 0.55) +
+  scale_fill_manual(values = htn_cols, guide = "none") +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title   = "Projected Deaths Averted by HTN Control Target, 2025\u20132050",
+    x       = "Deaths averted (millions)",
+    y       = NULL,
+    caption = "Deaths averted vs. business-as-usual scenario; all causes combined."
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(plot.title         = element_text(face = "bold"),
+        panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank())
+print(g)
+ggsave(paste0(wd_outp, "aim2_fig1_deaths_scenario.png"), plot = g,
+       width = 8, height = 4, dpi = 300)
+```
+
+## Table 2 — Cumulative Deaths Averted by Scenario and Cause
+
+```{r table2, message=FALSE, warning=FALSE, echo=FALSE}
+dt_tab2 <- dt_merged[,
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(htn_scenario, cause)
+]
+dt_tab2[, cause_lbl := cause_labels_plot[cause]]
+
+dt_tab2_wide <- dcast(dt_tab2,
+                      htn_scenario ~ cause_lbl,
+                      value.var = "deaths_delayed",
+                      fill = NA)
+dt_tab2_wide[, htn_scenario := factor(htn_scenario, levels = htn_scenarios)]
+setorder(dt_tab2_wide, htn_scenario)
+
+cause_cols_order <- unname(cause_labels_plot)
+for (col in cause_cols_order) {
+  if (col %in% names(dt_tab2_wide)) {
+    dt_tab2_wide[, (col) := comma(round(get(col) / 1e6, 2), accuracy = 0.01)]
+  }
+}
+
+kable(dt_tab2_wide,
+      caption = "Table 2. Deaths averted (millions, 2025\u20132050) by HTN target scenario and cause.",
+      align   = c("l", rep("r", ncol(dt_tab2_wide) - 1)),
+      col.names = c("HTN Target Scenario", cause_cols_order[cause_cols_order %in% names(dt_tab2_wide)])) |>
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 13) |>
+  add_header_above(setNames(c(1L, ncol(dt_tab2_wide) - 1L),
+                            c(" ", paste0("Deaths averted, millions (2025\u20132050)")))) |>
+  row_spec(0, bold = TRUE)
+
+dt_excel_tab2 <- copy(dt_tab2_wide)
+```
+
+## Figure 2 — Deaths Averted by Cause (Stacked Bar)
+
+```{r figure2, message=FALSE, warning=FALSE, echo=FALSE, fig.width=9, fig.height=5}
+dt_fig2 <- dt_merged[cause %in% names(cause_map_full),
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(htn_scenario, cause)
+]
+dt_fig2[, htn_scenario := factor(htn_scenario, levels = htn_scenarios)]
+dt_fig2[, cause_lbl    := cause_labels_plot[cause]]
+dt_fig2[, cause_lbl    := factor(cause_lbl, levels = unname(cause_labels_plot))]
+
+g <- ggplot(dt_fig2,
+            aes(x = deaths_delayed / 1e6,
+                y = htn_scenario,
+                fill = cause_lbl)) +
+  geom_col(width = 0.55) +
+  scale_fill_manual(values = setNames(cause_cols, cause_labels_plot),
+                    name   = "Cause of death") +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
+  labs(
+    title = "Deaths Averted by Cause and HTN Target Scenario, 2025\u20132050",
+    x     = "Deaths averted (millions)",
+    y     = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position    = "bottom",
+        panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.title         = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_fig2_deaths_cause.png"), plot = g,
+       width = 9, height = 5, dpi = 300)
+```
+
+## Figure 3 — Annual Deaths Averted Over Time
+
+```{r figure3-annual, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+g <- ggplot(dt_annual,
+            aes(x = year, y = deaths_delayed / 1e6,
+                color = htn_scenario)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = htn_cols, name = "HTN Target") +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Annual Deaths Averted by HTN Target Scenario, 2025\u20132050",
+    x     = "Year",
+    y     = "Deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position  = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_fig3_annual_averted.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+## Figure 4 — Cumulative Deaths Averted Over Time
+
+```{r figure4-cumulative, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+g <- ggplot(dt_annual,
+            aes(x = year, y = cum_deaths_delayed / 1e6,
+                color = htn_scenario)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = htn_cols, name = "HTN Target") +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Cumulative Deaths Averted by HTN Target Scenario, 2025\u20132050",
+    x     = "Year",
+    y     = "Cumulative deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position  = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_fig4_cum_averted.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+---
+
+# Outputs by Demographics
+
+## By Sex and Age Group
+
+```{r demo-age-sex, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=5}
+dt_age_sex <- dt_merged[,
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(htn_scenario, age_group, sex)
+]
+dt_age_sex[, htn_scenario := factor(htn_scenario, levels = htn_scenarios)]
+
+g <- ggplot(dt_age_sex,
+            aes(x = deaths_delayed / 1e6,
+                y = htn_scenario,
+                fill = age_group)) +
+  geom_col(width = 0.65) +
+  facet_wrap(~sex, nrow = 1) +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = "Deaths Averted by Age Group, Sex, and HTN Target Scenario (2025\u20132050)",
+    x     = "Deaths averted (millions)",
+    y     = NULL,
+    fill  = "Age group"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position  = "bottom",
+        panel.border     = element_rect(color = "black", fill = NA, linewidth = 0.5),
+        strip.text       = element_text(face = "bold"),
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_fig5_demo_age.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+## Table 3 — Deaths Averted by Age Group and Scenario
+
+```{r table3-age, message=FALSE, warning=FALSE, echo=FALSE}
+dt_tab3 <- deaths_summary_htn(
+  data.out[year >= 2025],
+  baseline_label = "b.a.u",
+  by_cols        = c("age_group", "htn_scenario")
+)
+dt_tab3 <- dt_tab3[htn_scenario %in% htn_scenarios]
+dt_tab3[, htn_scenario := factor(htn_scenario, levels = htn_scenarios)]
+setorder(dt_tab3, age_group, htn_scenario)
+
+dt_tab3_fmt <- dt_tab3[, .(
+  `Age group`           = age_group,
+  `HTN Scenario`        = htn_scenario,
+  `Projected deaths`    = comma(deaths_projected, accuracy = 1),
+  `Baseline deaths`     = comma(baseline_deaths,  accuracy = 1),
+  `Deaths averted`      = comma(deaths_delayed,   accuracy = 1),
+  `Deaths averted/year` = comma(deaths_delayed_ave, accuracy = 1),
+  `% averted`           = percent(deaths_delayed_pct, accuracy = 0.1)
+)]
+
+kable(dt_tab3_fmt,
+      caption = "Table 3. Deaths averted (2025\u20132050) by age group and HTN target scenario.",
+      align   = c("l","l","r","r","r","r","r")) |>
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = TRUE, font_size = 12) |>
+  row_spec(0, bold = TRUE)
+
+dt_excel_tab3 <- copy(dt_tab3_fmt)
+```
+
+---
+
+# Outputs by Geography
+
+## Table 4 — Deaths Averted by Country (Aspirational Scenario)
+
+```{r table4-country, message=FALSE, warning=FALSE, echo=FALSE}
+dt_tab4_base <- data.out[year >= 2025 & htn_scenario == "b.a.u",
+                          .(baseline_deaths = sum(dead, na.rm = TRUE)),
+                          by = .(region, location)]
+
+dt_tab4_int  <- data.out[year >= 2025 & htn_scenario == "Aspirational",
+                          .(deaths_projected = sum(dead, na.rm = TRUE)),
+                          by = .(region, location)]
+
+dt_tab4 <- merge(dt_tab4_int, dt_tab4_base,
+                 by = c("region", "location"), all.x = TRUE)
+dt_tab4[, deaths_delayed     := baseline_deaths - deaths_projected]
+dt_tab4[, deaths_delayed_ave := deaths_delayed / 25]
+dt_tab4[, deaths_delayed_pct := deaths_delayed / baseline_deaths]
+setorder(dt_tab4, region, -deaths_delayed)
+
+dt_tab4_fmt <- dt_tab4[, .(
+  Region                = region,
+  Country               = location,
+  `Projected deaths`    = comma(deaths_projected,   accuracy = 1),
+  `Baseline deaths`     = comma(baseline_deaths,    accuracy = 1),
+  `Deaths averted`      = comma(deaths_delayed,     accuracy = 1),
+  `Deaths averted/year` = comma(deaths_delayed_ave, accuracy = 1),
+  `% averted`           = percent(deaths_delayed_pct, accuracy = 0.1)
+)]
+
+datatable(
+  dt_tab4_fmt,
+  caption  = htmltools::tags$caption(
+    style = "caption-side: top; text-align: left;",
+    "Table 4. Country-level deaths averted (Aspirational scenario), 2025\u20132050."
+  ),
+  filter   = "top",
+  rownames = FALSE,
+  options  = list(pageLength = 15, scrollX = TRUE, dom = "lftipr")
+)
+
+dt_excel_tab4 <- copy(dt_tab4_fmt)
+```
+
+## Figure 5 — Top 20 Countries by Deaths Averted (Aspirational)
+
+```{r figure5-top20, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=7}
+dt_top20 <- dt_tab4[order(-deaths_delayed)][1:min(20, .N)]
+dt_top20[, location := factor(location, levels = rev(location))]
+
+g <- ggplot(dt_top20,
+            aes(x = deaths_delayed / 1e6, y = location, fill = region)) +
+  geom_col(width = 0.7) +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = "Top 20 Countries — Deaths Averted Under Aspirational HTN Target (2025\u20132050)",
+    x     = "Deaths averted (millions)",
+    y     = NULL,
+    fill  = "Region"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position    = "right",
+        panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.title         = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_fig5_top20_countries.png"), plot = g,
+       width = 10, height = 7, dpi = 300)
+```
+
+## Figure 6 — Scenario Comparison: Deaths Averted by Country (Top 20)
+
+```{r figure6-scenario-compare, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=7}
+# All three scenarios for the top-20 countries from the Aspirational scenario
+top20_locs <- dt_top20$location
+
+dt_fig6 <- dt_merged[location %in% as.character(top20_locs),
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(location, htn_scenario)
+]
+dt_fig6[, htn_scenario := factor(htn_scenario, levels = htn_scenarios)]
+dt_fig6[, location := factor(location, levels = rev(levels(dt_top20$location)))]
+
+g <- ggplot(dt_fig6,
+            aes(x = deaths_delayed / 1e6, y = location,
+                fill = htn_scenario)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6) +
+  scale_fill_manual(values = htn_cols, name = "HTN Target") +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = "Deaths Averted Across Scenarios — Top 20 Countries (2025\u20132050)",
+    x     = "Deaths averted (millions)",
+    y     = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position    = "bottom",
+        panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.title         = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_fig6_scenario_compare_top20.png"), plot = g,
+       width = 11, height = 7, dpi = 300)
+```
+
+## Figure 7 — World Map: Deaths Averted per 100,000 (Aspirational)
+
+```{r figure7-map, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=5}
+wpp <- tryCatch(
+  as.data.table(readRDS(paste0(wd_data, "PopulationsSingleAge0050.rds"))),
+  error = function(e) NULL
+)
+
+if (!is.null(wpp)) {
+  pop_2019 <- wpp[year_id == 2019 & age >= 20,
+                  .(pop = sum(Nx, na.rm = TRUE)),
+                  by = location]
+
+  dt_map <- merge(dt_tab4, pop_2019, by = "location", all.x = TRUE)
+  dt_map[, da_per100k := deaths_delayed / pop * 1e5]
+
+  if (nrow(countries_dt) > 0) {
+    world    <- ne_countries(scale = "medium", returnclass = "sf")
+    world_dt <- merge(world,
+                      merge(dt_map, countries_dt[, .(location, iso3)],
+                            by = "location", all.x = TRUE),
+                      by.x = "adm0_a3", by.y = "iso3", all.x = TRUE)
+
+    g <- ggplot(world_dt) +
+      geom_sf(aes(fill = da_per100k), color = "grey80", linewidth = 0.1) +
+      scale_fill_viridis_c(name      = "per 100,000",
+                           na.value  = "grey90",
+                           option    = "C",
+                           direction = -1) +
+      labs(title    = "Deaths Averted per 100,000 Population — Aspirational HTN Target, 2025\u20132050",
+           caption  = "Source: Model output; denominator = UNWPP 2024 age 20+ population") +
+      theme_void(base_size = 12) +
+      theme(legend.position = "right",
+            plot.title      = element_text(face = "bold"))
+    print(g)
+    ggsave(paste0(wd_outp, "aim2_fig7_map_aspirational.png"), plot = g,
+           width = 11, height = 5, dpi = 300)
+  }
+} else {
+  message("Population file not found — skipping map.")
+}
+```
+
+## Table 5 — Deaths Averted by Region and Scenario
+
+```{r table5-region, message=FALSE, warning=FALSE, echo=FALSE}
+dt_tab5_base <- data.out[year >= 2025 & htn_scenario == "b.a.u",
+                          .(baseline_deaths = sum(dead, na.rm = TRUE)),
+                          by = region]
+
+dt_tab5_int  <- data.out[year >= 2025 & htn_scenario %in% htn_scenarios,
+                          .(deaths_projected = sum(dead, na.rm = TRUE)),
+                          by = .(region, htn_scenario)]
+
+dt_tab5 <- merge(dt_tab5_int, dt_tab5_base, by = "region", all.x = TRUE)
+dt_tab5[, deaths_delayed := baseline_deaths - deaths_projected]
+dt_tab5[, deaths_delayed_pct := deaths_delayed / baseline_deaths]
+dt_tab5[, htn_scenario := factor(htn_scenario, levels = htn_scenarios)]
+setorder(dt_tab5, region, htn_scenario)
+
+dt_tab5_wide <- dcast(dt_tab5,
+                      region ~ htn_scenario,
+                      value.var = "deaths_delayed")
+
+for (col in htn_scenarios) {
+  if (col %in% names(dt_tab5_wide))
+    dt_tab5_wide[, (col) := comma(round(get(col) / 1e6, 2), accuracy = 0.01)]
+}
+
+kable(dt_tab5_wide,
+      caption = "Table 5. Deaths averted (millions) by region and HTN target scenario, 2025\u20132050.",
+      align   = c("l", rep("r", length(htn_scenarios)))) |>
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE, font_size = 13) |>
+  row_spec(0, bold = TRUE)
+
+dt_excel_tab5 <- copy(dt_tab5_wide)
+```
+
+---
+
+# ASMR Under HTN Target Scenarios
+
+```{r asmr-scenarios, message=FALSE, warning=FALSE, echo=FALSE, fig.width=12, fig.height=6}
+dt_asmr2 <- data.out[year >= 2019,
+                      .(dead = sum(dead, na.rm = TRUE),
+                        well = sum(well, na.rm = TRUE),
+                        sick = sum(sick, na.rm = TRUE)),
+                      by = .(htn_scenario, age, year)]
+dt_asmr2[, Nx := well + sick]
+
+asmr_int <- calculate_asmr(dt_asmr2,
+                            deaths_col     = "dead",
+                            population_col = "Nx",
+                            disagg_var     = "htn_scenario")
+asmr_int[, htn_scenario := factor(htn_scenario, levels = htn_order)]
+
+g <- ggplot(asmr_int[!is.na(htn_scenario)],
+            aes(x = year, y = ASMR,
+                color    = htn_scenario,
+                linetype = year > 2019)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = htn_cols, name = "HTN Target") +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"),
+                        guide  = "none") +
+  labs(
+    title    = "Age-Standardised CVD Mortality Rate by HTN Target Scenario",
+    subtitle = "All causes combined; solid = calibration period, dashed = projection",
+    x        = "Year",
+    y        = "ASMR (per 100,000 population)",
+    caption  = "WHO World Standard Population (2000\u20132025), rescaled to ages 20\u201395+"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position  = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim2_asmr_scenarios.png"), plot = g,
+       width = 12, height = 6, dpi = 300)
+```
+
+---
+
+# Excel Export
+
+```{r excel-export, message=FALSE, warning=FALSE, echo=FALSE}
+wb <- createWorkbook()
+
+add_sheet <- function(wb, sheet_name, dat, title_str) {
+  addWorksheet(wb, sheet_name)
+  writeData(wb, sheet_name, title_str, startRow = 1, startCol = 1)
+  addStyle(wb, sheet_name,
+           style = createStyle(fontSize = 12, textDecoration = "bold"),
+           rows = 1, cols = 1)
+  writeData(wb, sheet_name, dat, startRow = 3, startCol = 1,
+            headerStyle = createStyle(
+              textDecoration = "bold",
+              fgFill         = "#2E75B6",
+              fontColour     = "white",
+              border         = "Bottom"
+            ))
+  setColWidths(wb, sheet_name, cols = seq_len(ncol(dat)), widths = "auto")
+}
+
+add_sheet(wb, "T1_Deaths_by_Scenario",
+          as.data.frame(dt_excel_tab1),
+          "Table 1. Cumulative deaths averted (2025-2050) by HTN target scenario.")
+
+add_sheet(wb, "T2_Deaths_by_Cause",
+          as.data.frame(dt_excel_tab2),
+          "Table 2. Deaths averted (millions) by HTN target scenario and cause.")
+
+add_sheet(wb, "T3_Deaths_by_Age",
+          as.data.frame(dt_excel_tab3),
+          "Table 3. Deaths averted by age group and HTN target scenario.")
+
+add_sheet(wb, "T4_Deaths_by_Country",
+          as.data.frame(dt_excel_tab4),
+          "Table 4. Country-level deaths averted (Aspirational scenario, 2025-2050).")
+
+if (exists("dt_excel_tab5") && nrow(dt_excel_tab5) > 0)
+  add_sheet(wb, "T5_Deaths_by_Region",
+            as.data.frame(dt_excel_tab5),
+            "Table 5. Deaths averted (millions) by region and HTN target scenario.")
+
+out_xlsx <- paste0(wd_scen, "aim2_results_tables.xlsx")
+saveWorkbook(wb, out_xlsx, overwrite = TRUE)
+message("Tables exported to: ", out_xlsx)
+```
+
+---
+
+*Report generated on `r Sys.time()` using R `r R.version$major`.`r R.version$minor`.*
+
+---
+
+# Slides Export — Pre-computed Objects for `executive_slides_htn_targets.Rmd`
+
+All objects in this section are computed once here and saved to `wd_outp` as `.rds` or
+`.png` files. The slides deck reads these files directly and performs no calculations of
+its own. File names follow the convention `aim2_slides_*.rds` / `aim2_slides_*.png`.
+
+> **Note on year alignment:** The report's main analysis uses `year >= 2025` throughout.
+> The slides use `year >= 2026` (the first year intervention effects enter the projection).
+> All objects below use **2026** as the starting year, matching the slides.
+
+```{r slides-setup, message=FALSE, warning=FALSE, echo=FALSE}
+# Ensure output directory exists
+dir.create(wd_outp, showWarnings = FALSE, recursive = TRUE)
+
+# Slides-specific parameters
+slides_start_year <- 2026
+slides_horizon    <- 25   # 2026-2050 inclusive
+htn_scenarios_slides <- c("Progress", "Ambitious", "Aspirational")
+htn_order_slides     <- c("b.a.u", htn_scenarios_slides)
+```
+
+## Scalar summary values
+
+```{r slides-scalars, message=FALSE, warning=FALSE, echo=FALSE}
+# ── Core scalars consumed by n_countries inline text and summary table ────────
+slides_scalars <- list(
+  n_countries        = uniqueN(data.out$location),
+  study_start        = slides_start_year,
+  study_end          = max(data.out$year),
+  horizon_years      = slides_horizon
+)
+
+# ── Deaths averted 2026-2050: cumulative totals per scenario ──────────────────
+dt_sl_base <- data.out[htn_scenario == "b.a.u" & year >= slides_start_year,
+  .(baseline_deaths = sum(dead, na.rm = TRUE)),
+  by = .(age_group, sex, year, location, cause, age)]
+
+dt_sl_nonbase <- data.out[htn_scenario %in% htn_scenarios_slides &
+                            year >= slides_start_year,
+  .(dead = sum(dead, na.rm = TRUE)),
+  by = .(age_group, sex, year, location, cause, age, htn_scenario)]
+
+dt_sl_merged <- merge(dt_sl_nonbase, dt_sl_base,
+  by  = c("age_group", "sex", "year", "location", "cause", "age"),
+  all.x = TRUE)
+dt_sl_merged[, deaths_delayed := baseline_deaths - dead]
+
+dt_sl_cumul <- dt_sl_merged[,
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = htn_scenario]
+dt_sl_cumul[, htn_scenario := factor(htn_scenario, levels = htn_scenarios_slides)]
+setorder(dt_sl_cumul, htn_scenario)
+
+slides_scalars$total_progress     <- dt_sl_cumul[htn_scenario == "Progress",
+                                                  deaths_delayed]
+slides_scalars$total_ambitious     <- dt_sl_cumul[htn_scenario == "Ambitious",
+                                                  deaths_delayed]
+slides_scalars$total_aspirational  <- dt_sl_cumul[htn_scenario == "Aspirational",
+                                                  deaths_delayed]
+
+slides_scalars$bau_total_deaths    <- sum(
+  data.out[htn_scenario == "b.a.u" & year >= slides_start_year, dead])
+
+saveRDS(slides_scalars,
+        paste0(wd_outp, "aim2_slides_scalars.rds"))
+message("Saved: aim2_slides_scalars.rds")
+```
+
+## Annual time series (dt_sl_annual)
+
+```{r slides-annual, message=FALSE, warning=FALSE, echo=FALSE}
+dt_sl_annual <- dt_sl_merged[,
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(htn_scenario, year)]
+dt_sl_annual[, htn_scenario := factor(htn_scenario, levels = htn_scenarios_slides)]
+setorder(dt_sl_annual, htn_scenario, year)
+dt_sl_annual[, cum_deaths_delayed := cumsum(deaths_delayed), by = htn_scenario]
+
+saveRDS(dt_sl_annual,
+        paste0(wd_outp, "aim2_slides_annual.rds"))
+message("Saved: aim2_slides_annual.rds")
+```
+
+## Table 1 — summary table (Beamer kable data)
+
+```{r slides-tab1, message=FALSE, warning=FALSE, echo=FALSE}
+# Raw numeric table — slides will format with kable/kableExtra
+dt_sl_tab1 <- copy(dt_sl_cumul)
+dt_sl_tab1[, deaths_M   := round(deaths_delayed / 1e6, 2)]
+dt_sl_tab1[, per_year_k := round(deaths_delayed / slides_horizon / 1e3, 0)]
+dt_sl_tab1[, pct_bau    := round(deaths_delayed / slides_scalars$bau_total_deaths * 100, 1)]
+
+saveRDS(dt_sl_tab1,
+        paste0(wd_outp, "aim2_slides_tab1_summary.rds"))
+message("Saved: aim2_slides_tab1_summary.rds")
+```
+
+## Table 5 — regional summary (Beamer kable data)
+
+```{r slides-tab5, message=FALSE, warning=FALSE, echo=FALSE}
+dt_sl_r_base <- data.out[year >= slides_start_year & htn_scenario == "b.a.u",
+  .(baseline_deaths = sum(dead, na.rm = TRUE)), by = region]
+
+dt_sl_r_int  <- data.out[year >= slides_start_year &
+                            htn_scenario %in% htn_scenarios_slides,
+  .(deaths_projected = sum(dead, na.rm = TRUE)), by = .(region, htn_scenario)]
+
+dt_sl_r <- merge(dt_sl_r_int, dt_sl_r_base, by = "region", all.x = TRUE)
+dt_sl_r[, deaths_delayed := baseline_deaths - deaths_projected]
+dt_sl_r[, htn_scenario   := factor(htn_scenario, levels = htn_scenarios_slides)]
+
+dt_sl_tab5_wide <- dcast(dt_sl_r, region ~ htn_scenario,
+                          value.var = "deaths_delayed")
+setnames(dt_sl_tab5_wide, "region", "Region")
+
+saveRDS(dt_sl_tab5_wide,
+        paste0(wd_outp, "aim2_slides_tab5_region.rds"))
+message("Saved: aim2_slides_tab5_region.rds")
+```
+
+## Top-20 countries data (Ambitious scenario)
+
+```{r slides-top20-data, message=FALSE, warning=FALSE, echo=FALSE}
+dt_sl_t4b <- data.out[year >= slides_start_year & htn_scenario == "b.a.u",
+  .(baseline_deaths  = sum(dead, na.rm = TRUE)), by = .(region, location)]
+
+dt_sl_t4i <- data.out[year >= slides_start_year & htn_scenario == "Ambitious",
+  .(deaths_projected = sum(dead, na.rm = TRUE)), by = .(region, location)]
+
+dt_sl_t4  <- merge(dt_sl_t4i, dt_sl_t4b,
+                   by = c("region", "location"), all.x = TRUE)
+dt_sl_t4[, deaths_delayed := baseline_deaths - deaths_projected]
+
+dt_sl_top20 <- dt_sl_t4[order(-deaths_delayed)][1:min(20, .N)]
+dt_sl_top20[, location := factor(location, levels = rev(location))]
+
+saveRDS(dt_sl_top20,
+        paste0(wd_outp, "aim2_slides_top20.rds"))
+message("Saved: aim2_slides_top20.rds")
+```
+
+## Age × sex data for slides
+
+```{r slides-age-sex-data, message=FALSE, warning=FALSE, echo=FALSE}
+dt_sl_age_sex <- dt_sl_merged[,
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(htn_scenario, age_group, sex)]
+dt_sl_age_sex[, htn_scenario := factor(htn_scenario,
+                                        levels = htn_scenarios_slides)]
+
+saveRDS(dt_sl_age_sex,
+        paste0(wd_outp, "aim2_slides_age_sex.rds"))
+message("Saved: aim2_slides_age_sex.rds")
+```
+
+## Figure S1 — HTN target distribution (scenario-targets-plot)
+
+```{r slides-fig-htn-targets, message=FALSE, warning=FALSE, echo=FALSE}
+# Re-use the object created earlier in policy-htn-scenarios chunk
+if (exists("dt_targets_long") && !is.null(dt_targets_long)) {
+  g_sl_htn <- ggplot(dt_targets_long,
+    aes(x = scenario_lbl, y = target_value * 100, fill = scenario_lbl)) +
+    geom_boxplot(alpha = 0.75, outlier.size = 1, width = 0.45) +
+    annotate("rect", xmin = 1.5, xmax = 2.5, ymin = 0, ymax = 100,
+             fill = "#2171b5", alpha = 0.07) +
+    annotate("text", x = 2, y = 97,
+             label = "Headline scenario", size = 3,
+             color = "#2171b5", fontface = "bold") +
+    scale_fill_manual(
+      values = htn_cols[c("Progress", "Ambitious", "Aspirational")],
+      guide  = "none") +
+    scale_y_continuous(limits = c(0, 100), expand = c(0, 0)) +
+    labs(
+      title    = "Distribution of Country-Level HTN Control Targets by 2030",
+      subtitle = "Each box = distribution across countries | scale-up starts 2026",
+      x = NULL, y = "HTN Control Rate (%)"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(plot.title = element_text(face = "bold"),
+          panel.grid.minor = element_blank())
+
+  ggsave(paste0(wd_outp, "aim2_slides_fig_htn_targets.png"),
+         plot = g_sl_htn, width = 8.5, height = 2.9, dpi = 300)
+  message("Saved: aim2_slides_fig_htn_targets.png")
+} else {
+  message("dt_targets_long not found — skipping aim2_slides_fig_htn_targets.png")
+}
+```
+
+## Figure S2 — Baseline CVD trends (baseline-trends slide)
+
+```{r slides-fig-baseline, message=FALSE, warning=FALSE, echo=FALSE}
+dt_sl_trend <- data.out[htn_scenario == "b.a.u" & year >= 2019,
+  .(new_cases = sum(newcases, na.rm = TRUE),
+    sick      = sum(sick,     na.rm = TRUE)),
+  by = year]
+
+dt_sl_melt <- melt(dt_sl_trend, id.vars = "year",
+  measure.vars  = c("new_cases", "sick"),
+  variable.name = "metric", value.name = "count")
+dt_sl_melt[, metric_lbl := fifelse(metric == "new_cases",
+                                   "Incident cases", "Prevalent cases")]
+
+g_sl_baseline <- ggplot(dt_sl_melt,
+    aes(x = year, y = count / 1e6,
+        color    = metric_lbl,
+        linetype = year > 2019)) +
+  geom_line(linewidth = 1.1) +
+  geom_vline(xintercept = slides_start_year, linetype = "dotted",
+             color = "#2171b5", linewidth = 0.9) +
+  annotate("text",
+           x     = slides_start_year + 0.3,
+           y     = max(dt_sl_melt$count / 1e6) * 0.9,
+           label = paste0("Scale-up\nstarts ", slides_start_year),
+           hjust = 0, size = 3, color = "#2171b5") +
+  scale_color_manual(
+    values = c("Incident cases" = "steelblue", "Prevalent cases" = "tomato"),
+    name   = NULL) +
+  scale_linetype_manual(
+    values = c(`FALSE` = "solid", `TRUE` = "dashed"), guide = "none") +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title    = "Global CVD Incidence and Prevalence \u2014 Business-as-Usual",
+    subtitle = "Solid = calibration (2019\u20132025); dashed = projection from 2026",
+    x = "Year", y = "Persons (millions)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position  = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+
+ggsave(paste0(wd_outp, "aim2_slides_fig_baseline_trends.png"),
+       plot = g_sl_baseline, width = 8.5, height = 3.0, dpi = 300)
+message("Saved: aim2_slides_fig_baseline_trends.png")
+```
+
+## Figure S3 — Deaths averted by scenario bar chart (fig1-deaths-averted)
+
+```{r slides-fig1, message=FALSE, warning=FALSE, echo=FALSE}
+dt_sl_fig1 <- copy(dt_sl_cumul)
+dt_sl_fig1[, htn_scenario := factor(htn_scenario,
+                                     levels = rev(htn_scenarios_slides))]
+dt_sl_fig1[, is_ambitious := htn_scenario == "Ambitious"]
+
+g_sl_fig1 <- ggplot(dt_sl_fig1,
+    aes(x = deaths_delayed / 1e6, y = htn_scenario,
+        fill = as.character(htn_scenario))) +
+  geom_col(width = 0.52) +
+  geom_rect(
+    data = dt_sl_fig1[is_ambitious == TRUE],
+    aes(xmin = -0.1,
+        xmax = deaths_delayed / 1e6 + 0.35,
+        ymin = as.numeric(htn_scenario) - 0.43,
+        ymax = as.numeric(htn_scenario) + 0.43),
+    fill = NA, color = "#2171b5", linewidth = 1.3, inherit.aes = FALSE) +
+  geom_text(aes(label = paste0(round(deaths_delayed / 1e6, 1), " M")),
+            hjust = -0.15, size = 4, fontface = "bold") +
+  annotate("text",
+           x     = dt_sl_fig1[htn_scenario == "Ambitious",
+                               deaths_delayed / 1e6] + 0.5,
+           y     = 2,
+           label = "Headline\nscenario",
+           color = "#2171b5", size = 3.2, fontface = "bold") +
+  scale_fill_manual(values = htn_cols, guide = "none") +
+  scale_x_continuous(
+    expand = c(0, 0),
+    limits = c(0, max(dt_sl_cumul$deaths_delayed / 1e6) * 1.28),
+    labels = comma) +
+  labs(
+    title    = paste0("Projected CVD Deaths Averted vs. Business-as-Usual, ",
+                      slides_start_year, "\u20132050"),
+    subtitle = paste0("Scale-up ", slides_start_year,
+                      "-2030 | ", slides_scalars$n_countries,
+                      " countries | Ages 20\u201395"),
+    x = "Deaths averted (millions)", y = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title         = element_text(face = "bold"),
+        panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank())
+
+ggsave(paste0(wd_outp, "aim2_slides_fig1_deaths_averted.png"),
+       plot = g_sl_fig1, width = 8.5, height = 3.0, dpi = 300)
+message("Saved: aim2_slides_fig1_deaths_averted.png")
+```
+
+## Figure S4 — Deaths averted by cause (fig2-by-cause)
+
+```{r slides-fig2, message=FALSE, warning=FALSE, echo=FALSE}
+dt_sl_fig2 <- dt_sl_merged[cause %in% names(cause_labels_plot),
+  .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+  by = .(htn_scenario, cause)]
+dt_sl_fig2[, htn_scenario := factor(htn_scenario,
+                                     levels = htn_scenarios_slides)]
+dt_sl_fig2[, cause_lbl := factor(cause_labels_plot[cause],
+                                  levels = unname(cause_labels_plot))]
+
+g_sl_fig2 <- ggplot(dt_sl_fig2,
+    aes(x = deaths_delayed / 1e6, y = htn_scenario, fill = cause_lbl)) +
+  geom_col(width = 0.52) +
+  annotate("rect",
+           xmin = -0.02, xmax = Inf,
+           ymin = 1.57,  ymax = 2.43,
+           fill = NA, color = "#2171b5", linewidth = 1.1) +
+  scale_fill_manual(
+    values = setNames(cause_cols, cause_labels_plot), name = "Cause") +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
+  labs(
+    title = paste0("Deaths Averted by Cause and HTN Target Scenario, ",
+                   slides_start_year, "\u20132050"),
+    x = "Deaths averted (millions)", y = NULL
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position    = "bottom",
+        panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.title         = element_text(face = "bold"))
+
+ggsave(paste0(wd_outp, "aim2_slides_fig2_by_cause.png"),
+       plot = g_sl_fig2, width = 8.5, height = 3.1, dpi = 300)
+message("Saved: aim2_slides_fig2_by_cause.png")
+```
+
+## Figure S5 — Cumulative deaths averted (fig-cumulative)
+
+```{r slides-fig-cumulative, message=FALSE, warning=FALSE, echo=FALSE}
+g_sl_cumul <- ggplot(dt_sl_annual,
+    aes(x = year, y = cum_deaths_delayed / 1e6,
+        color     = htn_scenario,
+        linewidth = htn_scenario == "Ambitious")) +
+  geom_line() +
+  geom_vline(xintercept = slides_start_year,
+             linetype = "dotted", color = "grey50", linewidth = 0.8) +
+  geom_vline(xintercept = 2030,
+             linetype = "dashed", color = "grey50", linewidth = 0.8) +
+  annotate("text", x = slides_start_year + 0.2, y = 0.2,
+           label = "Scale-up\nstarts", hjust = 0, size = 2.8, color = "grey40") +
+  annotate("text", x = 2030.2, y = 0.2,
+           label = "Target\nachieved", hjust = 0, size = 2.8, color = "grey40") +
+  scale_color_manual(values = htn_cols, name = "Scenario") +
+  scale_linewidth_manual(
+    values = c(`FALSE` = 0.9, `TRUE` = 1.9), guide = "none") +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title    = "Cumulative CVD Deaths Averted by HTN Target Scenario",
+    subtitle = paste0("Scale-up ", slides_start_year,
+                      "-2030; rates held constant thereafter"),
+    x = "Year", y = "Cumulative deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position  = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+
+ggsave(paste0(wd_outp, "aim2_slides_fig_cumulative.png"),
+       plot = g_sl_cumul, width = 8.5, height = 3.1, dpi = 300)
+message("Saved: aim2_slides_fig_cumulative.png")
+```
+
+## Figure S6 — Age × sex (fig-age-sex)
+
+```{r slides-fig-age-sex, message=FALSE, warning=FALSE, echo=FALSE}
+g_sl_age_sex <- ggplot(dt_sl_age_sex,
+    aes(x = deaths_delayed / 1e6, y = htn_scenario, fill = age_group)) +
+  geom_col(width = 0.62) +
+  annotate("rect",
+           xmin = -Inf, xmax = Inf, ymin = 1.57, ymax = 2.43,
+           fill = NA, color = "#2171b5", linewidth = 1.0) +
+  facet_wrap(~sex, nrow = 1) +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = paste0("Deaths Averted by Age Group, Sex, and Scenario (",
+                   slides_start_year, "\u20132050)"),
+    x = "Deaths averted (millions)", y = NULL, fill = "Age group"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position  = "bottom",
+        panel.border     = element_rect(color = "black", fill = NA,
+                                        linewidth = 0.5),
+        strip.text       = element_text(face = "bold"),
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+
+ggsave(paste0(wd_outp, "aim2_slides_fig_age_sex.png"),
+       plot = g_sl_age_sex, width = 8.5, height = 3.0, dpi = 300)
+message("Saved: aim2_slides_fig_age_sex.png")
+```
+
+## Figure S7 — Top 20 countries, Ambitious (fig-top20)
+
+```{r slides-fig-top20, message=FALSE, warning=FALSE, echo=FALSE}
+g_sl_top20 <- ggplot(dt_sl_top20,
+    aes(x = deaths_delayed / 1e6, y = location, fill = region)) +
+  geom_col(width = 0.7) +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = paste0("Top 20 Countries \u2014 Deaths Averted Under Ambitious Scenario (",
+                   slides_start_year, "\u20132050)"),
+    x = "Deaths averted (millions)", y = NULL, fill = "Region"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(legend.position    = "right",
+        panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.title         = element_text(face = "bold"))
+
+ggsave(paste0(wd_outp, "aim2_slides_fig_top20.png"),
+       plot = g_sl_top20, width = 8.5, height = 3.4, dpi = 300)
+message("Saved: aim2_slides_fig_top20.png")
+```
+
+## Figure S8 — ASMR by scenario (fig-asmr)
+
+```{r slides-fig-asmr, message=FALSE, warning=FALSE, echo=FALSE}
+dt_sl_asmr_in <- data.out[year >= 2019,
+  .(dead = sum(dead, na.rm = TRUE),
+    well = sum(well, na.rm = TRUE),
+    sick = sum(sick, na.rm = TRUE)),
+  by = .(htn_scenario, age, year)]
+dt_sl_asmr_in[, Nx := well + sick]
+
+asmr_sl_int <- calculate_asmr(dt_sl_asmr_in,
+                               deaths_col     = "dead",
+                               population_col = "Nx",
+                               disagg_var     = "htn_scenario")
+asmr_sl_int[, htn_scenario := factor(htn_scenario, levels = htn_order_slides)]
+
+g_sl_asmr <- ggplot(asmr_sl_int[!is.na(htn_scenario)],
+    aes(x = year, y = ASMR,
+        color     = htn_scenario,
+        linewidth = htn_scenario == "Ambitious",
+        linetype  = year > 2019)) +
+  geom_line() +
+  geom_vline(xintercept = slides_start_year,
+             linetype = "dotted", color = "grey50", linewidth = 0.7) +
+  scale_color_manual(values = htn_cols, name = "Scenario") +
+  scale_linewidth_manual(
+    values = c(`FALSE` = 0.8, `TRUE` = 1.9), guide = "none") +
+  scale_linetype_manual(
+    values = c(`FALSE` = "solid", `TRUE` = "dashed"), guide = "none") +
+  labs(
+    title    = "Age-Standardised CVD Mortality Rate by HTN Target Scenario",
+    subtitle = paste0("Solid = calibration (2019\u20132025); dashed = projection from ",
+                      slides_start_year),
+    x = "Year", y = "ASMR (per 100,000)",
+    caption  = "WHO Standard Population; ages 20\u201395+"
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(legend.position  = "bottom",
+        panel.grid.minor = element_blank(),
+        plot.title       = element_text(face = "bold"))
+
+ggsave(paste0(wd_outp, "aim2_slides_fig_asmr.png"),
+       plot = g_sl_asmr, width = 8.5, height = 3.0, dpi = 300)
+message("Saved: aim2_slides_fig_asmr.png")
+```
+
+## Manifest of all slides output files
+
+```{r slides-manifest, message=FALSE, warning=FALSE, echo=FALSE}
+slides_files <- data.table(
+  File = c(
+    "aim2_slides_scalars.rds",
+    "aim2_slides_annual.rds",
+    "aim2_slides_tab1_summary.rds",
+    "aim2_slides_tab5_region.rds",
+    "aim2_slides_top20.rds",
+    "aim2_slides_age_sex.rds",
+    "aim2_slides_fig_htn_targets.png",
+    "aim2_slides_fig_baseline_trends.png",
+    "aim2_slides_fig1_deaths_averted.png",
+    "aim2_slides_fig2_by_cause.png",
+    "aim2_slides_fig_cumulative.png",
+    "aim2_slides_fig_age_sex.png",
+    "aim2_slides_fig_top20.png",
+    "aim2_slides_fig_asmr.png"
+  ),
+  Type = c(rep("RDS", 6), rep("PNG", 8)),
+  `Used by slide chunk` = c(
+    "summary-table-final, Aim 2 scope block (n_countries)",
+    "fig-cumulative",
+    "table1-summary",
+    "table5-region",
+    "fig-top20",
+    "fig-age-sex",
+    "scenario-targets-plot",
+    "baseline-trends",
+    "fig1-deaths-averted",
+    "fig2-by-cause",
+    "fig-cumulative",
+    "fig-age-sex",
+    "fig-top20",
+    "fig-asmr"
+  )
+)
+
+kable(slides_files,
+      caption = "Files written to `wd_outp` for consumption by the slides deck.",
+      align   = "llr") |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE, font_size = 12) |>
+  row_spec(0, bold = TRUE)
+```

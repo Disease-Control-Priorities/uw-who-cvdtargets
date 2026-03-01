@@ -93,13 +93,24 @@ source("02_load_inputs.R")
 source("03_clean_inputs.R")
 
 #...........................................................
-# 04. Build baseline ----
+# 04. define interventions ----
 #...........................................................
 
-source("04_build_baseline.R")
+source("04_define_interventions.R")
 
 #...........................................................
-# 05. Run model ----
+# 05. build baseline ----
 #...........................................................
 
-source("05_run_scenarios.R")
+source("05_build_baseline.R")
+
+#...........................................................
+# 06. Run model ----
+#...........................................................
+
+# Run Aim 1: multiple interventions
+source("06_run_scenarios_multiple.R")
+
+# Run Aim 2: HTN control scenarios, 150 Million by 2030
+source("06_run_scenarios_targets.R")
+
