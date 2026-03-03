@@ -103,7 +103,7 @@ pop2095 <- pop2095[age >= 20 & year == 2025,
 pop2095 <- rbind(pop2095, pop2095_samoa)
 # unique location-sex HTN inputs (htncov2 is among raisedBP)
 data.in_htn <- unique(
-  data.in[, .(location, sex, htncov2, raisedBP,htn_prev)],
+  data.in[, .(location, sex, htncov2, raisedBP,htn_prev,diabetes)],
   by = c("location", "sex")
 )
 
@@ -178,15 +178,16 @@ rm(aim2_loc,aim2_base_2025, aim2_locsex, data.in_htn,pop2095_samoa,pop2095, targ
    global_control_rate_2025, target_controlled_2030, target_control_rate_2030, aim2_scale_factor)
 
 
-## Temporary code to test the impact of the proportional increase in control rates on the number of people controlled globally in 2030, to confirm it matches the target of 150 million additional controlled
 
+## Temporary code to test the impact of the proportional increase in control rates on the number of people controlled globally in 2030, to confirm it matches the target of 150 million additional controlled
+## Import targets excel ----
 aim2_loc <- as.data.table(
   read_excel("C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/Scenarios.xlsx",
-             sheet = "Sheet1",range = "A6:M197")
+             sheet = "Sheet1",range = "A6:O197")
 )
 
 # keep target control rates baseline htncov2, _aspirational,_ambitious, and _progress
-aim2_loc <- aim2_loc[, .(location,htncov2, htncov2_aspirational, htncov2_ambitious, htncov2_progress)]
+aim2_loc <- aim2_loc[, .(location,htncov2, htncov2_aspirational, htncov2_ambitious, htncov2_progress,htn_ctrl_diabetes)]
 
 # save .csv for input in running the model
 fwrite(aim2_loc, paste0(wd_data,"htn_control_targets_by_loc.csv"))
