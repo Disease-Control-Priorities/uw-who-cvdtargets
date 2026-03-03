@@ -429,6 +429,130 @@ Hemorrhagic stroke & 0.76 \\ HHD & 0.20 \\
 \end{column}
 \end{columns}
 
+## HTN Control (Diabetes Subgroup)
+
+\begin{columns}[T]
+\begin{column}{0.52\textwidth}
+\textbf{WHO Target:} 80\% BP control among diagnosed diabetics by 2030
+
+\medskip
+\textbf{Same 9-step pipeline as general HTN.} Key distinction: diabetes-specific Ettehad effect sizes ($w_{\text{DM}} = 1$):
+
+\medskip
+\textit{General HTN (DM-blended):}
+$$E_{\text{trial}} = (1-w_{\text{DM}})\,E_{\text{noDM}} + w_{\text{DM}}\,E_{\text{DM}},\quad w_{\text{DM}}=0.10$$
+
+\textit{Diabetes subgroup (DM-only):}
+$$E_{\text{trial}}^{\text{DM}} = E_{\text{DM}}$$
+
+\textit{Coverage scale-up to $C_{\text{target}}^{\text{DM}} = 0.80$:}
+$$C_t^{\text{DM}} = C_0^{\text{DM}} + \Delta C^{\text{DM}}\;\min\!\left[\frac{t-2026}{4},\,1\right]$$
+\end{column}
+
+\begin{column}{0.46\textwidth}
+\textbf{Effect ratios} (same structure as general HTN):
+$$\varepsilon_{IR,\text{DM}}(a,s,c,t) = \frac{IR^{\text{DM}}_{\text{new}}}{IR_{\text{original}}}$$
+$$\varepsilon_{CF,\text{DM}} = 1 - \rho_{CF,c} \times C_{\text{agg}}^{\Delta,\text{DM}}$$
+
+\begin{exampleblock}{Why a separate module?}
+\small People with diabetes have higher CVD risk at any BP level. DM-specific Ettehad effects are larger (especially for stroke) than blended effects at $w_{\text{DM}}=0.10$.
+\end{exampleblock}
+
+\begin{alertblock}{When combined with general HTN}
+\small Effects multiply (no double-counting via incremental coverage formulation):
+$$\varepsilon_{IR,\text{BP,total}} = \varepsilon_{IR,\text{gen}} \times \varepsilon_{IR,\text{DM}}$$
+\end{alertblock}
+\end{column}
+\end{columns}
+
+## Statin Therapy: Coverage Scale-Up and Key Equations
+
+\begin{columns}[T]
+\begin{column}{0.50\textwidth}
+\textbf{Scope:} IHD \& ischemic stroke; ages $\geq 40$ only
+
+\medskip
+\textit{Incremental coverage above baseline $U_{0,\ell}$:}
+$$\Delta U(t,\ell) = \Delta U_{\text{target},\ell}\;\min\!\left[\frac{t-T_{\text{stat,start}}+1}{T_{\text{stat,end}}-T_{\text{stat,start}}+1},1\right]$$
+where $\Delta U_{\text{target},\ell} = \max(U_{\text{target}} - U_{0,\ell},\,0)$
+
+\medskip
+\textit{Trial-based RRs (per $\approx$1 mmol/L LDL-C reduction):}
+
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule Cause & $RR^{IR}$ & $RR^{CF}$ \\ \midrule
+IHD & 0.74 & 0.80 \\
+Ischemic stroke & 0.80 & 0.96 \\
+\bottomrule
+\end{tabular}
+
+\normalsize\medskip
+\textit{Incidence (primary prevention, AF-scaled):}
+$$E^{IR}_{c,\ell}(t) = \frac{AF_{c,\ell}\;\delta^{IR}_{c}\;\Delta U(t,\ell)}{1 - \delta^{IR}_{c}\;U_{0,\ell}}$$
+\end{column}
+
+\begin{column}{0.48\textwidth}
+\textit{Case fatality (secondary prevention; no AF; atherosclerotic restriction for stroke):}
+$$E^{CF}_{c,\ell}(t) = \begin{cases}
+\dfrac{\delta^{CF}_{\text{ihd}}\;\Delta U(t,\ell)}{1 - \delta^{CF}_{\text{ihd}}\;U_{0,\ell}}, & c=\text{ihd}\\[1.2em]
+\dfrac{\psi_{\text{athero}}\;\delta^{CF}_{\text{ist}}\;\Delta U(t,\ell)}{1 - \delta^{CF}_{\text{ist}}\;U_{0,\ell}}, & c=\text{istroke}
+\end{cases}$$
+
+\small $\delta^{IR}_c = 1 - RR^{IR}_c$;\quad $\psi_{\text{athero}} = 0.60$ (atherosclerotic fraction)
+
+\normalsize\medskip
+\textit{Effect ratios passed to model:}
+$$\varepsilon_{IR,\text{stat}} = \begin{cases} 1 - E^{IR}_{c,\ell}(t), & a\geq40,\;c\in\{\text{ihd,istroke}\} \\ 1, & \text{otherwise} \end{cases}$$
+$$\varepsilon_{CF,\text{stat}} = \begin{cases} 1 - E^{CF}_{c,\ell}(t), & a\geq40,\;c\in\{\text{ihd,istroke}\} \\ 1, & \text{otherwise} \end{cases}$$
+\end{column}
+\end{columns}
+
+## Modeling Assumptions
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Model structure}
+\begin{itemize}\small
+  \item Discrete-time annual step (2019--2050); ages 20--95
+  \item Three mutually exclusive states per cause: Well $\to$ Sick $\to$ Dead
+  \item Four causes modeled independently: IHD, ischemic stroke, hemorrhagic stroke, HHD
+  \item COVID-19 excess mortality applied 2020--2021 only; no long-term effects
+\end{itemize}
+
+\medskip
+\textbf{Intervention mechanics}
+\begin{itemize}\small
+  \item Linear scale-up 2026 $\to$ 2030; held constant 2030--2050
+  \item Only incremental coverage above $C_0$ (or $U_{0,\ell}$) generates new effects (no double-counting)
+  \item Full adherence assumed for newly covered individuals
+  \item Statin effects restricted to ages $\geq 40$ and IHD \& ischemic stroke only
+  \item TFA policy effect instantaneous at $T_{\text{TFA,start}}$ (no gradual scale-up)
+\end{itemize}
+\end{column}
+
+\begin{column}{0.48\textwidth}
+\textbf{Blood pressure \& effect sizes}
+\begin{itemize}\small
+  \item Static log-normal BP distribution: no secular SBP trend, no endogenous updating as coverage rises
+  \item 8 BP bins; treatment eligibility: $\geq$140 mmHg (5 hypertensive bins)
+  \item GBD 2019 RRs anchor bin-level baseline incidence
+  \item Ettehad (2016) trial effect sizes; $w_{\text{DM}} = 0.10$
+  \item Atherosclerotic stroke fraction $\psi_{\text{athero}} = 0.60$
+  \item GBD 2023 uncertainty intervals not propagated
+\end{itemize}
+
+\medskip
+\textbf{Combination of interventions}
+\begin{itemize}\small
+  \item Effects combine \textbf{multiplicatively} across all interventions:
+  $$\varepsilon_{\text{total}} = \prod_j \varepsilon_j$$
+  \item BP-related effects (antihypertensive $\times$ sodium) combined first, then with TFA and statins
+  \item No saturation, synergy, or interaction terms beyond multiplicative combination
+\end{itemize}
+\end{column}
+\end{columns}
+
 <!-- ======================================================================
      RESULTS
      ====================================================================== -->
@@ -685,22 +809,65 @@ Targeting the top 15 countries could unlock $>$75\% of the global avertable burd
 
 # Appendix
 
-## Mathematical Notation Reference
+## Notation: Core Model \& HTN Control
 
 \begin{center}{\small
 \begin{tabular}{ll}
 \toprule
 Symbol & Description \\
 \midrule
+\multicolumn{2}{l}{\textit{Core state-transition model}} \\
+$a, s, c, t, \ell$ & Age, sex, cause, year, location \\
+$W, K, D$ & Well, Sick, Dead populations \\
 $IR_{a,s,c}$, $CF_{a,s,c}$ & Baseline incidence \& case-fatality rates \\
-$\varepsilon_{IR}$, $\varepsilon_{CF}$ & Effect ratios applied to baseline rates \\
-$C_{\text{baseline}}$, $C_{\text{target}}$ & Baseline \& target control rates \\
-$\Delta C_{\text{target}}$ & Incremental coverage to achieve \\
-$RR_{\text{GBD}}$ & GBD relative risk per 10 mmHg SBP \\
-$E_{\text{trial}}$ & Ettehad trial effect size per 10 mmHg \\
-$w_{\text{DM}}$ & Diabetes prevalence weight (default 0.10) \\
-$W, K, D$ & Well, Sick, Dead population states \\
-$T_{\text{start}}, T_{\text{end}}$ & Scale-up start (2025) \& end (2030) \\
+$\varepsilon_{IR,j}$, $\varepsilon_{CF,j}$ & Multiplicative effect ratios for intervention $j$ \\
+$BG.mx$, $BG.mx.all$ & Cause-specific \& all-cause background mortality \\
+$covid.mx$ & COVID-19 mortality (2020--2021 only) \\
+\midrule
+\multicolumn{2}{l}{\textit{HTN control (general \& diabetes subgroup)}} \\
+$C_0$, $C_t$, $C_{\text{target}}$ & Baseline, time-$t$, and target control rates \\
+$\Delta C_{\text{target}}$, $\Delta C_{\text{increment}}$ & Total \& time-varying incremental coverage \\
+$C_{\text{agg}}^{\Delta}$ & Population-weighted incremental coverage (hypertensive bins) \\
+$P(\text{BP}_{\text{cat}})$ & BP category population distribution (8 bins) \\
+$RR_{\text{GBD}}$ & GBD relative risk per 10 mmHg SBP increase \\
+$\alpha_{\text{inc}}$ & Incidence normalization factor \\
+$E_{\text{trial}}$, $E_{\text{DM}}$, $E_{\text{noDM}}$ & Ettehad effect sizes (blended, DM-only, non-DM) \\
+$w_{\text{DM}}$ & Diabetes prevalence weight (general HTN: 0.10; DM subgroup: 1.0) \\
+$\rho_{CF,c}$ & CF reduction factor per unit incremental coverage \\
+$T_{\text{start}}$, $T_{\text{end}}$ & Scale-up start (2026) \& end (2030) \\
+\bottomrule
+\end{tabular}
+}\end{center}
+
+## Notation: Statins, TFA \& Combined Effects
+
+\begin{center}{\small
+\begin{tabular}{ll}
+\toprule
+Symbol & Description \\
+\midrule
+\multicolumn{2}{l}{\textit{Statin therapy}} \\
+$U_{0,\ell}$, $U_{\text{target}}$ & Baseline \& target statin coverage \\
+$\Delta U(t,\ell)$ & Incremental statin coverage above $U_{0,\ell}$ at time $t$ \\
+$T_{\text{stat,start}}$, $T_{\text{stat,end}}$ & Statin scale-up start (2026) \& end years \\
+$RR^{IR}_c$, $RR^{CF}_c$ & Trial-based RRs for incidence \& case fatality \\
+$\delta^{IR}_c$, $\delta^{CF}_c$ & Risk reductions $= 1 - RR$ \\
+$AF_{c,\ell}$ & Cause- \& location-specific attributable fraction (incidence only) \\
+$\psi_{\text{athero}}$ & Atherosclerotic fraction of ischemic stroke ($= 0.60$) \\
+$E^{IR}_{c,\ell}(t)$, $E^{CF}_{c,\ell}(t)$ & Incremental effect sizes for $IR$ and $CF$ \\
+\midrule
+\multicolumn{2}{l}{\textit{Trans-fat (TFA) policy}} \\
+$TFA_{\text{current}}$, $TFA_{\text{target}}$ & Current \& target TFA intake (\% energy) \\
+$RR_{\text{TFA},a}$ & Age-specific RR per 1\% TFA energy (IHD case fatality) \\
+$E_{\text{TFA}}(a,t)$ & TFA proportional reduction in IHD case fatality \\
+\midrule
+\multicolumn{2}{l}{\textit{Sodium reduction}} \\
+$S_{\text{current}}$, $S_{\text{target}}$ & Current \& target sodium intake (g/day) \\
+$\Delta SBP(a,s,t)$ & SBP reduction from sodium lowering (Filippini dose-response) \\
+$\phi_{\text{hyp}}$ & Proportion with raised BP \\
+\midrule
+\multicolumn{2}{l}{\textit{Combined effects}} \\
+$\varepsilon_{IR,\text{total}}$, $\varepsilon_{CF,\text{total}}$ & Combined effect ratios (multiplicative across all interventions) \\
 \bottomrule
 \end{tabular}
 }\end{center}
