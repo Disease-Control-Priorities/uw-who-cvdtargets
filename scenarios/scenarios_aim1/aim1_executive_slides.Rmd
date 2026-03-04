@@ -1,6 +1,6 @@
 ---
 title: "Projected Health Impact of WHO Cardiovascular Risk-Factor Targets, 2026--2050"
-author: ""
+author: "\\color{blue}Work in Progress"
 institute: "WHO $\\cdot$ University of Washington"
 date: "`r format(Sys.Date(), '%B %Y')`"
 output:
@@ -208,7 +208,7 @@ Confirm primary metric: deaths averted vs.\ DALYs vs.\ LYG
 ```{r data-sources-table}
 ds <- data.table(
   Source    = c("GBD 2023 (IHME)","GBD 2019 (IHME)","Ettehad et al.\\ 2016",
-                "UNWPP 2024 (UN)","WHO / NCD-RisC","Country-specific"),
+                "UNWPP 2024 (UN)","NCD-RisC","Country-specific"),
   Variables = c(
     "IR, CF, prevalence, background mortality (age/sex/country)",
     "Relative risks per 10 mmHg SBP increase (IHD, stroke, HHD, by age)",
@@ -683,8 +683,8 @@ Sensitivity analysis to diabetes targeting assumptions and secular trends pendin
 All-interventions: \textbf{`r if(!is.na(total_all)) paste0(fmt_M(total_all)," million deaths averted") else "[X.X million]"`} globally, 2026--2050.
 \end{exampleblock}
 
-\begin{block}{\textbf{2. HTN control + statins are synergistic}}
-Combined deployment outperforms the sum of either alone.
+\begin{block}{\textbf{2. HTN control + statins compound risk reduction}}
+HTN control and statins have multiplicative risk reductions, producing larger combined effects.
 \end{block}
 
 \begin{block}{\textbf{3. Regional patterns reflect burden and coverage gaps}}
@@ -798,8 +798,9 @@ kable(steps, col.names=c("","Action","Output"),
 
 \small\textit{Blue row = intervention start (2026). Green rows = outputs passed to state-transition model.}
 
-## Key Equations
+## HTN Control: Coverage Scale-Up and Key Equations
 
+\footnotesize
 \begin{columns}[T]
 \begin{column}{0.48\textwidth}
 \textbf{Incidence pathway}
@@ -839,7 +840,7 @@ Hemorrhagic stroke & 0.76 \\ HHD & 0.20 \\
 \end{columns}
 
 ## HTN Control (Diabetes Subgroup)
-
+\footnotesize
 \begin{columns}[T]
 \begin{column}{0.52\textwidth}
 \textbf{WHO Target:} 80\% BP control among diagnosed diabetics by 2030
@@ -875,7 +876,7 @@ $$\varepsilon_{IR,\text{BP,total}} = \varepsilon_{IR,\text{gen}} \times \varepsi
 \end{columns}
 
 ## Statin Therapy: Coverage Scale-Up and Key Equations
-
+\footnotesize
 \begin{columns}[T]
 \begin{column}{0.50\textwidth}
 \textbf{Scope:} IHD \& ischemic stroke; ages $\geq 40$ only
@@ -925,15 +926,21 @@ $$\varepsilon_{CF,\text{stat}} = \begin{cases} 1 - E^{CF}_{c,\ell}(t), & a\geq40
 - \textbf{Ettehad D, et al.}\ Blood pressure lowering for prevention of CVD and death. \textit{Lancet.} 2016;387:957--967.
 
 - **GBD 2023 Collaborators** (2024). Global mortality for 371 causes. *Lancet*.
-- **Kontis V et al.** (2019). Contributions of risk factor trends to cardiometabolic mortality decline. *Nature Medicine*, 25, 579--584.
-- **Murray CJL et al.** (2020). Global burden of 87 risk factors: GBD 2019. *Lancet*, 396, 1223--1249.
 
+- **Kontis V et al.** (2019). Contributions of risk factor trends to cardiometabolic mortality decline. *Nature Medicine*, 25, 579--584.
 
 - \textbf{Mills KT, et al.}\ Global disparities of hypertension prevalence and control. \textit{Circulation.} 2016;134:441--450.
 
+- **Murray CJL et al.** (2020). Global burden of 87 risk factors: GBD 2019. *Lancet*, 396, 1223--1249.
+
 - \textbf{NCD Countdown 2030 Collaborators.}\ Pathways to achieving SDG target 3.4. \textit{Lancet.} 2022;399:1226--1249.
 
+- **Pickersgill et al.** (2022). Modeling global 80-80-80 blood pressure targets and cardiovascular outcomes. In: Nature Medicine 
+
 - **UNWPP** (2024). World Population Prospects 2024. United Nations.
+
+- **Watkins, D et al.** (2025). Global Impact of Single-Pill Combination Therapies on Cardiovascular Mortality and Events, 2023-2050: A Modeling Study.
+In: JACC.
 
 - **WHO** (2023). Global Hearts Initiative: HEARTS Technical Package. Geneva.
 
