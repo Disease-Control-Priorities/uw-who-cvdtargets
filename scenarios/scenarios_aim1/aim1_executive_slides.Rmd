@@ -459,6 +459,12 @@ ggplot(sl_dt_annual,
   guides(fill = guide_legend(nrow = 2))
 ```
 
+## Cummulative Deaths Averted Over Time
+
+```{r fig-cumulative-time, fig.height=3.0}
+```
+
+
 ## Deaths Averted by Cause of Death
 
 ```{r fig-by-cause, fig.height=3.0}
