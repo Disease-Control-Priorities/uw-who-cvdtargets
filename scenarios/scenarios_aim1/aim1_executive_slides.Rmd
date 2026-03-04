@@ -29,6 +29,7 @@ library(scales)
 
 # ---- Path to pre-built artefacts --------------------------------------------
 wd_outp    <- "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/output/"
+wd_data    <- "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/data/processed/"
 slides_dir <- paste0(wd_outp, "slides/")
 
 stopifnot(
@@ -267,37 +268,56 @@ kable(dt_scen, format = "latex", booktabs = TRUE, escape = FALSE,
 ## HTN Control Targets by 2030 --- Country Distribution
 
 ```{r scenario-targets-plot, fig.height=2.9}
-dt_hbp_targets <- tryCatch(
-  fread(paste0(wd_data,"htn_control_targets_by_loc.csv")),
-  error=function(e) NULL
+dt_hbp_targets <- fread(paste0(wd_data,"htn_control_targets_by_loc.csv"))
+dt_long <- melt(
+  dt_hbp_targets,
+  id.vars = "location",
+  measure.vars = c("htncov2", "htncov2_progress"),
+  variable.name = "target_col",
+  value.name   = "target_value"
 )
-if (!is.null(dt_hbp_targets)) {
-  dt_long <- melt(dt_hbp_targets,
-    id.vars="location",
-    measure.vars=c("htncov2_progress","htncov2_ambitious","htncov2_aspirational"),
-    variable.name="target_col", value.name="target_value")
-  dt_long[, scenario_lbl := factor(htn_labels[target_col],
-                                   levels=c("Progress","Ambitious","Aspirational"))]
-  ggplot(dt_long, aes(x=scenario_lbl, y=target_value*100, fill=scenario_lbl)) +
-    geom_boxplot(alpha=0.75, outlier.size=1, width=0.45) +
-    annotate("rect", xmin=1.5, xmax=2.5, ymin=0, ymax=100,
-             fill="#2171b5", alpha=0.07) +
-    annotate("text", x=2, y=97,
-             label="Headline scenario", size=3,
-             color="#2171b5", fontface="bold") +
-    scale_fill_manual(values=htn_cols[c("Progress","Ambitious","Aspirational")],
-                      guide="none") +
-    scale_y_continuous(limits=c(0,100), expand=c(0,0)) +
-    labs(title="Distribution of Country-Level HTN Control Targets by 2030",
-         subtitle="Each box = distribution across countries | scale-up starts 2026",
-         x=NULL, y="HTN Control Rate (%)") +
-    theme_minimal(base_size=11) +
-    theme(plot.title=element_text(face="bold"), panel.grid.minor=element_blank())
-} else {
-  ggplot() + annotate("text",x=0.5,y=0.5,
-    label="[Figure: HTN target distribution -- data pending]",
-    size=5,color="grey60") + theme_void()
-}
+
+# Clean scenario labels
+dt_long[, scenario_lbl := factor(
+  ifelse(target_col == "htncov2", "Current",
+         "Progress"),
+  levels = c("Current","Progress")
+)]
+
+ggplot(dt_long,
+       aes(x = scenario_lbl,
+           y = target_value*100,
+           fill = scenario_lbl)) +
+  
+  geom_boxplot(alpha=0.75, outlier.size=1, width=0.45) +
+  
+  annotate("rect",
+           xmin=1.5, xmax=2.5,
+           ymin=0, ymax=100,
+           fill="#2171b5",
+           alpha=0.07) +
+  
+  annotate("text",
+           x=2, y=97,
+           label="Headline scenario",
+           size=3,
+           color="#2171b5",
+           fontface="bold") +
+  
+  scale_y_continuous(limits=c(0,100), expand=c(0,0)) +
+  
+  labs(
+    title="Distribution of Country-Level HTN Control Targets",
+    subtitle="Current vs 150M scenario | scale-up starts 2026",
+    x=NULL,
+    y="HTN Control Rate (%)"
+  ) +
+  
+  theme_minimal(base_size=11) +
+  theme(
+    plot.title = element_text(face="bold"),
+    panel.grid.minor = element_blank()
+  )
 ```
 
 <!-- ======================================================================
@@ -447,26 +467,58 @@ kable(sl_tab_summary[, .(
 ## Annual Deaths Averted Over Time
 
 ```{r fig-deaths-averted, fig.height=3.0}
-ggplot(sl_dt_annual,
-       aes(x = year, y = deaths_delayed / 1e6, fill = intervention)) +
-  geom_area(alpha = 0.85, position = "identity") +
-  scale_fill_manual(values = int_cols[int_order], name = NULL) +
+# ggplot(sl_dt_annual,
+#        aes(x = year, y = deaths_delayed / 1e6, fill = intervention)) +
+#   geom_area(alpha = 0.85, position = "identity") +
+#   scale_fill_manual(values = int_cols[int_order], name = NULL) +
+#   scale_y_continuous(labels = comma) +
+#   labs(x = "Year", y = "Deaths averted (millions)") +
+#   theme_minimal(base_size = 10) +
+#   theme(legend.position = "bottom",
+#         legend.text = element_text(size = 7),
+#         panel.grid.minor = element_blank()) +
+#   guides(fill = guide_legend(nrow = 2))
+#knitr::include_graphics(png_averted)
+
+ggplot(sl_dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
+            aes(x = year, y = deaths_delayed / 1e6,
+                color = intervention, fill = intervention)) +
+  geom_area(position = "stack", alpha = 0.7, color = "grey20", linewidth = 0.15) +
+  scale_color_manual(values = int_cols, name = NULL) +
+  scale_fill_manual(values  = int_cols, name = NULL) +
   scale_y_continuous(labels = comma) +
-  labs(x = "Year", y = "Deaths averted (millions)") +
-  theme_minimal(base_size = 10) +
-  theme(legend.position = "bottom",
-        legend.text = element_text(size = 7),
-        panel.grid.minor = element_blank()) +
-  guides(fill = guide_legend(nrow = 2))
+  labs(
+    title = "",
+    x     = "Year",
+    y     = "Deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
 ```
+
+\footnotesize Cumulative deaths averted per intervention relative to business-as-usual.
 
 ## Cumulative Deaths Averted Over Time
 
-```{r fig-cum-averted, fig.height=3.2}
-knitr::include_graphics(png_cum_averted)
+```{r fig-cum-averted, fig.height=3.0}
+#knitr::include_graphics(png_cum_averted)
+ggplot(sl_dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
+            aes(x = year, y = cum_deaths_delayed / 1e6, color = intervention)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = int_cols, name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "",
+    x     = "Year",
+    y     = "Cumulative deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
 ```
 
-\footnotesize Cumulative deaths averted per intervention (excluding All Interventions) relative to business-as-usual.
+\footnotesize Cumulative deaths averted per intervention relative to business-as-usual.
 
 ## Deaths Averted by Cause of Death
 
