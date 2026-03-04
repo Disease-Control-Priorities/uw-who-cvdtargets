@@ -705,7 +705,7 @@ g <- ggplot(dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
   scale_fill_manual(values  = int_cols, name = NULL) +
   scale_y_continuous(labels = comma) +
   labs(
-    title = "Annual Deaths Averted by Intervention, 2025\u20132050",
+    title = "Annual Deaths Averted by Intervention, 2026\u20132050",
     x     = "Year",
     y     = "Deaths averted (millions)"
   ) +
@@ -728,7 +728,7 @@ g <- ggplot(dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
   scale_color_manual(values = int_cols, name = NULL) +
   scale_y_continuous(labels = comma) +
   labs(
-    title = "Cumulative Deaths Averted by Intervention, 2025\u20132050",
+    title = "Cumulative Deaths Averted by Intervention, 2026\u20132050",
     x     = "Year",
     y     = "Cumulative deaths averted (millions)"
   ) +
@@ -1229,7 +1229,7 @@ message("SL-10 saved: sl_fig_asmr.png")
 
 ```{r slides-fig-deaths-averted, message=FALSE, warning=FALSE, echo=FALSE}
 # SL-11: Annual deaths averted area chart
-g_ann_sl <- ggplot(dt_annual[intervention %in% int_order],
+g_ann_sl <- ggplot(dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
                     aes(x = year, y = deaths_delayed / 1e6, fill = intervention)) +
   geom_area(alpha = 0.85, position = "identity") +
   scale_fill_manual(values = int_cols[int_order], name = NULL) +
@@ -1309,7 +1309,7 @@ g <- ggplot(dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
   scale_color_manual(values = int_cols, name = NULL) +
   scale_y_continuous(labels = comma) +
   labs(
-    title = "Cumulative Deaths Averted by Intervention, 2025\u20132050",
+    title = "",
     x     = "Year",
     y     = "Cumulative deaths averted (millions)"
   ) +
