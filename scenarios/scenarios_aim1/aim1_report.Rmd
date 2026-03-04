@@ -1301,8 +1301,29 @@ ggsave(paste0(slides_dir, "sl_fig_top15_countries.png"), plot = g_top15_sl,
 message("SL-14 saved: sl_fig_top15_countries.png")
 ```
 
+```{r slides-fig-cumulative-time, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+# SL-15: Cumulative deaths averted by intervention (excl. "All Interventions" and b.a.u)
+g <- ggplot(dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
+            aes(x = year, y = cum_deaths_delayed / 1e6, color = intervention)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = int_cols, name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Cumulative Deaths Averted by Intervention, 2025\u20132050",
+    x     = "Year",
+    y     = "Cumulative deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(slides_dir, "sl_fig_cum_averted.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+message("SL-15 saved: sl_fig_cum_averted.png")
+```
+
 ```{r slides-manifest, message=FALSE, warning=FALSE, echo=FALSE}
-# SL-15: Artefact manifest — printed in HTML report for traceability
+# SL-16: Artefact manifest — printed in HTML report for traceability
 sl_manifest <- data.table(
   file = c(
     "sl_scalars.rds", "sl_tab_summary.rds", "sl_tab_region.rds",
@@ -1310,9 +1331,10 @@ sl_manifest <- data.table(
     "sl_dt_asmr.rds", "sl_dt_annual.rds",
     "sl_fig_baseline_trend.png", "sl_fig_asmr.png",
     "sl_fig_deaths_averted.png", "sl_fig_by_cause.png",
-    "sl_fig_by_age.png", "sl_fig_top15_countries.png"
+    "sl_fig_by_age.png", "sl_fig_top15_countries.png",
+    "sl_fig_cum_averted.png"
   ),
-  type = c(rep("rds", 8), rep("png", 6)),
+  type = c(rep("rds", 8), rep("png", 7)),
   consumed_by = c(
     "inline scalars", "tab-summary kable", "tab-region kable",
     "fig-top-countries ggplot", "fig-by-cause ggplot", "fig-by-age ggplot",
@@ -1321,7 +1343,8 @@ sl_manifest <- data.table(
     "fig-deaths-averted include_graphics (fallback)",
     "fig-by-cause include_graphics (fallback)",
     "fig-by-age include_graphics (fallback)",
-    "fig-top-countries include_graphics (fallback)"
+    "fig-top-countries include_graphics (fallback)",
+    "fig-cum-averted include_graphics"
   )
 )
 saveRDS(sl_manifest, paste0(slides_dir, "sl_manifest.rds"))
@@ -1335,6 +1358,7 @@ kable(sl_manifest,
 
 message(sprintf("SLIDE DECK OUTPUTS complete. %d artefacts written to %s",
                 nrow(sl_manifest), slides_dir))
+
 ```
 
 ---

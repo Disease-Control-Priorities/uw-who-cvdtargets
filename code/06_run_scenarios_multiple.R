@@ -312,6 +312,11 @@ expand_to_single_year_ages <- function(dt) {
 }
 
 # Calculate BP probabilities with optional treatment effect
+
+# That last line overwrites everything and makes covinc always 0, 
+# so treatment never shifts BP probabilities. since we apply ETTEHAD 
+# via coverage-by-bin, so any redistribution across BP bins, it’s currently disabled.
+
 get.bp.prob <- function(DT, rx, drugaroc = "baseline") {
   # Select appropriate coverage increment variable
   cov_var <- switch(
@@ -632,19 +637,17 @@ calculate_antihypertensive_diabetes <- function(intervention_rates,
   
   cat(" - Calculating antihypertensive impact (diabetes subgroup) using ETIHAD effect sizes\n")
   
-  # Clamp baseline to [0,1]
   baseline_ctrl_diabetes <- max(min(baseline_ctrl_diabetes, 1), 0)
   
-  # Step 1: Get baseline BP distribution (no treatment)
+  # Step 1: Baseline BP distribution
   bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
   
-  # Step 2: Calculate baseline bin-specific incidence using GBD RRs
+  # Step 2: Baseline bin-specific incidence using GBD RRs
   dt_baseline <- calculate_baseline_incidence_gbd(
     copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
   )
   
-  # Step 3: Add ETIHAD effect sizes per BP bin and cause
-  # Only for diabetic fraction — merge diabetes proportion
+  # Step 3: ETIHAD effect sizes (unchanged — full effect size as per Ettehad)
   etihad_effects <- dt_baseline[, .(N = mean(pop)),
                                 by = .(location, year, age, sex, bp_cat, cause)]
   
@@ -653,6 +656,9 @@ calculate_antihypertensive_diabetes <- function(intervention_rates,
   setnames(diabetes_prop, "Year", "year")
   
   etihad_effects <- merge(etihad_effects, diabetes_prop, all.x = TRUE)
+  
+  # ? Check, here diabetes weight is 1, so effect size is fully applied to the 
+  # diabetic population, and 0 to non-diabetic population.
   etihad_effects[, etihad_effect := calculate_etihad_cumulative_rr(
     bp_cat, cause, diabetes_weight = diabetes
   )]
@@ -664,18 +670,18 @@ calculate_antihypertensive_diabetes <- function(intervention_rates,
     all.x = TRUE
   )
   
-  # Re-merge diabetes proportion for coverage calculation
+  # Merge diabetes prevalence — needed for downscaling in Steps 6 and 9
   dt_baseline <- merge(dt_baseline, diabetes_prop,
                        by = c("location", "year", "age", "sex", "bp_cat"),
                        all.x = TRUE)
   
-  # Step 4: Coverage scale-up — diabetics only
+  # Step 4: Coverage scale-up among diabetics
+  # coverage_0 and coverage_t are within-diabetic-subgroup rates [0,1]
+  # Diabetes downscaling happens explicitly in Steps 6 and 9
   hypertensive_bins <- c("140-149", "150-159", "160-169", "170-179", "180+")
   
-  # Incremental headroom for diabetics
   incr_diab <- max(target_control_diabetes - baseline_ctrl_diabetes, 0)
   
-  # Build scale-up fractional curve [0, 1] over time
   dt_baseline <- add_coverage_by_year(
     dt_baseline,
     year_col        = "year",
@@ -685,52 +691,46 @@ calculate_antihypertensive_diabetes <- function(intervention_rates,
     coverage_col    = "coverage_increment_diab"
   )
   
-  # Initialize coverage variables
   dt_baseline[, `:=`(coverage_0 = 0, coverage_t = 0)]
   
-  # Apply coverage ONLY to the diabetic fraction within hypertensive bins
-  # Non-diabetic fraction has coverage_0 = coverage_t = 0 (no effect from this function)
   dt_baseline[bp_cat %in% hypertensive_bins, `:=`(
-    coverage_0 = diabetes * baseline_ctrl_diabetes,
-    coverage_t = diabetes * (baseline_ctrl_diabetes + coverage_increment_diab)
+    coverage_0 = baseline_ctrl_diabetes,
+    coverage_t = baseline_ctrl_diabetes + coverage_increment_diab
   )]
-  
-  # Clamp
   dt_baseline[bp_cat %in% hypertensive_bins,
               coverage_t := pmin(pmax(coverage_t, coverage_0), 1)]
   
-  # Non-hypertensive bins: no coverage
   dt_baseline[!bp_cat %in% hypertensive_bins,
               `:=`(coverage_t = 0, coverage_0 = 0)]
   
   dt_baseline[, coverage_increment_diab := NULL]
   
-  # Step 5: Apply coverage-adjusted ETIHAD effect sizes
+  # Step 5: ETIHAD effect size — as-is, no diabetes scaling here
   dt_baseline[, effect_size_t := apply_coverage_adjustment(
     etihad_effect,
     coverage_t,
     coverage_0 = coverage_0
   )]
   
-  # Step 6: New bin-specific incidence
-  dt_baseline[, IR_bin_new := IR_bin * (1 - effect_size_t)]
+  # Step 6: FIX — downscale by diabetes prevalence
+  # effect_size_t is the full Ettehad effect; only the diabetic fraction
+  # of the bin actually receives this treatment, so multiply by diabetes
+  dt_baseline[, IR_bin_new := IR_bin * (1 - diabetes * effect_size_t)]
   
   # Step 7: Population-weighted average incidence
   dt_baseline[, IR_new := sum(IR_bin_new * prob),
               by = .(age, sex, location, cause, year)]
   
-  # If no scale up (baseline already at or above target), keep flat
   if (baseline_ctrl_diabetes >= target_control_diabetes) {
     dt_baseline[, IR_new := IR]
   }
   
-  # Prior to intervention start, force baseline
   dt_baseline[year < start_year, IR_new := IR]
   
-  # Step 8: Effect ratio for incidence
+  # Step 8: Effect ratio
   dt_baseline[, eff_ir := IR_new / IR]
   
-  # Step 9: Case fatality reduction — diabetes-weighted incremental coverage
+  # Step 9: Case fatality reduction
   cf_etihad <- data.table(
     cause = c("ihd", "istroke", "hstroke", "hhd", "aod"),
     cf_reduction_per_control = c(0.24, 0.36, 0.76, 0.20, 0.047)
@@ -738,14 +738,16 @@ calculate_antihypertensive_diabetes <- function(intervention_rates,
   
   dt_baseline <- merge(dt_baseline, cf_etihad, by = "cause", all.x = TRUE)
   
-  # Incremental coverage above baseline (diabetes-weighted)
+  # FIX — downscale coverage_delta by diabetes prevalence before aggregating
+  # so CF reduction applies only to the diabetic fraction of the population
   dt_baseline[, coverage_delta := pmax(coverage_t - coverage_0, 0)]
+  dt_baseline[, coverage_delta_diab := diabetes * coverage_delta]
   
   coverage_aggregate <- calculate_aggregate_coverage(
     dt_baseline,
     hypertensive_bins = hypertensive_bins,
     bp_col            = "bp_cat",
-    coverage_col      = "coverage_delta",
+    coverage_col      = "coverage_delta_diab",
     prob_col          = "prob",
     grouping_vars     = c("age", "sex", "location", "cause", "year"),
     hypertensive_only = TRUE
@@ -758,10 +760,37 @@ calculate_antihypertensive_diabetes <- function(intervention_rates,
   )
   dt_baseline[is.na(coverage_agg), coverage_agg := 0]
   
-  # Apply CF reduction
   dt_baseline[, CF_new := CF * (1 - cf_reduction_per_control * coverage_agg)]
   dt_baseline[cause == "aod" & age < 60, CF_new := CF]
   dt_baseline[, eff_cf := CF_new / CF]
+  
+  # Patch: effect size only to diabetes population to multiplicative effect in markov model
+
+  # 1) Extract raisedBP from DT.in (collapse bp_cat duplicates)
+  raisedBP_dt <- unique(DT.in[, .(location, Year, age, sex, raisedBP)])
+  
+  # 2) Expand to single-year ages to match dt_baseline (which is age-continuous)
+  raisedBP_dt <- expand_to_single_year_ages(raisedBP_dt)
+  
+  # 3) Align year variable name
+  setnames(raisedBP_dt, "Year", "year")
+  
+  # 4) Keep only merge keys + raisedBP (avoid accidental extra cols)
+  raisedBP_dt <- raisedBP_dt[, .(location, year, age, sex, raisedBP)]
+  
+  # 5) Merge into dt_baseline
+  dt_baseline <- merge(
+    dt_baseline,
+    raisedBP_dt,
+    by = c("location", "year", "age", "sex"),
+    all.x = TRUE
+  )
+  
+  # Safety
+  dt_baseline[is.na(raisedBP), raisedBP := 0]
+  
+  dt_baseline[, eff_ir := 1 * (1-diabetes*raisedBP) + (eff_ir * diabetes*raisedBP)]
+  dt_baseline[, eff_cf := 1 * (1-diabetes*raisedBP) + (eff_cf * diabetes*raisedBP)]
   
   # Step 10: Collapse to final output
   dt_final <- unique(dt_baseline[, .(
@@ -1917,7 +1946,7 @@ scenarios <- list(
   all_interventions   = c("antihypertensive", "antihypertensive_diabetes", "statins")
 )
 
-
+# 
 # all_results <- run_multiple_scenarios(
 #   Country = "China",
 #   scenario_list = scenarios,

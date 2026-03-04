@@ -108,22 +108,19 @@ knitr::opts_chunk$set(
 What is the projected \textbf{burden-of-disease impact} of achieving the WHO cardiovascular risk-factor control targets by \textbf{2030}?
 \end{block}
 
-\medskip
 \textbf{Sub-questions driving the analysis:}
 
 \begin{enumerate}
-  \item How many \textbf{cardiovascular events} (myocardial infarctions and strokes) could be averted?
+  \item How many \textbf{cardiovascular events} could be averted?
   
   \item How many \textbf{CVD deaths} could be prevented by 2030 and beyond?
   
-  \item How many \textbf{life-years} could be gained under full target attainment?
-  
-  \item How would \textbf{YLLs, YLDs, and DALYs} change under joint achievement of:
+  \item How would \textbf{life-years, YLLs, YLDs, and DALYs} change under joint achievement of:
   \begin{itemize}
       \item 150M additional people with controlled hypertension
       \item $\geq$50\% lipid-lowering therapy coverage
       \item 80\% BP control among people with diabetes
-      \item 80\% validated BP device availability
+      \item \alert{80\% validated BP device availability}
   \end{itemize}
 \end{enumerate}
 
@@ -133,7 +130,7 @@ What is the projected \textbf{burden-of-disease impact} of achieving the WHO car
 \begin{column}{0.48\textwidth}
 \begin{exampleblock}{Scope}
 \small
-\textbf{`r n_countries` countries} $\cdot$ Ages 20--95 $\cdot$ 2025--2050 $\cdot$ Multiple CVD causes $\cdot$ WHO Target Scenarios
+\textbf{`r n_countries` countries} $\cdot$ Ages 20--95 $\cdot$ 2026--2050 $\cdot$ Multiple CVD causes $\cdot$ WHO Target Scenarios
 \end{exampleblock}
 \end{column}
 
@@ -188,13 +185,13 @@ kable(design, col.names=c("Component","Detail"),
 \begin{itemize}
   \item Discrete-time state transition (Well $\to$ Sick $\to$ Dead)
   \item Calibrated to GBD 2023; projected with UNWPP 2024 populations
-  \item 8 blood-pressure bins $\times$ GBD relative risks
+  \item 8 blood-pressure bins
   \item Baseline treatment effects explicitly de-duplicated
 \end{itemize}
 \end{column}
 \begin{column}{0.43\textwidth}
 \begin{exampleblock}{Research Question}
-What are the projected deaths averted from achieving WHO hypertension control and statin therapy targets across \textbf{`r n_countries` countries}, 2025--2050?
+What are the projected deaths averted from achieving WHO hypertension control and lipid-lowering therapy targets across \textbf{`r n_countries` countries}, 2026--2050?
 \end{exampleblock}
 \begin{block}{Pending \textcolor{red!70!black}{$\bigtriangleup$}}
 Confirm primary metric: deaths averted vs.\ DALYs vs.\ LYG
@@ -251,10 +248,10 @@ dt_scen <- data.table(
          "$\\geq$50\\% eligible adults on lipid-lowering therapy by 2030",
          "80\\% BP control among diagnosed diabetics by 2030",
          "80\\% availability of validated BP devices"),
-  Sc = c("\\textbf{HTN Control (General)}: 50\\% BP control by 2030",
+  Sc = c("\\textbf{HTN Control (General)}: $\\approx$ 100M more people with BP control by 2030",
          "\\textbf{Improved Statin Uptake}: 50\\% coverage by 2030",
-         "\\textbf{HTN Control (Diabetes)}: 80\\% BP control in diabetics by 2030",
-         "Operationally embedded in HTN scenarios")
+         "\\textbf{HTN Control (Diabetes)}: 80\\% BP control in diabetics by 2030 ($\\approx$ 50M more people with BP control)",
+         "Operationally embedded in HTN scenarios (150M Target [1+3])")
 )
 kable(dt_scen, format = "latex", booktabs = TRUE, escape = FALSE,
       col.names = c("\\#", "WHO Target", "Modelled Scenario"), caption = NULL) |>
@@ -352,7 +349,358 @@ ggplot() +
 
 \small \textbf{Key:} $\varepsilon_{IR}$, $\varepsilon_{CF}$ = multiplicative effect ratios from the intervention module $\cdot$ BG.mx = background mortality $\cdot$ COVID-19 excess mortality applied 2020--2021 only
 
-## Intervention Module: 9-Step Pipeline
+
+## Modeling Assumptions
+
+\begin{columns}[T]
+\begin{column}{0.47\textwidth}
+\textbf{Model structure}
+\begin{itemize}\footnotesize
+  \item Discrete-time annual step (2019--2050); ages 20--95
+  \item Four causes modeled independently
+  \item COVID-19 excess mortality applied 2020--2021 only; no long-term effects
+\end{itemize}
+
+\medskip
+\textbf{Intervention mechanics}
+\begin{itemize}\footnotesize
+  \item Linear scale-up 2026 $\to$ 2030; held constant 2030--2050
+  \item Only incremental coverage above $C_0$ (or $U_{0,\ell}$) generates new effects (no double-counting)
+  \item Full adherence assumed for HTN control, statins adherence adjusted down for primary and secondary prevention.
+  \item Statin effects restricted to ages $\geq 40$ and IHD \& ischemic stroke only
+\end{itemize}
+\end{column}
+
+\begin{column}{0.52\textwidth}
+\textbf{Blood pressure \& effect sizes}
+\begin{itemize}\footnotesize
+  \item Static log-normal BP distribution: no secular trend, no endogenous updating as coverage rises
+  \item Treatment eligibility: $\geq$140 mmHg (5 hypertensive bins)
+  \item GBD RRs anchor bin-level baseline incidence
+  \item \alert{Diabetes subgroup: base control rates assumed 15 percentage points higher than general HTN}
+  \item \alert{Diabetes subgroup: multiplicative reduction blended with general HTN effects using diabetes prevalence and high blood pressure prevalence as weights}
+\end{itemize}
+
+\medskip
+\textbf{Combination of interventions}
+\begin{itemize}\footnotesize
+  \item Effects combine \textbf{multiplicatively} across all interventions
+  \item BP-related effects combined first, then with statins
+  \item No saturation, synergy, or interaction terms beyond multiplicative combination
+\end{itemize}
+\end{column}
+\end{columns}
+
+<!-- ======================================================================
+     RESULTS
+     ====================================================================== -->
+
+# Results
+
+## Baseline Disease Trends (Business-as-Usual)
+
+```{r fig-baseline-trend, fig.height=3.4}
+knitr::include_graphics(png_trend)
+```
+
+\footnotesize Incident and prevalent CVD cases 2019--2050; solid = calibration, dashed = projection.
+
+## Age-Standardised CVD Mortality Rate
+
+```{r fig-asmr, fig.height=3.0}
+ggplot(sl_dt_asmr,
+       aes(x = year, y = ASMR, color = int_lbl, linetype = year > 2019)) +
+  geom_line(linewidth = 1) +
+  scale_color_manual(values = c("Business-as-Usual" = "#999999", int_cols),
+                     name = NULL) +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"),
+                        guide = "none") +
+  labs(x = "Year", y = "ASMR (per 100,000)",
+       subtitle = "Solid = calibration; dashed = projection") +
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 7),
+        panel.grid.minor = element_blank(),
+        plot.subtitle = element_text(color = "grey40", size = 8)) +
+  guides(color = guide_legend(nrow = 2))
+```
+
+## Summary: Cumulative Deaths Averted, 2026--2050
+
+```{r tab-summary, results='asis'}
+kable(sl_tab_summary[, .(
+        Scenario           = intervention,
+        `Cumulative (M)`   = cum_M,
+        `Avg./year (M)`    = avg_yr,
+        `% of BAU deaths`  = pct_s)],
+      format = "latex", booktabs = TRUE, caption = NULL) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) |>
+  row_spec(which(sl_tab_summary$intervention == "All Interventions"),
+           bold = TRUE, color = "white", background = "#6a3d9a")
+```
+
+\begin{exampleblock}{Headline}
+\textbf{All Interventions}: \textbf{`r if(!is.na(total_all)) paste0(fmt_M(total_all)," million deaths averted") else "[X.X M]"`} globally, 2026--2050 ($\approx$ `r if(!is.na(total_all)) paste0(fmt_M(total_all/25)," M/year") else "[X.X M/yr]"`).
+\end{exampleblock}
+
+## Annual Deaths Averted Over Time
+
+```{r fig-deaths-averted, fig.height=3.0}
+ggplot(sl_dt_annual,
+       aes(x = year, y = deaths_delayed / 1e6, fill = intervention)) +
+  geom_area(alpha = 0.85, position = "identity") +
+  scale_fill_manual(values = int_cols[int_order], name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(x = "Year", y = "Deaths averted (millions)") +
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 7),
+        panel.grid.minor = element_blank()) +
+  guides(fill = guide_legend(nrow = 2))
+```
+
+## Deaths Averted by Cause of Death
+
+```{r fig-by-cause, fig.height=3.0}
+ggplot(sl_dt_cause,
+       aes(x = cause_lbl, y = averted / 1e6, fill = intervention)) +
+  geom_col(position = "dodge", width = 0.7) +
+  scale_fill_manual(values = int_cols[int_order], name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(x = NULL, y = "Deaths averted (millions)") +
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 7),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size = 8)) +
+  guides(fill = guide_legend(nrow = 2))
+```
+
+## Deaths Averted by Age Group
+
+```{r fig-by-age, fig.height=3.0}
+ggplot(sl_dt_age,
+       aes(x = age_group, y = averted / 1e6, fill = intervention)) +
+  geom_col(position = "dodge", width = 0.7) +
+  scale_fill_manual(values = int_cols[int_order], name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(x = "Age group", y = "Deaths averted (millions)") +
+  theme_minimal(base_size = 10) +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 7),
+        panel.grid.minor = element_blank()) +
+  guides(fill = guide_legend(nrow = 2))
+```
+
+<!-- ## Top 15 Countries by Projected Impact -->
+
+<!-- ```{r fig-top-countries, fig.height=3.0} -->
+<!-- sl_t15 <- copy(sl_tab_top15) -->
+<!-- sl_t15[, location := factor(location, levels = rev(location))] -->
+<!-- ggplot(sl_t15, aes(x = averted / 1e6, y = location, fill = region)) + -->
+<!--   geom_col(width = 0.7) + -->
+<!--   scale_x_continuous(labels = comma, expand = c(0, 0)) + -->
+<!--   labs(x = "Deaths averted (millions)", y = NULL, fill = "Region") + -->
+<!--   theme_minimal(base_size = 10) + -->
+<!--   theme(legend.position = "right", -->
+<!--         panel.grid.minor = element_blank(), -->
+<!--         panel.grid.major.y = element_blank(), -->
+<!--         axis.text.y = element_text(size = 8)) -->
+<!-- ``` -->
+
+## Regional Summary
+
+```{r tab-region, results='asis'}
+kable(sl_tab_region[, .(
+        Region           = region,
+        `BAU deaths (M)` = fmt_M(bau),
+        `Averted (M)`    = fmt_M(averted),
+        `% averted`      = paste0(round(pct, 1), "%"))],
+      format = "latex", booktabs = TRUE, caption = NULL) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) |>
+  row_spec(0, bold = TRUE)
+```
+
+\vspace{4pt}
+\begin{block}{Observation}
+Absolute gains largest in high-burden regions; proportional gains reflect current coverage gaps.
+\end{block}
+
+<!-- ======================================================================
+     DISCUSSION
+     ====================================================================== -->
+
+# Discussion
+
+## Interpretation
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Key findings}
+\begin{itemize}
+  \item \textbf{All Interventions} yields largest gains: HTN control + statins are complementary
+  \item \textbf{IHD} and \textbf{ischemic stroke} drive the majority of avertable deaths
+  \item Gains \textbf{accelerate after 2030} as coverage compounds
+  \item \textbf{Older adults (70+)} benefit most in absolute terms
+  \item \textbf{Top 15 countries} account for $>$75\% of avertable burden
+\end{itemize}
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{exampleblock}{Policy Implication}
+Combined WHO Targets 1 + 2 are synergistic --- neither alone captures the full benefit.
+\end{exampleblock}
+\vspace{6pt}
+\begin{alertblock}{Uncertainty \textcolor{red!70!black}{$\bigtriangleup$}}
+Sensitivity analysis to diabetes targeting assumptions and secular trends pending.
+\end{alertblock}
+\end{column}
+\end{columns}
+
+## Limitations
+
+\begin{columns}[T]
+% ---------------- Left column ----------------
+\begin{column}{0.48\textwidth}
+
+\textbf{Model structure \& assumptions}
+\begin{itemize}\footnotesize
+  \item Stable transition rates assumed; no dynamic feedback between states
+  \item Static BP distribution (log-normal): no secular trend and no endogenous updating as coverage increases
+  \item No heterogeneity in adherence: newly HTN covered individuals assumed fully adherent
+  \item COVID-19 excess mortality only modelled for 2020--2021; long-term effects excluded
+\end{itemize}
+
+\medskip
+\textbf{Data \& parameters}
+\begin{itemize}\footnotesize
+  \item RCT-based effect sizes (e.g., Ettehad $\rho_{CF}$): real-world effectiveness at scale may be lower
+  \item GBD 2023 uncertainty intervals not propagated
+  \item Baseline $C_0$ from NCD-RisC; measurement error unquantified
+  \item BP distributions rely on GBD modelling (not direct surveys in all countries)
+  \item Statin coverage sparse in some LMICs; imputed from sub-regional estimates
+\end{itemize}
+
+\end{column}
+
+% ---------------- Right column ----------------
+\begin{column}{0.48\textwidth}
+
+\textbf{Scenarios \& implementation realism}
+\begin{itemize}\footnotesize
+  \item Linear scale-up assumed (2026--2030); real programmes may follow non-linear trajectories
+  \item No explicit health-system capacity constraints modelled
+  \item Interactions with statins, diabetes care, and \alert{BP device availability} not included
+\end{itemize}
+
+\end{column}
+\end{columns}
+
+## Next Steps
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Analysis priorities}
+\begin{enumerate}
+  \item Sensitivity analysis on effect sizes, trends and coverage
+  \item Add life-years gained (LYG) and DALYs as co-primary outcome
+  \item Stratify by income group (World Bank)
+  \item Conduct Aim 2: simulate alternative scale-up trajectories and implementation scenarios for hypertension control
+\end{enumerate}
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{alertblock}{Pending Decisions \textcolor{red!70!black}{$\bigtriangleup$}}
+\begin{itemize}
+  \item Journal target?
+\end{itemize}
+\end{alertblock}
+\end{column}
+\end{columns}
+
+## Summary
+
+\begin{exampleblock}{\textbf{1. The gains are large and achievable}}
+All-interventions: \textbf{`r if(!is.na(total_all)) paste0(fmt_M(total_all)," million deaths averted") else "[X.X million]"`} globally, 2026--2050.
+\end{exampleblock}
+
+\begin{block}{\textbf{2. HTN control + statins are synergistic}}
+Combined deployment outperforms the sum of either alone.
+\end{block}
+
+\begin{block}{\textbf{3. Regional patterns reflect burden and coverage gaps}}
+Absolute gains largest in high-burden regions; proportional gains reflect current coverage gaps.
+\end{block}
+
+\vspace{6pt}
+\begin{center}
+\textit{Meeting WHO 2030 CVD targets is not just aspirational --- it is quantifiably lifesaving.}
+\end{center}
+
+<!-- ======================================================================
+     APPENDIX
+     ====================================================================== -->
+
+# Appendix
+
+## Notation: Core Model
+
+\begin{center}{\small
+\begin{tabular}{ll}
+\toprule
+Symbol & Description \\
+\midrule
+\multicolumn{2}{l}{\textit{Core state-transition model}} \\
+$a, s, c, t, \ell$ & Age, sex, cause, year, location \\
+$W, K, D$ & Well, Sick, Dead populations \\
+$IR_{a,s,c}$, $CF_{a,s,c}$ & Baseline incidence \& case-fatality rates \\
+$\varepsilon_{IR,j}$, $\varepsilon_{CF,j}$ & Multiplicative effect ratios for intervention $j$ \\
+$BG.mx$, $BG.mx.all$ & Cause-specific \& all-cause background mortality \\
+$covid.mx$ & COVID-19 mortality (2020--2021 only) \\
+\bottomrule
+\end{tabular}
+}\end{center}
+
+## Notation: HTN Control
+
+\begin{center}{\small
+\begin{tabular}{ll}
+\toprule
+Symbol & Description \\
+\multicolumn{2}{l}{\textit{HTN control (general \& diabetes subgroup)}} \\
+$C_0$, $C_t$, $C_{\text{target}}$ & Baseline, time-$t$, and target control rates \\
+$\Delta C_{\text{target}}$, $\Delta C_{\text{increment}}$ & Total \& time-varying incremental coverage \\
+$C_{\text{agg}}^{\Delta}$ & Population-weighted incremental coverage (hypertensive bins) \\
+$P(\text{BP}_{\text{cat}})$ & BP category population distribution (8 bins) \\
+$RR_{\text{GBD}}$ & GBD relative risk per 10 mmHg SBP increase \\
+$\alpha_{\text{inc}}$ & Incidence normalization factor \\
+$E_{\text{trial}}$, $E_{\text{DM}}$, $E_{\text{noDM}}$ & Ettehad effect sizes (blended, DM-only, non-DM) \\
+$w_{\text{DM}}$ & Diabetes prevalence weight (general HTN: 0.10; DM subgroup: 1.0) \\
+$\rho_{CF,c}$ & CF reduction factor per unit incremental coverage \\
+$T_{\text{start}}$, $T_{\text{end}}$ & Scale-up start (2026) \& end (2030) \\
+\bottomrule
+\end{tabular}
+}\end{center}
+
+## Notation: Statins \& Combined Effects
+
+\begin{center}{\small
+\begin{tabular}{ll}
+\toprule
+Symbol & Description \\
+\midrule
+\multicolumn{2}{l}{\textit{Statin therapy}} \\
+$U_{0,\ell}$, $U_{\text{target}}$ & Baseline \& target statin coverage \\
+$\Delta U(t,\ell)$ & Incremental statin coverage above $U_{0,\ell}$ at time $t$ \\
+$T_{\text{stat,start}}$, $T_{\text{stat,end}}$ & Statin scale-up start (2026) \& end years \\
+$RR^{IR}_c$, $RR^{CF}_c$ & Trial-based RRs for incidence \& case fatality \\
+$\delta^{IR}_c$, $\delta^{CF}_c$ & Risk reductions $= 1 - RR$ \\
+$AF_{c,\ell}$ & Cause- \& location-specific attributable fraction (incidence only) \\
+$\psi_{\text{athero}}$ & Atherosclerotic fraction of ischemic stroke ($= 0.60$) \\
+$E^{IR}_{c,\ell}(t)$, $E^{CF}_{c,\ell}(t)$ & Incremental effect sizes for $IR$ and $CF$ \\
+\bottomrule
+\end{tabular}
+}\end{center}
+
+## HTN Intervention Module: 9-Step Pipeline
 
 ```{r steps-table}
 steps <- data.table(
@@ -508,380 +856,28 @@ $$\varepsilon_{CF,\text{stat}} = \begin{cases} 1 - E^{CF}_{c,\ell}(t), & a\geq40
 \end{column}
 \end{columns}
 
-## Modeling Assumptions
-
-\begin{columns}[T]
-\begin{column}{0.48\textwidth}
-\textbf{Model structure}
-\begin{itemize}\small
-  \item Discrete-time annual step (2019--2050); ages 20--95
-  \item Three mutually exclusive states per cause: Well $\to$ Sick $\to$ Dead
-  \item Four causes modeled independently: IHD, ischemic stroke, hemorrhagic stroke, HHD
-  \item COVID-19 excess mortality applied 2020--2021 only; no long-term effects
-\end{itemize}
-
-\medskip
-\textbf{Intervention mechanics}
-\begin{itemize}\small
-  \item Linear scale-up 2026 $\to$ 2030; held constant 2030--2050
-  \item Only incremental coverage above $C_0$ (or $U_{0,\ell}$) generates new effects (no double-counting)
-  \item Full adherence assumed for newly covered individuals
-  \item Statin effects restricted to ages $\geq 40$ and IHD \& ischemic stroke only
-  \item TFA policy effect instantaneous at $T_{\text{TFA,start}}$ (no gradual scale-up)
-\end{itemize}
-\end{column}
-
-\begin{column}{0.48\textwidth}
-\textbf{Blood pressure \& effect sizes}
-\begin{itemize}\small
-  \item Static log-normal BP distribution: no secular SBP trend, no endogenous updating as coverage rises
-  \item 8 BP bins; treatment eligibility: $\geq$140 mmHg (5 hypertensive bins)
-  \item GBD 2019 RRs anchor bin-level baseline incidence
-  \item Ettehad (2016) trial effect sizes; $w_{\text{DM}} = 0.10$
-  \item Atherosclerotic stroke fraction $\psi_{\text{athero}} = 0.60$
-  \item GBD 2023 uncertainty intervals not propagated
-\end{itemize}
-
-\medskip
-\textbf{Combination of interventions}
-\begin{itemize}\small
-  \item Effects combine \textbf{multiplicatively} across all interventions:
-  $$\varepsilon_{\text{total}} = \prod_j \varepsilon_j$$
-  \item BP-related effects (antihypertensive $\times$ sodium) combined first, then with TFA and statins
-  \item No saturation, synergy, or interaction terms beyond multiplicative combination
-\end{itemize}
-\end{column}
-\end{columns}
-
-<!-- ======================================================================
-     RESULTS
-     ====================================================================== -->
-
-# Results
-
-## Baseline Disease Trends (Business-as-Usual)
-
-```{r fig-baseline-trend, fig.height=3.4}
-knitr::include_graphics(png_trend)
-```
-
-\footnotesize Incident and prevalent CVD cases 2019--2050; solid = calibration, dashed = projection.
-
-## Age-Standardised CVD Mortality Rate
-
-```{r fig-asmr, fig.height=3.0}
-ggplot(sl_dt_asmr,
-       aes(x = year, y = ASMR, color = int_lbl, linetype = year > 2019)) +
-  geom_line(linewidth = 1) +
-  scale_color_manual(values = c("Business-as-Usual" = "#999999", int_cols),
-                     name = NULL) +
-  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"),
-                        guide = "none") +
-  labs(x = "Year", y = "ASMR (per 100,000)",
-       subtitle = "Solid = calibration; dashed = projection") +
-  theme_minimal(base_size = 10) +
-  theme(legend.position = "bottom",
-        legend.text = element_text(size = 7),
-        panel.grid.minor = element_blank(),
-        plot.subtitle = element_text(color = "grey40", size = 8)) +
-  guides(color = guide_legend(nrow = 2))
-```
-
-## Summary: Cumulative Deaths Averted, 2025--2050
-
-```{r tab-summary, results='asis'}
-kable(sl_tab_summary[, .(
-        Scenario           = intervention,
-        `Cumulative (M)`   = cum_M,
-        `Avg./year (M)`    = avg_yr,
-        `% of BAU deaths`  = pct_s)],
-      format = "latex", booktabs = TRUE, caption = NULL) |>
-  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) |>
-  row_spec(which(sl_tab_summary$intervention == "All Interventions"),
-           bold = TRUE, color = "white", background = "#6a3d9a")
-```
-
-\begin{exampleblock}{Headline}
-\textbf{All Interventions}: \textbf{`r if(!is.na(total_all)) paste0(fmt_M(total_all)," million deaths averted") else "[X.X M]"`} globally, 2025--2050 ($\approx$ `r if(!is.na(total_all)) paste0(fmt_M(total_all/25)," M/year") else "[X.X M/yr]"`).
-\end{exampleblock}
-
-## Annual Deaths Averted Over Time
-
-```{r fig-deaths-averted, fig.height=3.0}
-ggplot(sl_dt_annual,
-       aes(x = year, y = deaths_delayed / 1e6, fill = intervention)) +
-  geom_area(alpha = 0.85, position = "identity") +
-  scale_fill_manual(values = int_cols[int_order], name = NULL) +
-  scale_y_continuous(labels = comma) +
-  labs(x = "Year", y = "Deaths averted (millions)") +
-  theme_minimal(base_size = 10) +
-  theme(legend.position = "bottom",
-        legend.text = element_text(size = 7),
-        panel.grid.minor = element_blank()) +
-  guides(fill = guide_legend(nrow = 2))
-```
-
-## Deaths Averted by Cause of Death
-
-```{r fig-by-cause, fig.height=3.0}
-ggplot(sl_dt_cause,
-       aes(x = cause_lbl, y = averted / 1e6, fill = intervention)) +
-  geom_col(position = "dodge", width = 0.7) +
-  scale_fill_manual(values = int_cols[int_order], name = NULL) +
-  scale_y_continuous(labels = comma) +
-  labs(x = NULL, y = "Deaths averted (millions)") +
-  theme_minimal(base_size = 10) +
-  theme(legend.position = "bottom",
-        legend.text = element_text(size = 7),
-        panel.grid.minor = element_blank(),
-        axis.text.x = element_text(size = 8)) +
-  guides(fill = guide_legend(nrow = 2))
-```
-
-## Deaths Averted by Age Group
-
-```{r fig-by-age, fig.height=3.0}
-ggplot(sl_dt_age,
-       aes(x = age_group, y = averted / 1e6, fill = intervention)) +
-  geom_col(position = "dodge", width = 0.7) +
-  scale_fill_manual(values = int_cols[int_order], name = NULL) +
-  scale_y_continuous(labels = comma) +
-  labs(x = "Age group", y = "Deaths averted (millions)") +
-  theme_minimal(base_size = 10) +
-  theme(legend.position = "bottom",
-        legend.text = element_text(size = 7),
-        panel.grid.minor = element_blank()) +
-  guides(fill = guide_legend(nrow = 2))
-```
-
-## Top 15 Countries by Projected Impact
-
-```{r fig-top-countries, fig.height=3.0}
-sl_t15 <- copy(sl_tab_top15)
-sl_t15[, location := factor(location, levels = rev(location))]
-ggplot(sl_t15, aes(x = averted / 1e6, y = location, fill = region)) +
-  geom_col(width = 0.7) +
-  scale_x_continuous(labels = comma, expand = c(0, 0)) +
-  labs(x = "Deaths averted (millions)", y = NULL, fill = "Region") +
-  theme_minimal(base_size = 10) +
-  theme(legend.position = "right",
-        panel.grid.minor = element_blank(),
-        panel.grid.major.y = element_blank(),
-        axis.text.y = element_text(size = 8))
-```
-
-## Regional Summary
-
-```{r tab-region, results='asis'}
-kable(sl_tab_region[, .(
-        Region           = region,
-        `BAU deaths (M)` = fmt_M(bau),
-        `Averted (M)`    = fmt_M(averted),
-        `% averted`      = paste0(round(pct, 1), "%"))],
-      format = "latex", booktabs = TRUE, caption = NULL) |>
-  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) |>
-  row_spec(0, bold = TRUE)
-```
-
-\vspace{4pt}
-\begin{block}{Observation}
-Absolute gains largest in high-burden regions; proportional gains reflect current coverage gaps.
-\end{block}
-
-<!-- ======================================================================
-     DISCUSSION
-     ====================================================================== -->
-
-# Discussion
-
-## Interpretation
-
-\begin{columns}[T]
-\begin{column}{0.55\textwidth}
-\textbf{Key findings}
-\begin{itemize}
-  \item \textbf{All Interventions} yields largest gains: HTN control + statins are complementary
-  \item \textbf{IHD} and \textbf{ischemic stroke} drive the majority of avertable deaths
-  \item Gains \textbf{accelerate after 2030} as coverage compounds
-  \item \textbf{Older adults (70+)} benefit most in absolute terms
-  \item \textbf{Top 15 countries} account for $>$75\% of avertable burden
-\end{itemize}
-\end{column}
-\begin{column}{0.43\textwidth}
-\begin{exampleblock}{Policy Implication}
-Combined WHO Targets 1 + 2 are synergistic --- neither alone captures the full benefit.
-\end{exampleblock}
-\vspace{6pt}
-\begin{alertblock}{Uncertainty \textcolor{red!70!black}{$\bigtriangleup$}}
-Effect sizes from Ettehad (2016). Updated NMA estimates pending.
-\end{alertblock}
-\end{column}
-\end{columns}
-
-## Limitations
-
-\begin{columns}[T]
-% ---------------- Left column ----------------
-\begin{column}{0.48\textwidth}
-
-\textbf{Model structure \& assumptions}
-\begin{itemize}\small
-  \item Stable transition rates assumed; no dynamic feedback between states
-  \item Static BP distribution (log-normal): no secular trend and no endogenous updating as coverage increases
-  \item No heterogeneity in adherence: newly covered individuals assumed fully adherent
-  \item COVID-19 excess mortality only modelled for 2020--2021; long-term effects excluded
-\end{itemize}
-
-\medskip
-\textbf{Data \& parameters}
-\begin{itemize}\small
-  \item RCT-based effect sizes (e.g., Ettehad $\rho_{CF}$): real-world effectiveness at scale may be lower
-  \item GBD 2023 uncertainty intervals not propagated
-  \item Baseline $C_0$ from NCD-RisC; measurement error unquantified
-  \item BP distributions rely on GBD modelling (not direct surveys in all countries)
-  \item Statin coverage sparse in some LMICs; imputed from sub-regional estimates
-\end{itemize}
-
-\end{column}
-
-% ---------------- Right column ----------------
-\begin{column}{0.48\textwidth}
-
-\textbf{Scenarios \& implementation realism}
-\begin{itemize}\small
-  \item Linear scale-up assumed (2026--2030); real programmes may follow non-linear trajectories
-  \item No explicit health-system capacity constraints modelled
-  \item No equity dimension: impacts not stratified by socioeconomic position (e.g., income quintile)
-  \item Interactions with statins, diabetes care, and \alert{BP device availability} not included in Aim 2; incorporated in Aim 1 combined scenarios
-\end{itemize}
-
-\end{column}
-\end{columns}
-
-## Next Steps
-
-\begin{columns}[T]
-\begin{column}{0.55\textwidth}
-\textbf{Analysis priorities}
-\begin{enumerate}
-  \item Probabilistic sensitivity analysis on effect sizes and coverage
-  \item Add life-years gained (LYG) as co-primary outcome
-  \item Stratify by income group (World Bank)
-  \item Validate against observed trends (2019--2023)
-  \item Extend to Aim 2: cost-effectiveness and budget impact
-\end{enumerate}
-\end{column}
-\begin{column}{0.43\textwidth}
-\begin{alertblock}{Pending Decisions \textcolor{red!70!black}{$\bigtriangleup$}}
-\begin{itemize}
-  \item Primary metric: deaths vs.\ DALYs vs.\ LYG?
-  \item PSA parameter scope?
-  \item Country inclusion threshold?
-  \item Headline period: 2025--2030 or 2025--2050?
-  \item Journal target?
-\end{itemize}
-\end{alertblock}
-\end{column}
-\end{columns}
-
-## Summary
-
-\begin{exampleblock}{\textbf{1. The gains are large and achievable}}
-All-interventions: \textbf{`r if(!is.na(total_all)) paste0(fmt_M(total_all)," million deaths averted") else "[X.X million]"`} globally, 2025--2050.
-\end{exampleblock}
-
-\begin{block}{\textbf{2. HTN control + statins are synergistic}}
-Combined deployment outperforms the sum of either alone.
-\end{block}
-
-\begin{block}{\textbf{3. A small number of countries drive most of the gain}}
-Targeting the top 15 countries could unlock $>$75\% of the global avertable burden.
-\end{block}
-
-\vspace{6pt}
-\begin{center}
-\textit{Meeting WHO 2030 CVD targets is not just aspirational --- it is quantifiably lifesaving.}
-\end{center}
-
-<!-- ======================================================================
-     APPENDIX
-     ====================================================================== -->
-
-# Appendix
-
-## Notation: Core Model \& HTN Control
-
-\begin{center}{\small
-\begin{tabular}{ll}
-\toprule
-Symbol & Description \\
-\midrule
-\multicolumn{2}{l}{\textit{Core state-transition model}} \\
-$a, s, c, t, \ell$ & Age, sex, cause, year, location \\
-$W, K, D$ & Well, Sick, Dead populations \\
-$IR_{a,s,c}$, $CF_{a,s,c}$ & Baseline incidence \& case-fatality rates \\
-$\varepsilon_{IR,j}$, $\varepsilon_{CF,j}$ & Multiplicative effect ratios for intervention $j$ \\
-$BG.mx$, $BG.mx.all$ & Cause-specific \& all-cause background mortality \\
-$covid.mx$ & COVID-19 mortality (2020--2021 only) \\
-\midrule
-\multicolumn{2}{l}{\textit{HTN control (general \& diabetes subgroup)}} \\
-$C_0$, $C_t$, $C_{\text{target}}$ & Baseline, time-$t$, and target control rates \\
-$\Delta C_{\text{target}}$, $\Delta C_{\text{increment}}$ & Total \& time-varying incremental coverage \\
-$C_{\text{agg}}^{\Delta}$ & Population-weighted incremental coverage (hypertensive bins) \\
-$P(\text{BP}_{\text{cat}})$ & BP category population distribution (8 bins) \\
-$RR_{\text{GBD}}$ & GBD relative risk per 10 mmHg SBP increase \\
-$\alpha_{\text{inc}}$ & Incidence normalization factor \\
-$E_{\text{trial}}$, $E_{\text{DM}}$, $E_{\text{noDM}}$ & Ettehad effect sizes (blended, DM-only, non-DM) \\
-$w_{\text{DM}}$ & Diabetes prevalence weight (general HTN: 0.10; DM subgroup: 1.0) \\
-$\rho_{CF,c}$ & CF reduction factor per unit incremental coverage \\
-$T_{\text{start}}$, $T_{\text{end}}$ & Scale-up start (2026) \& end (2030) \\
-\bottomrule
-\end{tabular}
-}\end{center}
-
-## Notation: Statins, TFA \& Combined Effects
-
-\begin{center}{\small
-\begin{tabular}{ll}
-\toprule
-Symbol & Description \\
-\midrule
-\multicolumn{2}{l}{\textit{Statin therapy}} \\
-$U_{0,\ell}$, $U_{\text{target}}$ & Baseline \& target statin coverage \\
-$\Delta U(t,\ell)$ & Incremental statin coverage above $U_{0,\ell}$ at time $t$ \\
-$T_{\text{stat,start}}$, $T_{\text{stat,end}}$ & Statin scale-up start (2026) \& end years \\
-$RR^{IR}_c$, $RR^{CF}_c$ & Trial-based RRs for incidence \& case fatality \\
-$\delta^{IR}_c$, $\delta^{CF}_c$ & Risk reductions $= 1 - RR$ \\
-$AF_{c,\ell}$ & Cause- \& location-specific attributable fraction (incidence only) \\
-$\psi_{\text{athero}}$ & Atherosclerotic fraction of ischemic stroke ($= 0.60$) \\
-$E^{IR}_{c,\ell}(t)$, $E^{CF}_{c,\ell}(t)$ & Incremental effect sizes for $IR$ and $CF$ \\
-\midrule
-\multicolumn{2}{l}{\textit{Trans-fat (TFA) policy}} \\
-$TFA_{\text{current}}$, $TFA_{\text{target}}$ & Current \& target TFA intake (\% energy) \\
-$RR_{\text{TFA},a}$ & Age-specific RR per 1\% TFA energy (IHD case fatality) \\
-$E_{\text{TFA}}(a,t)$ & TFA proportional reduction in IHD case fatality \\
-\midrule
-\multicolumn{2}{l}{\textit{Sodium reduction}} \\
-$S_{\text{current}}$, $S_{\text{target}}$ & Current \& target sodium intake (g/day) \\
-$\Delta SBP(a,s,t)$ & SBP reduction from sodium lowering (Filippini dose-response) \\
-$\phi_{\text{hyp}}$ & Proportion with raised BP \\
-\midrule
-\multicolumn{2}{l}{\textit{Combined effects}} \\
-$\varepsilon_{IR,\text{total}}$, $\varepsilon_{CF,\text{total}}$ & Combined effect ratios (multiplicative across all interventions) \\
-\bottomrule
-\end{tabular}
-}\end{center}
 
 ## References {.allowframebreaks}
 
 \footnotesize
 
-- **Ettehad D et al.** (2016). Blood pressure lowering for prevention of CVD and death. *Lancet*, 387, 957--967.
+- \textbf{Ettehad D, et al.}\ Blood pressure lowering for prevention of CVD and death. \textit{Lancet.} 2016;387:957--967.
+
 - **GBD 2023 Collaborators** (2024). Global mortality for 371 causes. *Lancet*.
 - **Kontis V et al.** (2019). Contributions of risk factor trends to cardiometabolic mortality decline. *Nature Medicine*, 25, 579--584.
 - **Murray CJL et al.** (2020). Global burden of 87 risk factors: GBD 2019. *Lancet*, 396, 1223--1249.
+
+
+- \textbf{Mills KT, et al.}\ Global disparities of hypertension prevalence and control. \textit{Circulation.} 2016;134:441--450.
+
+- \textbf{NCD Countdown 2030 Collaborators.}\ Pathways to achieving SDG target 3.4. \textit{Lancet.} 2022;399:1226--1249.
+
 - **UNWPP** (2024). World Population Prospects 2024. United Nations.
+
 - **WHO** (2023). Global Hearts Initiative: HEARTS Technical Package. Geneva.
+
+- \textbf{WHO.}\ Global NCD Political Declaration. Geneva: WHO; 2025.
+
 
 ---
 

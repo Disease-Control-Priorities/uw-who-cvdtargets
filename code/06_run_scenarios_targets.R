@@ -1701,34 +1701,34 @@ scenarios <- list(
 )
 
 
-# all_results <- run_multiple_scenarios(
-#   Country = "China",
-#   scenario_list = scenarios,
-#   #explicit hypertension control parameters
-#   target_control = 0.5,
-#   control_start_year = 2026,
-#   control_target_year = 2030,
-#   # explicit statins parameters
-#   statin_target_coverage = 0.60,
-#   statin_start_year      = 2026,
-#   statin_target_year     = 2050,
-#   adherence_ir = 0.575,
-#   adherence_cf = 0.664,
-#   #explicit sodium reduction parameters
-#   saltmet = "percent",
-#   salteff = 0.3,
-#   saltyear1 = 2026,
-#   saltyear2 = 2030,
-#   # explicit TFA parameters (NEW)
-#   tfa_target_tfa        = 0,    # 0% of energy from TFA
-#   tfa_policy_start_year = 2028, # <-- flexible start year (2026 lagged two years)
-#   #Implicit hypertension control parameters
-#   drugcov = "p75",
-#   baseline_ctrl       = NULL,
-#   baseline_statin_coverage = NULL,
-#   htn_target_col = "htncov2_ambitious",
-#   dt_hbp_targets = dt_hbp_targets
-# )
+all_results <- run_multiple_scenarios(
+  Country = "China",
+  scenario_list = scenarios,
+  #explicit hypertension control parameters
+  target_control = 0.5,
+  control_start_year = 2026,
+  control_target_year = 2030,
+  # explicit statins parameters
+  statin_target_coverage = 0.60,
+  statin_start_year      = 2026,
+  statin_target_year     = 2050,
+  adherence_ir = 0.575,
+  adherence_cf = 0.664,
+  #explicit sodium reduction parameters
+  saltmet = "percent",
+  salteff = 0.3,
+  saltyear1 = 2026,
+  saltyear2 = 2030,
+  # explicit TFA parameters (NEW)
+  tfa_target_tfa        = 0,    # 0% of energy from TFA
+  tfa_policy_start_year = 2028, # <-- flexible start year (2026 lagged two years)
+  #Implicit hypertension control parameters
+  drugcov = "p75",
+  baseline_ctrl       = NULL,
+  baseline_statin_coverage = NULL,
+  htn_target_col = "htncov2_ambitious",
+  dt_hbp_targets = dt_hbp_targets
+)
 
 #...........................................................
 ## Comparison Helper Functions ----
@@ -1809,13 +1809,13 @@ calculate_cumulative_impact <- function(results_dt,
   return(cumulative)
 }
 
-# # # Example:
-# cumulative_deaths <- calculate_cumulative_impact(
-#   all_results,
-#   metric = "dead",
-#   start_year = 2025,
-#   end_year = 2050
-# )
+# # Example:
+cumulative_deaths <- calculate_cumulative_impact(
+  all_results,
+  metric = "dead",
+  start_year = 2025,
+  end_year = 2050
+)
 
 
 #...........................................................
