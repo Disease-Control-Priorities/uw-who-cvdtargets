@@ -58,12 +58,13 @@ sl_dt_asmr     <- readRDS(paste0(slides_dir, "sl_dt_asmr.rds"))
 sl_dt_annual   <- readRDS(paste0(slides_dir, "sl_dt_annual.rds"))
 
 # ---- SL-09 to SL-14: PNG paths ----------------------------------------------
-png_trend   <- paste0(slides_dir, "sl_fig_baseline_trend.png")
-png_asmr    <- paste0(slides_dir, "sl_fig_asmr.png")
-png_averted <- paste0(slides_dir, "sl_fig_deaths_averted.png")
-png_cause   <- paste0(slides_dir, "sl_fig_by_cause.png")
-png_age     <- paste0(slides_dir, "sl_fig_by_age.png")
-png_top15   <- paste0(slides_dir, "sl_fig_top15_countries.png")
+png_trend       <- paste0(slides_dir, "sl_fig_baseline_trend.png")
+png_asmr        <- paste0(slides_dir, "sl_fig_asmr.png")
+png_averted     <- paste0(slides_dir, "sl_fig_deaths_averted.png")
+png_cum_averted <- paste0(slides_dir, "sl_fig_cum_averted.png")
+png_cause       <- paste0(slides_dir, "sl_fig_by_cause.png")
+png_age         <- paste0(slides_dir, "sl_fig_by_age.png")
+png_top15       <- paste0(slides_dir, "sl_fig_top15_countries.png")
 
 # ---- Display helpers (no raw data needed) ------------------------------------
 fmt_M <- function(x, digits = 1)
@@ -458,6 +459,14 @@ ggplot(sl_dt_annual,
         panel.grid.minor = element_blank()) +
   guides(fill = guide_legend(nrow = 2))
 ```
+
+## Cumulative Deaths Averted Over Time
+
+```{r fig-cum-averted, fig.height=3.2}
+knitr::include_graphics(png_cum_averted)
+```
+
+\footnotesize Cumulative deaths averted per intervention (excluding All Interventions) relative to business-as-usual.
 
 ## Deaths Averted by Cause of Death
 
