@@ -1,5 +1,5 @@
 ---
-title: "Projected Health Impact of WHO Cardiovascular Risk-Factor Targets, 2026--2050"
+title: "Projected Health Impact of Achieving WHO Targets for Cardiovascular Risk-Factor Control"
 author: "\\color{blue}Work in Progress"
 institute: "WHO $\\cdot$ University of Washington"
 date: "`r format(Sys.Date(), '%B %Y')`"
