@@ -192,6 +192,7 @@ aim2_loc <- aim2_loc[, .(location,htncov2, htncov2_aspirational, htncov2_ambitio
 # save .csv for input in running the model
 fwrite(aim2_loc, paste0(wd_data,"htn_control_targets_by_loc.csv"))
 
+
 #...........................................................
 # STATINS AIM 2: Country-level baseline/target table ----
 #...........................................................
@@ -306,7 +307,7 @@ rm(aim2_loc_full_s, diab_cols_s)
 # (constant across all years; equals the baseline pp_cov from FDC_coverage_data_statints_pp.csv)
 # NA statins_current means no coverage data for that location -> treated as 0 in the model
 
-dt_statin_s <- readRDS(file = paste0(wd_data, "statin_data.rds"))
+dt_statin_s <- readRDS(file = paste0(wd_data, "Statins/statin_data.rds"))
 
 statin_base_s <- unique(
   dt_statin_s[, .(location, statins_baseline_2025 = statins_current)],
@@ -389,11 +390,11 @@ b_rates_s[location == "United Republic of Tanzania",        location := "Tanzani
 if ("year" %in% names(b_rates_s)) {
   earliest_yr_s <- min(b_rates_s$year, na.rm = TRUE)
   b_prev_s <- b_rates_s[year == earliest_yr_s & age >= 40 & cause %in% c("ihd", "istroke"),
-                        .(location, sex, age, cause, PREVt0)]
+                         .(location, sex, age, cause, PREVt0)]
 } else {
   earliest_yr_s <- NA_integer_
   b_prev_s <- b_rates_s[age >= 40 & cause %in% c("ihd", "istroke"),
-                        .(location, sex, age, cause, PREVt0)]
+                         .(location, sex, age, cause, PREVt0)]
 }
 rm(b_rates_s)
 
