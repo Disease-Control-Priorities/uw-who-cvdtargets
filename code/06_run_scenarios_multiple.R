@@ -485,8 +485,7 @@ calculate_antihypertensive_impact_etihad <- function(intervention_rates,
   diabetes_prop <- diabetes_prop[, .(location, Year, age, sex, bp_cat, diabetes)]
   setnames(diabetes_prop, "Year", "year")
   
-  etihad_effects <- merge(etihad_effects, diabetes_prop, all.x = TRUE)
-  etihad_effects[, etihad_effect := 
+  etihad_effects[, etihad_effect :=
                    calculate_etihad_cumulative_rr(bp_cat, cause,
                                                   diabetes_weight = diabetes)]
   etihad_effects[, c("diabetes", "N") := NULL]
@@ -659,9 +658,17 @@ calculate_antihypertensive_diabetes <- function(intervention_rates,
   
   # ? Check, here diabetes weight is 1, so effect size is fully applied to the 
   # diabetic population, and 0 to non-diabetic population.
+  
+  # Update: here we apply the diabetes-weighted effect size, which applies the full ETIHAD effect to the diabetic population
+  # diabetes_weight = 1 means full effect for diabetics, 0 means no effect for diabetics.
+
   etihad_effects[, etihad_effect := calculate_etihad_cumulative_rr(
-    bp_cat, cause, diabetes_weight = diabetes
+    bp_cat, cause, diabetes_weight = 1
   )]
+  
+  # etihad_effects[, etihad_effect := calculate_etihad_cumulative_rr(
+  #   bp_cat, cause, diabetes_weight = diabetes
+  # )]
   etihad_effects[, c("diabetes", "N") := NULL]
   
   dt_baseline <- merge(

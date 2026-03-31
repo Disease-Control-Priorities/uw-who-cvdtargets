@@ -182,8 +182,8 @@ rm(aim2_loc,aim2_base_2025, aim2_locsex, data.in_htn,pop2095_samoa,pop2095, targ
 ## Temporary code to test the impact of the proportional increase in control rates on the number of people controlled globally in 2030, to confirm it matches the target of 150 million additional controlled
 ## Import targets excel ----
 aim2_loc <- as.data.table(
-  read_excel("C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/Scenarios.xlsx",
-             sheet = "Sheet1",range = "A6:O197")
+  read_excel(paste0(wd_data,"Scenarios.xlsx"),
+             sheet = "Sheet1",range = "A9:S200")
 )
 
 # keep target control rates baseline htncov2, _aspirational,_ambitious, and _progress
