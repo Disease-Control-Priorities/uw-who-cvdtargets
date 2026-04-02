@@ -364,35 +364,43 @@ kable(income_display, align = c("l", "r", "r", "r", "r"))
 
 # Figures
 
-**Figure 1.** Projected cumulative CVD deaths under the business-as-usual scenario, 2026--2050, across `r n_countries` countries. Four causes are modelled jointly: ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Population denominators from UNWPP 2024; epidemiological inputs from GBD 2023.
+**Figure 1.** Projected cumulative CVD deaths under the business-as-usual scenario, 2026--2050, across `r n_countries` countries. 
 
-```{r fig1-paper, echo=FALSE, fig.cap="Projected cumulative CVD burden under the business-as-usual scenario, 2026-2050."}
+```{r fig1-paper, echo=FALSE, fig.cap="Note: Four causes are modelled jointly: ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Population denominators from UNWPP 2024; epidemiological inputs from GBD 2023."}
 knitr::include_graphics(paste0(wd_outp, "aim1_disease_trend.png"))
 ```
 
+
+
 \newpage
 
-**Figure 2.** Cumulative CVD deaths averted by intervention scenario, `r study_years`. Each bar represents the total number of deaths averted relative to business-as-usual over the full projection period. All four CVD causes combined.
+**Figure 2.** Cumulative CVD deaths averted by intervention scenario, `r study_years`. 
 
-```{r fig2-paper, echo=FALSE, fig.cap="Cumulative deaths averted by intervention scenario."}
+```{r fig2-paper, echo=FALSE, fig.cap="Note: Each bar represents the total number of deaths averted relative to business-as-usual over the full projection period. All four CVD causes combined."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig1_deaths_intervention.png"))
 ```
 
+
+
 \newpage
 
-**Figure 3.** Annual and cumulative CVD deaths averted by intervention over time, `r study_years`. The stacked area chart (top) shows annual deaths averted by each intervention relative to business-as-usual. Gains accelerate after 2030 as sustained coverage compounds cumulative risk reduction.
+**Figure 3.** Annual and cumulative CVD deaths averted by intervention over time, `r study_years`. 
 
-```{r fig3-paper, echo=FALSE, fig.cap="Annual deaths averted by intervention over time."}
+```{r fig3-paper, echo=FALSE, fig.cap="Note: The stacked area chart (top) shows annual deaths averted by each intervention relative to business-as-usual. Gains accelerate after 2030 as sustained coverage compounds cumulative risk reduction."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig3_annual_averted.png"))
 ```
 
+
+
 \newpage
 
-**Figure 4.** Cumulative CVD deaths averted over time by intervention scenario, `r study_years`. Lines represent the running total of deaths averted for each individual intervention relative to business-as-usual.
+**Figure 4.** Cumulative CVD deaths averted over time by intervention scenario, `r study_years`. 
 
-```{r fig4-paper, echo=FALSE, fig.cap="Cumulative deaths averted over time by intervention."}
+```{r fig4-paper, echo=FALSE, fig.cap="Note: Lines represent the running total of deaths averted for each individual intervention relative to business-as-usual."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig4_cum_averted.png"))
 ```
+
+
 
 \newpage
 
@@ -404,25 +412,25 @@ knitr::include_graphics(paste0(wd_outp, "aim1_fig5_top20_countries.png"))
 
 \newpage
 
-**Figure 6.** Distribution of projected CVD deaths averted by age group, sex, and intervention scenario, `r study_years`. Adults aged 70 years and older account for the majority of averted deaths across all interventions, consistent with the age-dependent increase in baseline CVD mortality.
+**Figure 6.** Distribution of projected CVD deaths averted by age group, sex, and intervention scenario, `r study_years`. 
 
-```{r fig6-paper, echo=FALSE, fig.cap="Distribution of projected benefits by age and sex."}
+```{r fig6-paper, echo=FALSE, fig.cap="Note: Distribution of projected benefits by age and sex. Adults aged 70 years and older account for the majority of averted deaths across all interventions, consistent with the age-dependent increase in baseline CVD mortality."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig5_demo_age.png"))
 ```
 
 \newpage
 
-**Figure 7.** Age-standardised CVD mortality rate (ASMR) by intervention scenario, 2019--2050. Solid lines represent the calibration period; dashed lines represent the projection period. ASMR computed using the WHO World Standard Population, rescaled to ages 20--95+.
+**Figure 7.** Age-standardised CVD mortality rate (ASMR) by intervention scenario, 2019--2050. 
 
-```{r fig7-paper, echo=FALSE, fig.cap="Age-standardised CVD mortality rate by intervention scenario."}
+```{r fig7-paper, echo=FALSE, fig.cap="Note: Age-standardised CVD mortality rate by intervention scenario. Solid lines represent the calibration period; dashed lines represent the projection period. ASMR computed using the WHO World Standard Population, rescaled to ages 20--95+."}
 knitr::include_graphics(paste0(wd_outp, "aim1_asmr_interventions.png"))
 ```
 
 \newpage
 
-**Figure 8.** Deaths averted by cause of death and intervention scenario, `r study_years`. Ischaemic heart disease accounts for the largest share of averted deaths across all interventions. Statin effects are restricted to ischaemic heart disease and ischaemic stroke.
+**Figure 8.** Deaths averted by cause of death and intervention scenario, `r study_years`. 
 
-```{r fig8-paper, echo=FALSE, fig.cap="Deaths averted by cause of death and intervention scenario."}
+```{r fig8-paper, echo=FALSE, fig.cap="Note: Deaths averted by cause of death and intervention scenario. Ischaemic heart disease accounts for the largest share of averted deaths across all interventions. Statin effects are restricted to ischaemic heart disease and ischaemic stroke."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig2_deaths_cause.png"))
 ```
 
@@ -436,9 +444,9 @@ knitr::include_graphics(paste0(wd_outp, "aim1_bod_fig1_dalys_ts.png"))
 
 \newpage
 
-**Figure 10.** Deaths averted per 100,000 population under the combined intervention scenario, `r study_years`. Choropleth map showing geographic variation in per-capita health gains, with darker shading indicating larger per-capita benefit.
+**Figure 10.** Deaths averted per 100,000 population under the combined intervention scenario, `r study_years`. 
 
-```{r fig10-paper, echo=FALSE, fig.cap="Deaths averted per 100,000 population (world map)."}
+```{r fig10-paper, echo=FALSE, fig.cap="Note: Deaths averted per 100,000 population (world map). Choropleth map showing geographic variation in per-capita health gains, with darker shading indicating larger per-capita benefit."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig6_map.png"))
 ```
 
