@@ -11,7 +11,7 @@ output:
 fontsize: 11pt
 geometry: margin=1in
 bibliography: references.bib
-always_allow_html: true
+always_allow_html: false
 ---
 
 ```{r setup, include=FALSE}
@@ -31,7 +31,6 @@ slides_dir <- paste0(wd_outp, "slides/")
 
 library(data.table)
 library(knitr)
-library(kableExtra)
 library(scales)
 
 # ---- Scalars -----------------------------------------------------------------
@@ -257,15 +256,10 @@ tab1_display <- tab1[, .(
   `% of BAU deaths` = paste0(round(deaths_delayed / bau_total_deaths * 100, 1), "%")
 )]
 
-kable(tab1_display, align = c("l", "r", "r", "r")) |>
-  kable_styling(full_width = TRUE, font_size = 11) |>
-  row_spec(0, bold = TRUE) |>
-  footnote(general = paste0(
-    "Deaths averted = cumulative difference between business-as-usual and intervention ",
-    "scenario, 2026-2050. All four CVD causes combined: ischaemic heart disease, ",
-    "ischaemic stroke, intracerebral haemorrhage, hypertensive heart disease."
-  ))
+kable(tab1_display, align = c("l", "r", "r", "r"))
 ```
+
+*Note: Deaths averted = cumulative difference between business-as-usual and intervention scenario, 2026-2050. All four CVD causes combined: ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, hypertensive heart disease.*
 
 \newpage
 
@@ -296,14 +290,10 @@ for (col in cause_cols_display) {
 }
 
 kable(dt_t2_wide, col.names = c("Intervention", cause_cols_display),
-      align = c("l", rep("r", length(cause_cols_display)))) |>
-  kable_styling(full_width = TRUE, font_size = 11) |>
-  row_spec(0, bold = TRUE) |>
-  footnote(general = paste0(
-    "Values in millions. \u2013 = intervention does not affect this cause. ",
-    "Statin effects restricted to IHD and ischaemic stroke."
-  ))
+      align = c("l", rep("r", length(cause_cols_display))))
 ```
+
+*Note: Values in millions. \u2013 = intervention does not affect this cause. Statin effects restricted to IHD and ischaemic stroke.*
 
 \newpage
 
@@ -322,15 +312,10 @@ bod_display <- bod_summary[, .(
   DALYs        = fmt_m(DALYs)
 )]
 
-kable(bod_display, align = c("l", "r", "r", "r", "r")) |>
-  kable_styling(full_width = TRUE, font_size = 11) |>
-  row_spec(0, bold = TRUE) |>
-  footnote(general = paste0(
-    "Values in millions. Averted = business-as-usual minus intervention scenario, ",
-    "cumulated 2026-2050. YLLs = years of life lost; YLDs = years lived with disability; ",
-    "DALYs = disability-adjusted life years."
-  ))
+kable(bod_display, align = c("l", "r", "r", "r", "r"))
 ```
+
+*Note: Values in millions. Averted = business-as-usual minus intervention scenario, cumulated 2026-2050. YLLs = years of life lost; YLDs = years lived with disability; DALYs = disability-adjusted life years.*
 
 \newpage
 
@@ -348,11 +333,10 @@ region_display <- dt_region[, .(
   `% averted` = paste0(round(deaths_delayed_pct * 100, 1), "%")
 )]
 
-kable(region_display, align = c("l", "r", "r", "r", "r")) |>
-  kable_styling(full_width = TRUE, font_size = 11) |>
-  row_spec(0, bold = TRUE) |>
-  footnote(general = "All Interventions scenario. BAU = business-as-usual.")
+kable(region_display, align = c("l", "r", "r", "r", "r"))
 ```
+
+*Note: All Interventions scenario. BAU = business-as-usual.*
 
 \newpage
 
@@ -373,14 +357,10 @@ income_display <- bod_income_all[, .(
   DALYs          = fmt_m(DALYs)
 )]
 
-kable(income_display, align = c("l", "r", "r", "r", "r")) |>
-  kable_styling(full_width = TRUE, font_size = 11) |>
-  row_spec(0, bold = TRUE) |>
-  footnote(general = paste0(
-    "Values in millions. All Interventions scenario. ",
-    "Income groups based on World Bank 2026 classification."
-  ))
+kable(income_display, align = c("l", "r", "r", "r", "r"))
 ```
+
+*Note: Values in millions. All Interventions scenario. Income groups based on World Bank 2026 classification.*
 
 # Figures
 
