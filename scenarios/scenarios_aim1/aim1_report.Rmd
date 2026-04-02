@@ -1627,4 +1627,187 @@ message(sprintf("SLIDE DECK OUTPUTS complete. %d artefacts written to %s",
 
 ---
 
+# PAPER OUTPUTS
+# Artefacts consumed by who_cvd_targets_paper1.Rmd
+# Extends slide artefacts with additional scalars and tables needed for the manuscript.
+
+```{r paper-setup, message=FALSE, warning=FALSE, echo=FALSE}
+paper_dir <- paste0(wd_outp, "paper/")
+if (!dir.exists(paper_dir)) dir.create(paper_dir, recursive = TRUE)
+message("Paper artefacts will be written to: ", paper_dir)
+```
+
+```{r paper-scalars, message=FALSE, warning=FALSE, echo=FALSE}
+# ---- Cause-specific deaths averted (All Interventions) ----------------------
+cause_averted_all <- dt_merged[intervention == "All Interventions",
+                                .(averted = sum(deaths_delayed, na.rm = TRUE)),
+                                by = cause]
+
+# ---- Cause-specific deaths averted by intervention --------------------------
+cause_averted_bp <- dt_merged[intervention == "HTN Control (General)",
+                               .(averted = sum(deaths_delayed, na.rm = TRUE)),
+                               by = cause]
+cause_averted_bpd <- dt_merged[intervention == "HTN Control (Diabetes)",
+                                .(averted = sum(deaths_delayed, na.rm = TRUE)),
+                                by = cause]
+cause_averted_stat <- dt_merged[intervention == "Improved Statin Uptake",
+                                 .(averted = sum(deaths_delayed, na.rm = TRUE)),
+                                 by = cause]
+
+# ---- BAU cause-specific deaths -----------------------------------------------
+bau_by_cause <- data.out[intervention == "b.a.u" & year >= 2025,
+                          .(bau_deaths = sum(dead, na.rm = TRUE)),
+                          by = cause]
+
+# ---- Percent of BAU averted --------------------------------------------------
+pct_all  <- round(total_all  / bau_total_deaths * 100, 1)
+pct_bp   <- round(total_bp   / bau_total_deaths * 100, 1)
+pct_bpd  <- round(total_bpd  / bau_total_deaths * 100, 1)
+pct_stat <- round(total_stat / bau_total_deaths * 100, 1)
+
+# ---- Annual deaths averted at key timepoints ---------------------------------
+annual_2030_all <- dt_annual[intervention == "All Interventions" & year == 2030,
+                              deaths_delayed]
+annual_2050_all <- dt_annual[intervention == "All Interventions" & year == 2050,
+                              deaths_delayed]
+annual_2030_bp  <- dt_annual[intervention == "HTN Control (General)" & year == 2030,
+                              deaths_delayed]
+annual_2050_bp  <- dt_annual[intervention == "HTN Control (General)" & year == 2050,
+                              deaths_delayed]
+annual_2030_stat <- dt_annual[intervention == "Improved Statin Uptake" & year == 2030,
+                               deaths_delayed]
+annual_2050_stat <- dt_annual[intervention == "Improved Statin Uptake" & year == 2050,
+                               deaths_delayed]
+
+# ---- Age-group totals (All Interventions) ------------------------------------
+age_averted_all <- dt_merged[intervention == "All Interventions",
+                              .(averted = sum(deaths_delayed, na.rm = TRUE)),
+                              by = age_group]
+
+# ---- Sex totals (All Interventions) ------------------------------------------
+sex_averted_all <- dt_merged[intervention == "All Interventions",
+                              .(averted = sum(deaths_delayed, na.rm = TRUE)),
+                              by = sex]
+
+# ---- Top 5 countries (All Interventions) -------------------------------------
+top5_countries <- dt_tab4[order(-deaths_delayed)][1:min(5, .N)]
+
+# ---- Region totals (All Interventions) from dt_tab5 --------------------------
+# dt_tab5 already computed above
+
+# ---- Income group totals (All Interventions) from BOD data -------------------
+income_averted_all <- dt_bod[intervention == "All Interventions",
+                              .(deaths_averted = sum(deaths_averted, na.rm = TRUE),
+                                daly_averted   = sum(daly_averted,   na.rm = TRUE)),
+                              by = location_income]
+income_order <- c("Low income", "Lower-middle income", "Upper-middle income", "High income")
+income_averted_all[, location_income := factor(location_income, levels = income_order)]
+setorder(income_averted_all, location_income)
+
+# ---- BOD summary scalars (All Interventions) ---------------------------------
+bod_all <- bod_tab1[intervention == "All Interventions"]
+total_ylls_all  <- bod_all$YLLs
+total_ylds_all  <- bod_all$YLDs
+total_dalys_all <- bod_all$DALYs
+
+bod_bp <- bod_tab1[intervention == "HTN Control (General)"]
+total_dalys_bp <- bod_bp$DALYs
+
+bod_stat <- bod_tab1[intervention == "Improved Statin Uptake"]
+total_dalys_stat <- bod_stat$DALYs
+
+bod_bpd <- bod_tab1[intervention == "HTN Control (Diabetes)"]
+total_dalys_bpd <- bod_bpd$DALYs
+
+# ---- Save comprehensive paper scalar bundle ----------------------------------
+paper_scalars <- list(
+  # Core counts
+  n_countries      = n_countries,
+  study_years      = study_years,
+  bau_total_deaths = bau_total_deaths,
+  total_all        = total_all,
+  total_bp         = total_bp,
+  total_bpd        = total_bpd,
+  total_stat       = total_stat,
+
+  # Percentages of BAU
+  pct_all  = pct_all,
+  pct_bp   = pct_bp,
+  pct_bpd  = pct_bpd,
+  pct_stat = pct_stat,
+
+  # Annual deaths averted at key years
+  annual_2030_all  = annual_2030_all,
+  annual_2050_all  = annual_2050_all,
+  annual_2030_bp   = annual_2030_bp,
+  annual_2050_bp   = annual_2050_bp,
+  annual_2030_stat = annual_2030_stat,
+  annual_2050_stat = annual_2050_stat,
+
+  # Cause-specific (All Interventions)
+  averted_ihd_all     = cause_averted_all[cause == "ihd",     averted],
+  averted_istroke_all = cause_averted_all[cause == "istroke", averted],
+  averted_hstroke_all = cause_averted_all[cause == "hstroke", averted],
+  averted_hhd_all     = cause_averted_all[cause == "hhd",     averted],
+
+  # Cause-specific (HTN General)
+  averted_ihd_bp     = cause_averted_bp[cause == "ihd",     averted],
+  averted_istroke_bp = cause_averted_bp[cause == "istroke", averted],
+  averted_hstroke_bp = cause_averted_bp[cause == "hstroke", averted],
+  averted_hhd_bp     = cause_averted_bp[cause == "hhd",     averted],
+
+  # Cause-specific (Statins)
+  averted_ihd_stat     = cause_averted_stat[cause == "ihd",     averted],
+  averted_istroke_stat = cause_averted_stat[cause == "istroke", averted],
+
+  # Age-group (All Interventions)
+  averted_lt70  = age_averted_all[age_group == "<70",   averted],
+  averted_70_79 = age_averted_all[age_group == "70-79", averted],
+  averted_80_89 = age_averted_all[age_group == "80-89", averted],
+  averted_90p   = age_averted_all[age_group == "90+",   averted],
+
+  # Sex (All Interventions)
+  averted_male   = sex_averted_all[sex == "male",   averted],
+  averted_female = sex_averted_all[sex == "female", averted],
+
+  # BOD summary
+  total_ylls_all  = total_ylls_all,
+  total_ylds_all  = total_ylds_all,
+  total_dalys_all = total_dalys_all,
+  total_dalys_bp  = total_dalys_bp,
+  total_dalys_stat = total_dalys_stat,
+  total_dalys_bpd  = total_dalys_bpd,
+
+  # Top 5 countries
+  top5_names   = top5_countries$location,
+  top5_averted = top5_countries$deaths_delayed,
+
+  # Region totals (All Interventions)
+  region_tab = dt_tab5[, .(region, deaths_delayed, deaths_delayed_pct)],
+
+  # Income group totals
+  income_tab = income_averted_all
+)
+
+saveRDS(paper_scalars, paste0(paper_dir, "paper_scalars.rds"))
+message("Paper scalars saved: paper_scalars.rds")
+```
+
+```{r paper-tables, message=FALSE, warning=FALSE, echo=FALSE}
+# Save key data tables for the manuscript
+saveRDS(copy(dt_cumul),     paste0(paper_dir, "paper_dt_cumul.rds"))
+saveRDS(copy(dt_tab2),      paste0(paper_dir, "paper_dt_cause.rds"))
+saveRDS(copy(dt_tab5),      paste0(paper_dir, "paper_dt_region.rds"))
+saveRDS(copy(dt_tab4),      paste0(paper_dir, "paper_dt_country.rds"))
+saveRDS(copy(bod_tab1),     paste0(paper_dir, "paper_bod_summary.rds"))
+saveRDS(copy(bod_tab2),     paste0(paper_dir, "paper_bod_cause.rds"))
+saveRDS(copy(bod_tab3),     paste0(paper_dir, "paper_bod_region.rds"))
+saveRDS(copy(bod_tab4),     paste0(paper_dir, "paper_bod_income.rds"))
+saveRDS(copy(dt_annual),    paste0(paper_dir, "paper_dt_annual.rds"))
+saveRDS(copy(dt_age_sex),   paste0(paper_dir, "paper_dt_age_sex.rds"))
+message("Paper tables saved to: ", paper_dir)
+```
+
+---
+
 *Report generated on `r Sys.time()` using R `r R.version$major`.`r R.version$minor`.*
