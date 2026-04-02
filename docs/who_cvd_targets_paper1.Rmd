@@ -25,6 +25,8 @@ knitr::opts_chunk$set(
 
 # Abstract
 
+## Structured abstract
+
 Background
 
 [Write the background here.]
@@ -45,7 +47,7 @@ Funding
 
 [Write the funding statement here.]
 
-# Research in context
+## Research in context
 
 Evidence before this study
 
@@ -198,13 +200,20 @@ Key considerations:
 
 [Insert references here or manage them with a bibliography file.]
 
-# Supplementary materials
+# Tables
+
+[Insert main results tables. Tables described in the results section can be included here.]
+
+# Figures
+[Insert main results Figures. Figures decribed in the results section can be included here.]
+
+# Supplemental Material
 
 ## Additional results
 
 [Insert additional results here.]
 
-## Figure: conceptual framework of the modelling approach
+### Figure: conceptual framework of the modelling approach
 
 The pathway from target achievement to risk-factor change to cause-specific outcomes and economic consequences.
 
@@ -212,13 +221,13 @@ The pathway from target achievement to risk-factor change to cause-specific outc
 # Insert code for conceptual framework figure
 ```
 
-## Figure: projected cumulative deaths under reference and target-achievement scenarios, 2026-2050
+### Figure: projected cumulative deaths under reference and target-achievement scenarios, 2026-2050
 
 ```{r supp-fig-cumulative-deaths, eval=FALSE, fig.cap="Projected cumulative deaths under reference and target-achievement scenarios, 2026-2050."}
 # Insert code for cumulative deaths figure
 ```
 
-## Figure: deaths averted by intervention and cause
+### Figure: deaths averted by intervention and cause
 
 Separate hypertension control, lipid-lowering therapy, and combined scenario.
 
@@ -226,7 +235,7 @@ Separate hypertension control, lipid-lowering therapy, and combined scenario.
 # Insert code for deaths averted figure
 ```
 
-## Figure: regional or income-group distribution of deaths averted
+### Figure: regional or income-group distribution of deaths averted
 
 For the equity narrative.
 
@@ -234,19 +243,19 @@ For the equity narrative.
 # Insert code for regional or income-group distribution figure
 ```
 
-## Figure: sensitivity analysis
+### Figure: sensitivity analysis
 
 ```{r supp-fig-sensitivity, eval=FALSE, fig.cap="Sensitivity analysis."}
 # Insert code for supplementary sensitivity figure
 ```
 
-## Table: global projected health outcomes by scenario
+### Table: global projected health outcomes by scenario
 
 ```{r supp-tab-global-outcomes, eval=FALSE}
 # Insert code for global projected health outcomes table
 ```
 
-## Table: regional and income-group results
+### Table: regional and income-group results
 
 ```{r supp-tab-regional-results, eval=FALSE}
 # Insert code for regional and income-group results table
@@ -256,7 +265,8 @@ For the equity narrative.
 
 [Provide detailed methodological and mathematical details here.]
 
-## Table: key model inputs, definitions, and target specifications
+### Table: key model inputs, definitions, and target specifications
+
 
 ```{r supp-tab-inputs, eval=FALSE}
 # Insert code for key model inputs table

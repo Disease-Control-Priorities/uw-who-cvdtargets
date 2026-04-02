@@ -1,0 +1,12 @@
+write a promt to ask claude to conduct this task You are going to modify the aim1_report.RMD file to add burden of disease results and a break down by who region and country income group according to World bank classification
+The file 07_output_dalys include the production of yll, yld and dalys by intervention, that is the file to use to report burden of disease
+# save RDS to compute deaths delayed and burden of disease averted in report
+saveRDS(dt, paste0(wd_outp, "dt_output_dalys.rds"))
+ you will only modify the aim1_report.RMD to
+Add: table of period 2026-2050 cumulative deaths, ylls, ylds and dalys averted. By intervention scenario
+table of period 2026-2050 cumulative deaths, ylls, ylds and dalys averted. By intervention scenario and cause. Add % contribution To reduction in deaths and dalys
+Table by who region 2026-2050 cumulative deaths, ylls, ylds and dalys averted. By intervention scenario
+table by income group and intervention scenario 2026-2050 cumulative deaths, ylls, ylds and dalys averted.  
+Figure 2026-2050 cumulative dalys averted time series. By intervention scenario
+Figure 2026-2050 cumulative dalys averted. Who region all interventions combined
+Only modify aim1_report.RMD
