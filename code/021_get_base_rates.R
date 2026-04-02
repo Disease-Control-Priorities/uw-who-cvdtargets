@@ -32,56 +32,6 @@ setwd(wd_raw)
 #...........................................................
 
 #https://collab2023.healthdata.org/gbd-results?params=gbd-api-2023-permalink/3d16fa445e87a8f94b6f97de2fa21bb3
-# 
-# setwd(wd_raw)
-# 
-# path <- paste0(wd_raw,"GBD/GBD2023/")
-# 
-# # List all CSV files
-# files <- list.files(path, pattern = "\\.csv$", full.names = TRUE)
-# 
-# # Read and combine using rbindlist
-# dt <- rbindlist(lapply(files, fread), use.names = TRUE, fill = TRUE)
-# 
-# dt<-data.table(dt)
-# 
-# dt[, upper:=NULL]
-# dt[, lower:=NULL]
-# 
-# unique(dt$year)
-# unique(dt$location_name)
-# unique(dt$cause_name)
-# unique(dt$age_name)
-
-# # Remove unnecessary dx
-# dx_include <- c("All causes","Ischemic heart disease",
-#                 "Ischemic stroke","Intracerebral hemorrhage",
-#                 "Alzheimer's disease and other dementias","Hypertensive heart disease")
-
-# cause_map <- c(
-#   ihd      = "Ischemic heart disease",
-#   istroke  = "Ischemic stroke",
-#   hstroke  = "Intracerebral hemorrhage",
-#   hhd      = "Hypertensive heart disease",
-#   aod      = "Alzheimer's disease and other dementias",
-#   all      = "All causes"
-# )
-# 
-# # AFTER  – define the vector once, reuse it
-# cause_cols <- names(cause_map)
-
-# # Filter the data to include only the specified causes
-# dt <- dt[cause_name %in% dx_include,]
-# 
-# 
-# table(dt$sex_name,dt$measure_name)
-# table(dt$sex_name,dt$metric_name)
-# table(dt$sex_name,dt$year)
-# 
-# table(dt$measure_name,dt$metric_name)
-# 
-# dt_completeness <- dt[,list(records=.N),
-#                       by=list(sex_name,metric_name,measure_name)]
 
 #https://collab2023.healthdata.org/gbd-results?params=gbd-api-2023-permalink/3d16fa445e87a8f94b6f97de2fa21bb3
 
@@ -119,6 +69,9 @@ dt <- dt[age_name!="75-84 years",]
 
 # rbind 2020-2023
 dt <- rbind(dt[year<2020,], dt_23, use.names = TRUE, fill = TRUE)
+
+# clean
+rm(dt_23)
 
 # Fix countries names
 # dt[location_name == "Türkiye", location_name := "Turkey"]
@@ -219,79 +172,11 @@ dt[, c("location_clean") := NULL]
 # save temp baseline rates from gbd 2023
 saveRDS(dt, file = paste0(wd_raw,"GBD/","temp_1baseline_rates_gbd23.rds"))
 
-## checking names
-# locs_check <- c(
-#   "Armenia", "Guyana", "Lebanon", "Hungary", "Chile", "Germany",
-#   "Philippines", "Haiti", "Ethiopia", "North Macedonia", "Argentina",
-#   "Montenegro", "India", "Mauritania", "Uruguay", "Tuvalu", "Mexico",
-#   "Libya", "Brunei Darussalam", "Sri Lanka", "Poland", "Nicaragua",
-#   "Zimbabwe", "Thailand", "Eswatini", "Nepal", "American Samoa",
-#   "South Africa", "Jamaica", "Iceland", "Ireland", "Cook Islands",
-#   "Panama", "Romania", "Morocco", "Timor-Leste", "Greece", "Bermuda",
-#   "Georgia", "Kyrgyzstan", "Nigeria", "Kenya", "Oman", "Saint Lucia",
-#   "Madagascar", "Mauritius", "Saint Vincent and the Grenadines",
-#   "Mongolia", "Malawi", "Singapore", "Republic of Korea",
-#   "Sao Tome and Principe", "Palestine", "Cambodia", "Austria",
-#   "Canada", "Azerbaijan", "Israel",
-#   "Venezuela (Bolivarian Republic of)", "Niger", "Senegal", "Belize",
-#   "South Sudan", "United Republic of Tanzania",
-#   "Democratic People's Republic of Korea", "Benin", "Angola",
-#   "Paraguay", "Kazakhstan", "Slovenia", "United States of America",
-#   "Sierra Leone", "Australia", "Solomon Islands", "Burkina Faso",
-#   "Fiji", "Gabon", "Cameroon", "Syrian Arab Republic", "Palau",
-#   "Taiwan (Province of China)", "Guam", "Malta", "Tunisia", "Bahrain",
-#   "Bolivia (Plurinational State of)", "Republic of Moldova",
-#   "Costa Rica", "Kiribati", "Cabo Verde", "Central African Republic",
-#   "Italy", "Brazil", "Slovakia", "Pakistan", "Equatorial Guinea",
-#   "Seychelles", "Andorra", "Latvia", "Somalia", "Greenland", "Serbia",
-#   "Viet Nam", "Lithuania", "New Zealand", "China",
-#   "Trinidad and Tobago", "Uzbekistan", "Rwanda", "Suriname",
-#   "Northern Mariana Islands", "Turkmenistan", "Saudi Arabia",
-#   "Indonesia", "El Salvador", "Egypt", "Qatar", "Ghana", "Czechia",
-#   "Algeria", "Sweden", "Bahamas", "Samoa", "Japan", "Maldives",
-#   "Guinea", "Switzerland", "Afghanistan", "Marshall Islands",
-#   "Mozambique", "Democratic Republic of the Congo", "Colombia",
-#   "Antigua and Barbuda", "Luxembourg", "Monaco", "Botswana",
-#   "Netherlands", "Finland", "Grenada", "Turkey", "Ecuador", "Sudan",
-#   "France", "Denmark", "Barbados", "Tajikistan", "Spain", "Malaysia",
-#   "Djibouti", "Cyprus", "Togo", "Gambia",
-#   "Lao People's Democratic Republic", "Eritrea", "Niue", "Bulgaria",
-#   "Zambia", "San Marino", "Kuwait", "Estonia", "Ivory Coast", "Iraq",
-#   "Micronesia (Federated States of)", "Portugal", "Jordan", "Nauru",
-#   "Congo", "Chad", "Papua New Guinea", "Norway", "Dominica",
-#   "Tokelau", "Comoros", "Bosnia and Herzegovina", "Yemen",
-#   "Croatia", "Belarus", "United States Virgin Islands",
-#   "Iran (Islamic Republic of)", "Albania", "Peru",
-#   "Saint Kitts and Nevis", "Uganda", "United Arab Emirates",
-#   "Guinea-Bissau", "Namibia", "Dominican Republic", "Liberia",
-#   "Cuba", "Honduras", "Vanuatu", "Belgium", "Ukraine", "Myanmar",
-#   "Mali", "Bhutan", "Russian Federation", "Tonga", "United Kingdom",
-#   "Puerto Rico", "Guatemala", "Burundi", "Lesotho", "Bangladesh"
-# )
-
-
-# Find any locations in dt$location_name not in locs_check
-# missing_locs <- setdiff(unique(dt$location_clean), locs_check)
-#   
-# countries <- dt[,,by=list(location_clean)]
-
-# IHME Population data
-
-# # build vector of years and corresponding file names
-# years <- 2000:2019
-# files <- sprintf("IHME_GBD_2019_POP_SYA_%d_Y2021M01D28.csv", years)
-# 
-# # # read & stack them in one go
-# gbdpop <- rbindlist(lapply(files, fread))
-# 
-# # # Filter out rows where sex is "both" and location_id equals 533 (Georgia the state)
-# gbdpop <- gbdpop[sex_name != "both" & location_id != 533]
-
 
 # UNWPP instead
 years <- 2000:2023
 
-gbdpop <- readRDS(file = paste0(wd_data,"UN2024/","PopulationsSingleAge0050.rds"))
+gbdpop <- readRDS(file = paste0(wd_data,"PopulationsSingleAge0050.rds"))
 
 
 # # Create/modify age_group column from age_group_name
@@ -326,6 +211,262 @@ setnames(dt,c("sex_name","age_name","cause_name","measure_name","metric_name","l
          ,c("sex","age","cause","measure","metric","location"))
 
 
+# remove AOD
+#dt <- dt[cause != "Alzheimer's disease and other dementias",]
+
+# the cleaned WHO deaths data as rds for later use
+dt_deaths_who <- readRDS(paste0(wd_data, "dt_deaths_who_long.rds"))
+
+# Before calibration we are going to replace GBD death counts with WHO death counts for the years 2000-2023.
+# We will use the GBD data for prevalence and population estimates, but the death counts will be from WHO. 
+# This is because we want to use the most accurate and up-to-date death counts for our baseline rates.
+
+# However, since the open age group in WHO is 85+ wi will use GBD 85-89, 90-94, and 95+ shares
+# to split the WHO 85+ death counts into 85-89, 90-94, and 95+ age groups. We will do this separately for each case,sex,location,year
+
+# loc_dt_not_who <- setdiff(
+#   unique(dt$location),
+#   unique(dt_deaths_who$location)
+# )
+# 
+# loc_who_not_dt <- setdiff(
+#   unique(dt_deaths_who$location),
+#   unique(dt$location)
+# )
+
+who_to_dt_loc <- c(
+  "Antigua & Barbuda"        = "Antigua and Barbuda",
+  "Bosnia & Herzegovina"     = "Bosnia and Herzegovina",
+  "Brunei"                   = "Brunei Darussalam",
+  "Côte d’Ivoire"            = "Ivory Coast",
+  "Congo - Kinshasa"         = "Democratic Republic of the Congo",
+  "Congo - Brazzaville"      = "Congo",
+  "Cape Verde"               = "Cabo Verde",
+  "Iran"                     = "Iran (Islamic Republic of)",
+  "South Korea"              = "Republic of Korea",
+  "Laos"                     = "Lao People's Democratic Republic",
+  "St. Lucia"                = "Saint Lucia",
+  "Moldova"                  = "Republic of Moldova",
+  "Myanmar (Burma)"          = "Myanmar",
+  "North Korea"              = "Democratic People's Republic of Korea",
+  "Palestinian Territories"  = "Palestine",
+  "Russia"                   = "Russian Federation",
+  "São Tomé & Príncipe"      = "Sao Tome and Principe",
+  "Syria"                    = "Syrian Arab Republic",
+  "Trinidad & Tobago"        = "Trinidad and Tobago",
+  "St. Vincent & Grenadines" = "Saint Vincent and the Grenadines",
+  "Venezuela"                = "Venezuela (Bolivarian Republic of)",
+  "Vietnam"                  = "Viet Nam"
+)
+
+dt_deaths_who[
+  location %in% names(who_to_dt_loc),
+  location := who_to_dt_loc[location]
+]
+
+# loc_dt_not_who <- setdiff(unique(dt$location), unique(dt_deaths_who$location))
+# loc_who_not_dt <- setdiff(unique(dt_deaths_who$location), unique(dt$location))
+# 
+# loc_dt_not_who
+
+
+#--------------------------------------------
+# 1) Keep only GBD deaths (omit prevalence)
+#--------------------------------------------
+dt_deaths_gbd <- copy(
+  dt[measure == "Deaths" & year %between% c(2000, 2023)]
+)
+
+#--------------------------------------------
+# 2) Split WHO open age group 85+ using GBD shares
+#    Assume WHO currently has age == "85-89 years"
+#    because of previous harmonization.
+#    If not, replace "85-89 years" below with "85+"
+#--------------------------------------------
+old_ages <- c("85-89 years", "90-94 years", "95+ years")
+
+# GBD shares for Deaths only, separately by metric
+dt_gbd_shares <- dt_deaths_gbd[
+  age %in% old_ages,
+  .(gbd_val = sum(val, na.rm = TRUE)),
+  by = .(location, sex, year, cause, metric, age)
+]
+
+dt_gbd_shares[
+  , gbd_total := sum(gbd_val, na.rm = TRUE),
+  by = .(location, sex, year, cause, metric)
+]
+
+dt_gbd_shares[
+  , age_share := fifelse(gbd_total > 0, gbd_val / gbd_total, NA_real_)
+]
+
+dt_gbd_shares <- dt_gbd_shares[
+  , .(location, sex, year, cause, metric, age, age_share)
+]
+
+# WHO rows to split
+dt_who_85 <- dt_deaths_who[
+  measure == "Deaths" &
+    year %between% c(2000, 2023) &
+    age == "85+ years"
+]
+
+# WHO rows to keep as they are
+dt_who_non85 <- dt_deaths_who[
+  !(measure == "Deaths" &
+      year %between% c(2000, 2023) &
+      age == "85+ years")
+]
+
+# Expand WHO 85+ into 85-89 / 90-94 / 95+
+dt_who_85_split <- merge(
+  dt_who_85[
+    , .(location, sex, year, cause,
+        measure, metric, val)
+  ],
+  dt_gbd_shares,
+  by = c("location", "sex", "year", "cause", "metric"),
+  all.x = TRUE,
+  allow.cartesian = TRUE
+)
+
+# Distribute WHO values (both Number and Rate) using GBD shares
+dt_who_85_split[, val := val * age_share]
+
+# Recombine WHO data
+dt_deaths_who_split <- rbindlist(
+  list(dt_who_non85, dt_who_85_split),
+  use.names = TRUE,
+  fill = TRUE
+)
+
+# # Check totals after splitting
+# check_num <- dt_who_85[
+#   metric == "Number",
+#   .(before = sum(val, na.rm = TRUE)),
+#   by = .(location, sex, year, cause)
+# ][
+#   dt_who_85_split[metric == "Number",
+#                   .(after = sum(val, na.rm = TRUE)),
+#                   by = .(location, sex, year, cause)],
+#   on = .(location, sex, year, cause)
+# ]
+# 
+# check_num[, diff := after - before]
+# summary(check_num$diff)
+
+# # after==0
+# check_num <- check_num[after==0,]
+
+# clean: remove the original WHO 85+ rows and add the split ones
+rm(dt_who_85, dt_who_non85,dt_gbd_shares,dt_deaths_gbd,dt_deaths_who,dt_who_85_split)
+
+#remove share column
+dt_deaths_who_split[, age_share := NULL]
+
+# Merge dt GBD and who split
+
+dt <- merge(dt,dt_deaths_who_split, by = c("location","year","age","sex","cause","measure","metric"),
+all.x = TRUE)
+
+# Make a table 2000-2023 comparing deaths (Number and rates)
+check_deaths <- dt[measure == "Deaths" & metric== "Number" & year %between% c(2000, 2021),
+                    .(gbd_val = sum(val.x, na.rm = TRUE),
+                      who_val = sum(val.y, na.rm = TRUE)),by = .(location, year, cause,age,sex)]
+
+# Relative difference
+check_deaths[, rel_diff := fifelse(gbd_val > 0, (who_val - gbd_val) / gbd_val, NA_real_)]
+
+summary(check_deaths$rel_diff)
+
+hist(check_deaths$rel_diff, main = "Relative Difference in Deaths (WHO vs GBD)",
+     xlab = "Relative Difference", ylab = "Frequency")
+
+# Boxplot of relative differences in death rates
+boxplot(
+  check_deaths$rel_diff,
+  main = "Relative Difference in Death Counts (WHO vs GBD)",
+  ylab = "Relative Difference",
+  horizontal = TRUE
+)
+
+# Make a table 2000-2023 comparing death rates
+check_deaths_rate <- dt[
+  measure == "Deaths" & metric == "Rate" & year %between% c(2000, 2021),
+  .(
+    gbd_rate = mean(val.x, na.rm = TRUE)/1e5,
+    who_rate = mean(val.y, na.rm = TRUE)
+  ),
+  by = .(location, year,cause,age,sex)
+]
+
+# Relative difference
+check_deaths_rate[
+  , rel_diff := fifelse(gbd_rate > 0, (who_rate - gbd_rate) / gbd_rate, NA_real_)
+]
+
+summary(check_deaths_rate$rel_diff)
+
+hist(
+  check_deaths_rate$rel_diff,
+  main = "Relative Difference in Death Rates (WHO vs GBD)",
+  xlab = "Relative Difference",
+  ylab = "Frequency"
+)
+
+# Boxplot of relative differences in death rates
+boxplot(
+  check_deaths_rate$rel_diff,
+  main = "Relative Difference in Death Rates (WHO vs GBD)",
+  ylab = "Relative Difference",
+  horizontal = TRUE
+)
+
+# Rbind both files and export to excel for validation
+
+check_deaths[,metric := "Number"]
+check_deaths_rate[,metric := "Rate"]
+
+setnames(check_deaths_rate, c("gbd_rate", "who_rate"), c("gbd_val", "who_val"))
+
+check_deaths_combined <- rbind(
+  check_deaths,
+  check_deaths_rate
+)
+
+# export
+fwrite(check_deaths_combined, file = paste0(wd_temp,"check_deaths_who_gbd.csv"))
+
+
+## Rule: -0.4 to + 0.15 cover 1st to 3rd quartiles of relative differences in 
+# death counts, with a few outliers beyond that. 
+# For death rates, the range is similar but slightly wider, with most relative differences between -0.48 and +0.18.
+#This suggests that while there are some discrepancies between WHO and GBD data, they are generally within a reasonable range for most locations and years. The outliers may warrant further investigation to understand the reasons behind the larger discrepancies.
+
+# So for the range -0.4 to + 0.15 impute WHO val, for out range impute GBD val, and for the rest keep WHO val. This way we are using WHO data where it is reasonably close to GBD
+dt[
+  measure == "Prevalence",
+  val := val.x  # Keep GBD prevalence values
+]
+
+dt[,rel_diff := fifelse(val.x > 0, (val.y - val.x) / val.x, NA_real_), by = .(location, year, cause,age,sex)]
+
+dt[
+  measure == "Deaths" & rel_diff > -0.4 & rel_diff < 0.15,
+  val := val.y  # Impute GBD values for no outliers
+]
+
+
+dt[
+  measure == "Deaths" & is.na(val),
+  val := val.x  # Keep GBD prevalence values
+]
+
+# remove unnecesary columns in dt
+dt[, c("val.x", "val.y", "rel_diff") := NULL]
+
+# Calibration starts
 
 project.all <- function(Country,
                         yr,
@@ -467,7 +608,12 @@ project.all <- function(Country,
 
 # folder <- "C:/Users/wrgar/OneDrive - UW/02Work/ResolveToSaveLives/100MLives/data/processed/baseline_rates"
 
+# Create a temporary directory for the processing data change to wd in final version
 folder <- paste0(wd_temp, "baseline_rates")
+
+if (!dir.exists(folder)) {
+  dir.create(folder, recursive = TRUE)
+}
 
 # List all files (not directories) in there
 files_to_delete <- list.files(

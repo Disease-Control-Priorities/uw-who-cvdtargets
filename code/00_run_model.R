@@ -29,7 +29,7 @@ wd_data <- paste0(wd,"data/processed/")
 wd_outp <- paste0(wd,"output/")
 
 # Create a temporary directory for the processing data change to wd in final version
-wd_temp <- paste0("C:/Users/wrgar/OneDrive - UW/02Work/ResolveToSaveLives/","100MLives/data/","temp/")
+wd_temp <- paste0("C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/","temp/")
 if (!dir.exists(wd_temp)) {
   dir.create(wd_temp, recursive = TRUE)
 }

@@ -1,0 +1,263 @@
+---
+title: "Projected cardiovascular health and economic gains from achieving WHO targets for hypertension control and lipid-lowering therapy: a global modelling study, 2026-2050"
+author:
+  - "William Garcia"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  word_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+fontsize: 11pt
+geometry: margin=1in
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 7,
+  fig.height = 5,
+  dpi = 300
+)
+```
+
+# Abstract
+
+Background
+
+[Write the background here.]
+
+Methods
+
+[Write the methods here.]
+
+Findings
+
+[Write the findings here.]
+
+Interpretation
+
+[Write the interpretation here.]
+
+Funding
+
+[Write the funding statement here.]
+
+# Research in context
+
+Evidence before this study
+
+[Summarize the prior literature and evidence base.]
+
+Added value of this study
+
+[Describe what this study adds relative to previous work.]
+
+Implications of all the available evidence
+
+[State the broader implications for policy, implementation, and future research.]
+
+# Introduction
+Cardiovascular diseases (CVDs) remain the world's leading cause of death and disability-adjusted life years (DALYs). CVD deaths increased globally from 13.1 million in 1990 to 19.2 million in 2023, with ischaemic heart disease, intracerebral haemorrhagic stroke, ischaemic stroke, and hypertensive heart disease among the leading causes. Age-standardized CVD DALY rates were highest in low and low-middle Socio-demographic Index (SDI) settings, and the number of prevalent CVD cases more than doubled between 1990 and 2023, rising from 311 million to 626 million. In 2023, modifiable risk factors accounted for 79.6% of CVD burden, equivalent to 347 million DALYs — underscoring that the majority of this burden is preventable.
+
+Among modifiable exposures, high systolic blood pressure and high low-density lipoprotein (LDL) cholesterol rank as the two leading contributors to attributable CVD burden worldwide, together accounting for a greater share of ischaemic heart disease and stroke mortality than dietary risks, air pollution, or any other single risk factor. The scale of unmet need is striking: 1.4 billion adults live with high blood pressure, yet only 23% have it under control. The estimated global prevalence of hypercholesterolaemia was 24.1% in 2025, and that of hypertriglyceridaemia 28.8%, with statin therapy coverage remaining far below levels needed for meaningful population-level risk reduction. Beyond their magnitude of effect, blood pressure control and lipid-lowering therapy are distinguished by the availability of effective, affordable, and scalable pharmaceutical interventions and established primary health care delivery platforms — making them implementation priorities of the highest order.
+
+Multiple multilateral frameworks now reflect convergent political commitment to tackling these two risk factors as a cornerstone of NCD prevention. WHO Member States have endorsed progressively ambitious targets: the 2021 Global Diabetes Compact committed to 80% blood pressure control and systematic statin therapy for all adults aged 40 years and above with diabetes. The WHO NCD Global Monitoring Framework set a target of at least 50% of eligible high-risk individuals receiving effective drug therapies, including statins, by 2025; and the Political Declaration of the Fourth High-level Meeting on NCDs (2025) called for 80% of primary health care facilities to stock WHO-recommended essential medicines by 2030, alongside control of blood pressure in an additional 150 million people. The present study quantifies what achieving these targets would mean in practice — in health and economic terms, across 190 countries.
+
+Although the clinical benefits of these interventions are well established, comparable global evidence quantifying the long-term mortality, morbidity, and economic returns of simultaneously achieving both targets across the full spectrum of country income levels remains limited. Existing analyses have typically been restricted to single countries, short time horizons, or individual interventions modelled in isolation constraining the ability of national governments, international donors, and health institutions to prioritise investment and plan implementation at scale.
+
+This study addresses that gap by estimating the health and economic outcomes associated with achieving WHO targets for hypertension control and lipid-lowering therapy across 190 countries from 2026 to 2050, using a comparative risk assessment modelling framework applied to country-specific epidemiological and demographic data.
+
+# Methods
+
+## Study design
+
+[Describe the overall study design.]
+
+## Data sources
+
+[Describe epidemiological, demographic, and economic inputs.]
+
+## Intervention scenarios
+
+[Describe hypertension control, lipid-lowering therapy, and combined scenarios.]
+
+## Modelling framework
+
+[Describe the comparative risk assessment or other modelling approach.]
+
+## Outcomes
+
+[Describe health and economic outcomes.]
+
+## Sensitivity and uncertainty analysis
+
+[Describe the uncertainty approach and alternative assumptions.]
+
+# Results
+
+## Baseline global trajectory, 2020-2050
+
+Start by describing the projected burden under status quo (business as usual): cumulative deaths, burden by cause, and distribution across regions and income groups.
+
+```{r fig-baseline-global, eval=FALSE, fig.cap="Projected cumulative CVD burden under the reference scenario, 2020-2050."}
+# Insert code for the baseline global trajectory figure
+```
+
+## Global impact of achieving the hypertension control target
+
+Present cause-specific effects, timing of gains over the projection horizon, and the share of total benefit attributable to stroke versus heart disease.
+
+```{r fig-htn-impact, eval=FALSE, fig.cap="Health impact of achieving the hypertension control target."}
+# Insert code for hypertension control results figure
+```
+
+## Global impact of achieving the lipid-lowering therapy target
+
+Show total and cause-specific deaths averted, how benefits differ from hypertension control, and whether gains are more concentrated in ischaemic heart disease and ischaemic stroke.
+
+```{r fig-llt-impact, eval=FALSE, fig.cap="Health impact of achieving the lipid-lowering therapy target."}
+# Insert code for lipid-lowering therapy results figure
+```
+
+## Combined impact of both targets
+
+[Summarize the joint impact of achieving both targets.]
+
+```{r fig-combined-impact, eval=FALSE, fig.cap="Combined health impact of achieving both WHO targets."}
+# Insert code for combined scenario figure
+```
+
+## Heterogeneity across countries and regions
+
+Discuss where gains are largest in absolute terms, where gains are largest proportionally, which regions benefit most from hypertension control versus lipid-lowering therapy, and patterns by income group.
+
+```{r fig-heterogeneity, eval=FALSE, fig.cap="Regional and country heterogeneity in projected deaths averted."}
+# Insert code for regional or country heterogeneity figure
+```
+
+## Distribution by age and sex
+
+Show whether gains are concentrated in middle-aged adults, older adults, men, women, or differ by intervention.
+
+```{r fig-age-sex, eval=FALSE, fig.cap="Distribution of projected benefits by age and sex."}
+# Insert code for age-sex distribution figure
+```
+
+## Sensitivity and uncertainty results
+
+Key considerations:
+- Which assumptions matter most?
+- Do the main conclusions remain stable under conservative assumptions?
+
+```{r fig-sensitivity, eval=FALSE, fig.cap="Sensitivity and uncertainty analysis."}
+# Insert code for sensitivity analysis figure
+```
+
+# Discussion
+
+## Principal findings
+
+[Summarize the principal findings.]
+
+## Interpretation of hypertension control findings
+
+[Interpret the findings for hypertension control.]
+
+## Interpretation of lipid-lowering therapy findings
+
+[Interpret the findings for lipid-lowering therapy.]
+
+## Combined policy meaning
+
+[Discuss the meaning of the combined policy scenario.]
+
+## Equity and implementation implications
+
+[Discuss equity, health system, and implementation implications.]
+
+## Relation to previous literature
+
+[Compare results to previous literature.]
+
+## Strengths
+
+[List and explain study strengths.]
+
+## Limitations
+
+[List and explain study limitations.]
+
+# Conclusion
+
+[Write the conclusion here.]
+
+# References
+
+[Insert references here or manage them with a bibliography file.]
+
+# Supplementary materials
+
+## Additional results
+
+[Insert additional results here.]
+
+## Figure: conceptual framework of the modelling approach
+
+The pathway from target achievement to risk-factor change to cause-specific outcomes and economic consequences.
+
+```{r supp-fig-conceptual, eval=FALSE, fig.cap="Conceptual framework of the modelling approach."}
+# Insert code for conceptual framework figure
+```
+
+## Figure: projected cumulative deaths under reference and target-achievement scenarios, 2026-2050
+
+```{r supp-fig-cumulative-deaths, eval=FALSE, fig.cap="Projected cumulative deaths under reference and target-achievement scenarios, 2026-2050."}
+# Insert code for cumulative deaths figure
+```
+
+## Figure: deaths averted by intervention and cause
+
+Separate hypertension control, lipid-lowering therapy, and combined scenario.
+
+```{r supp-fig-deaths-averted, eval=FALSE, fig.cap="Deaths averted by intervention and cause."}
+# Insert code for deaths averted figure
+```
+
+## Figure: regional or income-group distribution of deaths averted
+
+For the equity narrative.
+
+```{r supp-fig-regional-distribution, eval=FALSE, fig.cap="Regional or income-group distribution of deaths averted."}
+# Insert code for regional or income-group distribution figure
+```
+
+## Figure: sensitivity analysis
+
+```{r supp-fig-sensitivity, eval=FALSE, fig.cap="Sensitivity analysis."}
+# Insert code for supplementary sensitivity figure
+```
+
+## Table: global projected health outcomes by scenario
+
+```{r supp-tab-global-outcomes, eval=FALSE}
+# Insert code for global projected health outcomes table
+```
+
+## Table: regional and income-group results
+
+```{r supp-tab-regional-results, eval=FALSE}
+# Insert code for regional and income-group results table
+```
+
+## Methodology and mathematical details
+
+[Provide detailed methodological and mathematical details here.]
+
+## Table: key model inputs, definitions, and target specifications
+
+```{r supp-tab-inputs, eval=FALSE}
+# Insert code for key model inputs table
+```
