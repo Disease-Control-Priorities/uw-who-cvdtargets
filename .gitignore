@@ -12,3 +12,4 @@ data/raw/**/*.*
 
 # Model output files
 output/out_model/
+output/dt_output_dalys.rds

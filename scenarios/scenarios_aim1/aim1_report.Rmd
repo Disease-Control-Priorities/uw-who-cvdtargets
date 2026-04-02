@@ -212,6 +212,26 @@ countries_dt[,region := fifelse(!is.na(region_who), region_who, region)]
 # remove who region
 countries_dt[, region_who := NULL]
 
+# Import world bank income groups 2026
+income_groups <- fread(paste0(wd_raw, "World Bank Income Group 2026.csv"))
+
+# if missing income category assign to Low income L
+income_groups[location_income=="", location_income := "L"]
+
+# Encode L,H, UMC, HIC to match GBD income groupings
+income_groups[, location_income := fcase(
+  location_income == "L", "Low income",
+  location_income == "LM", "Lower-middle income",
+  location_income == "UM", "Upper-middle income",
+  location_income == "H", "High income",
+  default = location_income
+)]
+# merge
+countries_dt <- merge(countries_dt, income_groups[, .(iso3, location_income)],
+                    by = "iso3", all.x = TRUE)
+
+#unique by iso
+countries_dt <- unique(countries_dt, by = "location")
 ```
 
 ```{r load-model-output, message=FALSE, warning=FALSE, echo=FALSE}
