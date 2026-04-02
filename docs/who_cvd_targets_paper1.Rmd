@@ -11,7 +11,7 @@ output:
 fontsize: 11pt
 geometry: margin=1in
 bibliography: references.bib
-csl: the-lancet.csl
+always_allow_html: true
 ---
 
 ```{r setup, include=FALSE}

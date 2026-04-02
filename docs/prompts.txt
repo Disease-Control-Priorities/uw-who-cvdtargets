@@ -10,3 +10,109 @@ table by income group and intervention scenario 2026-2050 cumulative deaths, yll
 Figure 2026-2050 cumulative dalys averted time series. By intervention scenario
 Figure 2026-2050 cumulative dalys averted. Who region all interventions combined
 Only modify aim1_report.RMD
+
+
+##########################################################################333
+##################333
+
+Here's the prompt:
+
+---
+
+You are working on an epidemiological modeling manuscript for publication. Your task is to modify two files: **`who_cvd_targets_paper1.RMD`** (primary) and **`aim1_report.RMD`** (secondary, only if additional calculations are needed). Do not modify any other file.
+
+## Manuscript Target
+
+- **Journal style:** The Lancet
+- **References:** APA Style (American Psychological Association)
+- **Bibliography file:** `C:\Users\wrgar\OneDrive - UW\02Work\WHO-CVD\github\uw-who-cvdtargets\docs\references.bib`
+
+---
+
+## Context Files — Read These First Before Writing Anything
+
+Before modifying any file, read and understand the following:
+
+| File | Purpose |
+|---|---|
+| `aim1_report.RMD` | Source of all computed outputs — tables, figures, and inline values. All R objects live here. |
+| `aim1_executive_slides.RMD` | Narrative guide — use this to understand the storyline, framing, and key messages for results and discussion |
+| `06_run_scenarios_multiple.R` | The executed model — use this for methodological context and to understand scenario definitions, parameters, and model structure |
+| `references.bib` | Bibliography — draw from this for all in-text citations and the reference list |
+
+---
+
+## Your Task
+
+Fill the following sections of `who_cvd_targets_paper1.RMD` in Lancet style. Each section is described below.
+
+---
+
+### Results
+
+Write a structured results narrative that:
+
+- Leads with the overall scale of impact across all scenarios and the full 2026–2050 horizon
+- Progresses logically: overall burden averted → by intervention scenario → by cause → by geography (WHO region) → by World Bank income group
+- Cross-references every table and figure by number inline (e.g., "Table 1", "Figure 2") — do not embed raw numbers without a table/figure reference
+- Uses precise epidemiological language consistent with Lancet standards (absolute counts with uncertainty ranges where available, relative reductions, cumulative metrics)
+- Does not contain any R code chunks or object execution — all values must be pulled as inline references from objects already computed and named in `aim1_report.RMD`
+- If a needed summary statistic or inline value does not yet exist as a named object in `aim1_report.RMD`, add the calculation there and reference it here — do not compute inside `who_cvd_targets_paper1.RMD`
+
+---
+
+### Discussion
+
+Write a discussion section structured as follows, consistent with Lancet conventions:
+
+1. **Summary of principal findings** — one concise paragraph restating the headline results without raw numbers
+2. **Interpretation in context** — compare findings to existing literature; cite relevant references from `references.bib`; situate results within the WHO CVD targets policy landscape
+3. **Mechanisms and plausibility** — explain why certain interventions or regions show larger gains; draw on model structure from `06_run_scenarios_multiple.R` for mechanistic reasoning
+4. **Equity implications** — discuss findings by WHO region and World Bank income group; highlight disparities and their policy relevance
+5. **Strengths and limitations** — address model assumptions, data sources, generalizability, and uncertainty
+6. **Conclusion** — end with a clear, policy-relevant closing statement appropriate for a Lancet audience
+
+All claims must be supported by citations from `references.bib` in APA in-text format (Author, Year).
+
+---
+
+### Tables
+
+Insert the following tables in the Tables section of `who_cvd_targets_paper1.RMD`. Each table must:
+
+- Be sourced by referencing the corresponding named object already rendered in `aim1_report.RMD` — use `\@ref()` cross-references, not re-executed code
+- Have a **bold title** and a **standalone descriptive caption** beneath it that allows the table to be understood without reading the main text (include intervention definitions, period, population, and metric definitions in the note)
+- Follow Lancet table style: clean borders, no vertical lines, grouped rows where applicable
+
+| Table # | Content |
+|---|---|
+| Table 1 | Cumulative 2026–2050 deaths, YLLs, YLDs, and DALYs averted by intervention scenario |
+| Table 2 | Cumulative 2026–2050 deaths, YLLs, YLDs, and DALYs averted by intervention scenario and cause, with % contribution to total reduction |
+| Table 3 | Cumulative 2026–2050 deaths, YLLs, YLDs, and DALYs averted by WHO region and intervention scenario |
+| Table 4 | Cumulative 2026–2050 deaths, YLLs, YLDs, and DALYs averted by World Bank income group and intervention scenario |
+
+---
+
+### Figures
+
+Insert the following figures in the Figures section. Each figure must:
+
+- Reference the object rendered in `aim1_report.RMD` using `\@ref()` — do not re-execute ggplot code inside `who_cvd_targets_paper1.RMD`
+- Have a **figure title** and a **standalone descriptive legend** below it explaining what is shown, how to read it, what the colors/lines represent, and what the time horizon and population are
+- Follow Lancet figure style conventions (clean background, accessible color palette, labeled axes)
+
+| Figure # | Content |
+|---|---|
+| Figure 1 | Time series of cumulative DALYs averted 2026–2050 by intervention scenario |
+| Figure 2 | Cumulative DALYs averted by WHO region, all interventions combined |
+
+---
+
+## Rules
+
+- **Only modify `who_cvd_targets_paper1.RMD` and `aim1_report.RMD`**
+- Never add R chunk execution to `who_cvd_targets_paper1.RMD` — it is a manuscript file only
+- If a calculation is missing from `aim1_report.RMD`, add it there with a clearly named object, then reference it in the manuscript
+- All citations must use keys from `references.bib` and render in APA format
+- Do not alter the Methods section or any front matter (title, authors, abstract) unless explicitly instructed
+- Preserve all existing chunk labels, YAML headers, and cross-reference infrastructure in both files
