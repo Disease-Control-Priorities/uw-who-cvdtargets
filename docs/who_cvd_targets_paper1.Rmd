@@ -153,35 +153,35 @@ The model was run under the primary set of assumptions described above. Formal p
 
 ## Baseline global trajectory, 2026--2050
 
-Under the business-as-usual scenario, in which hypertension control and statin coverage remained at 2024 levels, the model projected `r fmt_m(bau_total_deaths)` million cumulative CVD deaths from all four causes across `r n_countries` countries over 2026--2050 (Figure 1). Ischaemic heart disease was the dominant contributor, followed by ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Global incident and prevalent CVD cases continued to rise over the projection period, driven by population ageing. Age-standardised CVD mortality rates declined modestly even under the BAU scenario, reflecting projected demographic transitions, but absolute death counts increased as population growth outpaced age-specific rate reductions.
+Under the business-as-usual scenario, in which hypertension control and statin coverage remained at 2024 levels, the model projected `r fmt_m(bau_total_deaths)` million cumulative CVD deaths from all four causes across `r n_countries` countries over 2026--2050 (Supplemental Figure \@ref(fig:fig1-paper)). Ischaemic heart disease was the dominant contributor, followed by ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Global incident and prevalent CVD cases continued to rise over the projection period, driven by population ageing. Age-standardised CVD mortality rates declined modestly even under the BAU scenario, reflecting projected demographic transitions, but absolute death counts increased as population growth outpaced age-specific rate reductions.
 
 ## Global impact of achieving the hypertension control target
 
-Achievement of the WHO target for hypertension control in the general population (50% control by 2030) was projected to avert `r fmt_m(total_bp)` million CVD deaths over `r study_years`, equivalent to `r pct_bp`% of BAU mortality (Table 1; Figure 2). The annual number of deaths averted grew steadily from the onset of scale-up in 2026, reaching `r fmt_k(annual_2030_bp)` thousand per year by 2030 and `r fmt_k(annual_2050_bp)` thousand per year by 2050, as the cumulative exposure to lower blood pressure compounded over time (Figure 3). The benefits of hypertension control spanned all four CVD causes, with ischaemic heart disease and ischaemic stroke accounting for the majority of averted deaths, followed by intracerebral haemorrhage and hypertensive heart disease (Table 2). In terms of disease burden, hypertension control in the general population was projected to avert `r fmt_m(total_dalys_bp)` million DALYs over the study period.
+Achievement of the WHO target for hypertension control in the general population (50% control by 2030) was projected to avert `r fmt_m(total_bp)` million CVD deaths over `r study_years`, equivalent to `r pct_bp`% of BAU mortality (Table 1; Supplemental Figure \@ref(fig:fig2-paper)). The annual number of deaths averted grew steadily from the onset of scale-up in 2026, reaching `r fmt_k(annual_2030_bp)` thousand per year by 2030 and `r fmt_k(annual_2050_bp)` thousand per year by 2050, as the cumulative exposure to lower blood pressure compounded over time (Supplemental Figure \@ref(fig:fig3-paper)). The benefits of hypertension control spanned all four CVD causes, with ischaemic heart disease and ischaemic stroke accounting for the majority of averted deaths, followed by intracerebral haemorrhage and hypertensive heart disease (Table 2). In terms of disease burden, hypertension control in the general population was projected to avert `r fmt_m(total_dalys_bp)` million DALYs over the study period.
 
 Targeted hypertension control among people with diabetes (80% control by 2030) was projected to avert an additional `r fmt_m(total_bpd)` million deaths (`r pct_bpd`% of BAU) and `r fmt_m(total_dalys_bpd)` million DALYs, reflecting the elevated cardiovascular risk in this subgroup and the higher coverage target.
 
 ## Global impact of achieving the lipid-lowering therapy target
 
-Scale-up of lipid-lowering therapy to 50% coverage among eligible adults by 2030 was projected to avert `r fmt_m(total_stat)` million deaths over `r study_years` (`r pct_stat`% of BAU; Table 1). Because statin effects were restricted to ischaemic heart disease and ischaemic stroke, the cause-specific profile of averted deaths differed from the hypertension scenarios: ischaemic heart disease accounted for `r fmt_m(averted_ihd_stat)` million averted deaths and ischaemic stroke for `r fmt_m(averted_istroke_stat)` million (Table 2). The annual trajectory of benefit was similar in shape to that of hypertension control, with gains accelerating after 2030 as sustained coverage translated into cumulative risk reduction (Figure 3). Lipid-lowering therapy was projected to avert `r fmt_m(total_dalys_stat)` million DALYs over the study period.
+Scale-up of lipid-lowering therapy to 50% coverage among eligible adults by 2030 was projected to avert `r fmt_m(total_stat)` million deaths over `r study_years` (`r pct_stat`% of BAU; Table 1). Because statin effects were restricted to ischaemic heart disease and ischaemic stroke, the cause-specific profile of averted deaths differed from the hypertension scenarios: ischaemic heart disease accounted for `r fmt_m(averted_ihd_stat)` million averted deaths and ischaemic stroke for `r fmt_m(averted_istroke_stat)` million (Table 2). The annual trajectory of benefit was similar in shape to that of hypertension control, with gains accelerating after 2030 as sustained coverage translated into cumulative risk reduction (Supplemental Figure \@ref(fig:fig3-paper)). Lipid-lowering therapy was projected to avert `r fmt_m(total_dalys_stat)` million DALYs over the study period.
 
 ## Combined impact of both targets
 
-Simultaneous achievement of all three WHO targets was projected to avert `r fmt_m(total_all)` million CVD deaths over `r study_years`, representing `r pct_all`% of cumulative BAU mortality (Table 1; Figure 2). The combined scenario yielded substantially greater benefits than any single intervention alone, because hypertension control and statin therapy act on partially overlapping but distinct causal pathways and their effects combined multiplicatively. By 2050, the all-interventions scenario was averting approximately `r fmt_k(annual_2050_all)` thousand deaths annually relative to BAU (Figure 3). The combined scenario was projected to avert `r fmt_m(total_dalys_all)` million DALYs, `r fmt_m(total_ylls_all)` million YLLs, and `r fmt_m(total_ylds_all)` million YLDs over the study period (Table 3).
+Simultaneous achievement of all three WHO targets was projected to avert `r fmt_m(total_all)` million CVD deaths over `r study_years`, representing `r pct_all`% of cumulative BAU mortality (Table 1; Supplemental Figure \@ref(fig:fig2-paper)). The combined scenario yielded substantially greater benefits than any single intervention alone, because hypertension control and statin therapy act on partially overlapping but distinct causal pathways and their effects combined multiplicatively. By 2050, the all-interventions scenario was averting approximately `r fmt_k(annual_2050_all)` thousand deaths annually relative to BAU (Figure \@ref(fig:fig4-paper)). The combined scenario was projected to avert `r fmt_m(total_dalys_all)` million DALYs, `r fmt_m(total_ylls_all)` million YLLs, and `r fmt_m(total_ylds_all)` million YLDs over the study period (Table 3).
 
 Ischaemic heart disease was the leading cause of averted deaths under the combined scenario (`r fmt_m(averted_ihd_all)` million), followed by ischaemic stroke (`r fmt_m(averted_istroke_all)` million), intracerebral haemorrhage (`r fmt_m(averted_hstroke_all)` million), and hypertensive heart disease (`r fmt_m(averted_hhd_all)` million; Table 2).
 
-## Heterogeneity across countries and regions
+## Heterogeneity across regions and income groups
 
-The distribution of projected health gains was highly heterogeneous across countries and WHO regions (Table 4; Figures 4--5). In absolute terms, the largest numbers of deaths averted were concentrated in the most populous, high-burden countries: `r top5_names[1]`, `r top5_names[2]`, `r top5_names[3]`, `r top5_names[4]`, and `r top5_names[5]` accounted for the five highest national totals under the all-interventions scenario (Figure 5). Regional totals reflected the combination of population size, baseline CVD burden, and current coverage gaps, with regions characterised by high hypertension prevalence and low baseline treatment rates exhibiting the largest proportional reductions (Table 4).
+The distribution of projected health gains was heterogeneous across WHO regions. Regional totals reflected the combination of population size, baseline CVD burden, and current coverage gaps, with regions characterised by high hypertension prevalence and low baseline treatment rates exhibiting the largest proportional reductions (Table 4).
 
 When stratified by World Bank income group, low-income and lower-middle-income countries together accounted for a substantial share of avertable deaths and DALYs, underscoring the equity implications of global target achievement (Table 5). Upper-middle-income countries, which include several of the world's most populous nations, contributed the largest absolute volumes of averted burden. High-income countries showed smaller proportional gains, consistent with their higher baseline treatment coverage.
 
 ## Distribution by age and sex
 
-The projected benefits of all interventions were concentrated among older adults. Under the combined scenario, adults aged 70 years and older accounted for `r fmt_m(averted_70_79 + averted_80_89 + averted_90p)` million of the `r fmt_m(total_all)` million deaths averted, reflecting the exponential increase in CVD mortality with age (Figure 6). Adults younger than 70 years accounted for `r fmt_m(averted_lt70)` million averted deaths, representing the prevention of premature CVD mortality --- a metric aligned with SDG target 3.4.
+The projected benefits of all interventions were concentrated among older adults. Under the combined scenario, adults aged 70 years and older accounted for `r fmt_m(averted_70_79 + averted_80_89 + averted_90p)` million of the `r fmt_m(total_all)` million deaths averted, reflecting the exponential increase in CVD mortality with age (Figure \@ref(fig:fig6-paper)). Adults younger than 70 years accounted for `r fmt_m(averted_lt70)` million averted deaths, representing the prevention of premature CVD mortality --- a metric aligned with SDG target 3.4.
 
-Males accounted for `r fmt_m(averted_male)` million averted deaths and females for `r fmt_m(averted_female)` million, consistent with the higher age-specific CVD mortality rates observed in men. The relative benefit of hypertension control versus lipid-lowering therapy was broadly similar across sex groups, although the absolute number of averted deaths was greater among men for all intervention scenarios (Figure 6).
+Males accounted for `r fmt_m(averted_male)` million averted deaths and females for `r fmt_m(averted_female)` million, consistent with the higher age-specific CVD mortality rates observed in men. The relative benefit of hypertension control versus lipid-lowering therapy was broadly similar across sex groups, although the absolute number of averted deaths was greater among men for all intervention scenarios (Figure \@ref(fig:fig6-paper)).
 
 ## Sensitivity and uncertainty results
 
@@ -364,90 +364,18 @@ kable(income_display, align = c("l", "r", "r", "r", "r"))
 
 # Figures
 
-**Figure 1.** Projected cumulative CVD deaths under the business-as-usual scenario, 2026--2050, across `r n_countries` countries. 
-
-```{r fig1-paper, echo=FALSE, fig.cap="Note: Four causes are modelled jointly: ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Population denominators from UNWPP 2024; epidemiological inputs from GBD 2023."}
-knitr::include_graphics(paste0(wd_outp, "aim1_disease_trend.png"))
-```
-
-
-
-\newpage
-
-**Figure 2.** Cumulative CVD deaths averted by intervention scenario, `r study_years`. 
-
-```{r fig2-paper, echo=FALSE, fig.cap="Note: Each bar represents the total number of deaths averted relative to business-as-usual over the full projection period. All four CVD causes combined."}
-knitr::include_graphics(paste0(wd_outp, "aim1_fig1_deaths_intervention.png"))
-```
-
-
-
-\newpage
-
-**Figure 3.** Annual and cumulative CVD deaths averted by intervention over time, `r study_years`. 
-
-```{r fig3-paper, echo=FALSE, fig.cap="Note: The stacked area chart (top) shows annual deaths averted by each intervention relative to business-as-usual. Gains accelerate after 2030 as sustained coverage compounds cumulative risk reduction."}
-knitr::include_graphics(paste0(wd_outp, "aim1_fig3_annual_averted.png"))
-```
-
-
-
-\newpage
-
-**Figure 4.** Cumulative CVD deaths averted over time by intervention scenario, `r study_years`. 
+**Figure 1.** Cumulative CVD deaths averted over time by intervention scenario, `r study_years`.
 
 ```{r fig4-paper, echo=FALSE, fig.cap="Note: Lines represent the running total of deaths averted for each individual intervention relative to business-as-usual."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig4_cum_averted.png"))
 ```
 
-
-
 \newpage
 
-**Figure 5.** Top 20 countries by projected CVD deaths averted under the combined intervention scenario, `r study_years`, coloured by WHO region. Countries with the largest populations and highest baseline CVD burden contribute the most to global totals.
-
-```{r fig5-paper, echo=FALSE, fig.cap="Top 20 countries by projected deaths averted."}
-knitr::include_graphics(paste0(wd_outp, "aim1_fig5_top20_countries.png"))
-```
-
-\newpage
-
-**Figure 6.** Distribution of projected CVD deaths averted by age group, sex, and intervention scenario, `r study_years`. 
+**Figure 2.** Distribution of projected CVD deaths averted by age group, sex, and intervention scenario, `r study_years`.
 
 ```{r fig6-paper, echo=FALSE, fig.cap="Note: Distribution of projected benefits by age and sex. Adults aged 70 years and older account for the majority of averted deaths across all interventions, consistent with the age-dependent increase in baseline CVD mortality."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig5_demo_age.png"))
-```
-
-\newpage
-
-**Figure 7.** Age-standardised CVD mortality rate (ASMR) by intervention scenario, 2019--2050. 
-
-```{r fig7-paper, echo=FALSE, fig.cap="Note: Age-standardised CVD mortality rate by intervention scenario. Solid lines represent the calibration period; dashed lines represent the projection period. ASMR computed using the WHO World Standard Population, rescaled to ages 20--95+."}
-knitr::include_graphics(paste0(wd_outp, "aim1_asmr_interventions.png"))
-```
-
-\newpage
-
-**Figure 8.** Deaths averted by cause of death and intervention scenario, `r study_years`. 
-
-```{r fig8-paper, echo=FALSE, fig.cap="Note: Deaths averted by cause of death and intervention scenario. Ischaemic heart disease accounts for the largest share of averted deaths across all interventions. Statin effects are restricted to ischaemic heart disease and ischaemic stroke."}
-knitr::include_graphics(paste0(wd_outp, "aim1_fig2_deaths_cause.png"))
-```
-
-\newpage
-
-**Figure 9.** Cumulative DALYs averted by intervention scenario over time, `r study_years`.
-
-```{r fig9-paper, echo=FALSE, fig.cap="Cumulative DALYs averted by intervention scenario over time."}
-knitr::include_graphics(paste0(wd_outp, "aim1_bod_fig1_dalys_ts.png"))
-```
-
-\newpage
-
-**Figure 10.** Deaths averted per 100,000 population under the combined intervention scenario, `r study_years`. 
-
-```{r fig10-paper, echo=FALSE, fig.cap="Note: Deaths averted per 100,000 population (world map). Choropleth map showing geographic variation in per-capita health gains, with darker shading indicating larger per-capita benefit."}
-knitr::include_graphics(paste0(wd_outp, "aim1_fig6_map.png"))
 ```
 
 # Supplemental Material
@@ -458,10 +386,6 @@ knitr::include_graphics(paste0(wd_outp, "aim1_fig6_map.png"))
 
 The pathway from target achievement to risk-factor change to cause-specific outcomes and economic consequences.
 
-### Figure: projected cumulative deaths under reference and target-achievement scenarios, 2026-2050
-
-See Figures 3--4 in the main text and the supplementary data tables for country-level detail.
-
 ### Table: global projected health outcomes by scenario
 
 See Table 3 (burden of disease summary) and the supplementary Excel workbook exported from aim1_report.Rmd for the full country-level dataset.
@@ -469,6 +393,62 @@ See Table 3 (burden of disease summary) and the supplementary Excel workbook exp
 ### Table: regional and income-group results
 
 See Tables 4--5 for WHO region and World Bank income group breakdowns.
+
+## Supplemental Figures
+
+**Supplemental Figure S1.** Projected cumulative CVD deaths under the business-as-usual scenario, 2026--2050, across `r n_countries` countries.
+
+```{r fig1-paper, echo=FALSE, fig.cap="Note: Four causes are modelled jointly: ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Under the business-as-usual scenario, hypertension control and statin coverage remain at 2024 levels through 2050. Population denominators from UNWPP 2024; epidemiological inputs from GBD 2023."}
+knitr::include_graphics(paste0(wd_outp, "aim1_disease_trend.png"))
+```
+
+\newpage
+
+**Supplemental Figure S2.** Cumulative CVD deaths averted by intervention scenario, `r study_years`.
+
+```{r fig2-paper, echo=FALSE, fig.cap="Note: Each bar represents the total number of CVD deaths averted relative to the business-as-usual scenario over 2026--2050 across all modelled countries. Interventions include hypertension control in the general population (50% control by 2030), hypertension control among people with diabetes (80% control by 2030), lipid-lowering therapy (50% statin coverage by 2030), and all three combined. All four CVD causes combined: ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease."}
+knitr::include_graphics(paste0(wd_outp, "aim1_fig1_deaths_intervention.png"))
+```
+
+\newpage
+
+**Supplemental Figure S3.** Annual and cumulative CVD deaths averted by intervention over time, `r study_years`.
+
+```{r fig3-paper, echo=FALSE, fig.cap="Note: The stacked area chart shows annual deaths averted by each intervention relative to business-as-usual across all modelled countries. Interventions scale up linearly from 2026 to 2030 and are sustained through 2050. Gains accelerate after 2030 as sustained coverage compounds cumulative risk reduction."}
+knitr::include_graphics(paste0(wd_outp, "aim1_fig3_annual_averted.png"))
+```
+
+\newpage
+
+**Supplemental Figure S4.** Age-standardised CVD mortality rate (ASMR) by intervention scenario, 2019--2050.
+
+```{r fig7-paper, echo=FALSE, fig.cap="Note: Age-standardised CVD mortality rate across all modelled countries by intervention scenario. Solid lines represent the calibration period (2019--2025); dashed lines represent the projection period (2026--2050). ASMR computed using the WHO World Standard Population, rescaled to ages 20--95+. Interventions scale up linearly from 2026 to 2030."}
+knitr::include_graphics(paste0(wd_outp, "aim1_asmr_interventions.png"))
+```
+
+\newpage
+
+**Supplemental Figure S5.** Deaths averted by cause of death and intervention scenario, `r study_years`.
+
+```{r fig8-paper, echo=FALSE, fig.cap="Note: Cumulative CVD deaths averted relative to business-as-usual across all modelled countries, stratified by cause of death and intervention scenario. Ischaemic heart disease accounts for the largest share of averted deaths across all interventions. Statin effects are restricted to ischaemic heart disease and ischaemic stroke; hypertension control affects all four causes."}
+knitr::include_graphics(paste0(wd_outp, "aim1_fig2_deaths_cause.png"))
+```
+
+\newpage
+
+**Supplemental Figure S6.** Cumulative DALYs averted by intervention scenario over time, `r study_years`.
+
+```{r fig9-paper, echo=FALSE, fig.cap="Note: Cumulative disability-adjusted life years (DALYs) averted relative to business-as-usual across all modelled countries, by intervention scenario over 2026--2050. DALYs combine years of life lost (YLLs) and years lived with disability (YLDs) for ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease."}
+knitr::include_graphics(paste0(wd_outp, "aim1_bod_fig1_dalys_ts.png"))
+```
+
+\newpage
+
+**Supplemental Figure S7.** Deaths averted per 100,000 population under the combined intervention scenario, `r study_years`.
+
+```{r fig10-paper, echo=FALSE, fig.cap="Note: Choropleth map showing cumulative CVD deaths averted per 100,000 population across all modelled countries under the combined intervention scenario (all three WHO targets achieved by 2030, sustained through 2050). Darker shading indicates larger per-capita health gains. Geographic variation reflects differences in baseline CVD burden, population age structure, and current treatment coverage."}
+knitr::include_graphics(paste0(wd_outp, "aim1_fig6_map.png"))
+```
 
 ## Methodology and mathematical details
 
