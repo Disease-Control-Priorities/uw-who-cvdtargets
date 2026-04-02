@@ -1031,6 +1031,250 @@ ggsave(paste0(wd_outp, "aim1_asmr_interventions.png"), plot = g,
 
 ---
 
+# Burden of Disease Results
+
+This section presents burden of disease estimates --- including deaths averted, years of life lost (YLLs) averted, years lived with disability (YLDs) averted, and disability-adjusted life years (DALYs) averted --- for each intervention scenario over the period 2026--2050. All "averted" values are computed as the difference between the business-as-usual scenario and each intervention scenario, cumulated across years.
+
+```{r load-dalys, echo=FALSE, message=FALSE, warning=FALSE}
+# ---- Load DALYs output from 07_output_dalys.R --------------------------------
+dt_dalys <- readRDS(paste0(wd_outp, "dt_output_dalys.rds"))
+setDT(dt_dalys)
+
+# ---- Merge country metadata for WHO region and income group -------------------
+dt_dalys <- merge(dt_dalys,
+                  countries_dt[, .(location, region, location_income)],
+                  by = "location", all.x = TRUE)
+
+# ---- Compute baseline values per cell ----------------------------------------
+daly_base <- dt_dalys[intervention == "b.a.u",
+                      .(base_deaths = sum(dead, na.rm = TRUE),
+                        base_yll    = sum(yll, na.rm = TRUE),
+                        base_yld    = sum(yld, na.rm = TRUE),
+                        base_daly   = sum(daly, na.rm = TRUE)),
+                      by = .(location, cause, year)]
+
+daly_int <- dt_dalys[intervention != "b.a.u",
+                     .(deaths = sum(dead, na.rm = TRUE),
+                       yll    = sum(yll, na.rm = TRUE),
+                       yld    = sum(yld, na.rm = TRUE),
+                       daly   = sum(daly, na.rm = TRUE)),
+                     by = .(location, cause, year, intervention)]
+
+dt_bod <- merge(daly_int, daly_base, by = c("location", "cause", "year"), all.x = TRUE)
+dt_bod[, `:=`(deaths_averted = base_deaths - deaths,
+              yll_averted    = base_yll    - yll,
+              yld_averted    = base_yld    - yld,
+              daly_averted   = base_daly   - daly)]
+
+# Merge region and income group onto the differenced data
+dt_bod <- merge(dt_bod,
+                countries_dt[, .(location, region, location_income)],
+                by = "location", all.x = TRUE)
+```
+
+## Table --- Burden of Disease Averted by Intervention Scenario
+
+Cumulative 2026--2050 deaths, YLLs, YLDs, and DALYs averted by intervention scenario, relative to business-as-usual.
+
+```{r bod-table1, echo=FALSE, message=FALSE, warning=FALSE}
+bod_tab1 <- dt_bod[, .(Deaths  = sum(deaths_averted, na.rm = TRUE),
+                       YLLs    = sum(yll_averted,    na.rm = TRUE),
+                       YLDs    = sum(yld_averted,    na.rm = TRUE),
+                       DALYs   = sum(daly_averted,   na.rm = TRUE)),
+                   by = intervention]
+bod_tab1[, intervention := factor(intervention, levels = int_order)]
+setorder(bod_tab1, intervention)
+
+bod_tab1_fmt <- copy(bod_tab1)
+bod_tab1_fmt[, Deaths := fmt_m(Deaths)]
+bod_tab1_fmt[, YLLs   := fmt_m(YLLs)]
+bod_tab1_fmt[, YLDs   := fmt_m(YLDs)]
+bod_tab1_fmt[, DALYs  := fmt_m(DALYs)]
+setnames(bod_tab1_fmt, "intervention", "Intervention")
+
+kable(bod_tab1_fmt,
+      caption = "Cumulative burden of disease averted (millions, 2026\u20132050) by intervention scenario.",
+      align = c("l", "r", "r", "r", "r")) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE, font_size = 13) |>
+  row_spec(0, bold = TRUE) |>
+  footnote(general = "Values in millions. Averted = business-as-usual minus intervention scenario.")
+```
+
+## Table --- Burden of Disease Averted by Intervention Scenario and Cause
+
+Cumulative 2026--2050 deaths and DALYs averted by intervention scenario and cause, with percentage contribution of each cause to total reduction within each scenario.
+
+```{r bod-table2, echo=FALSE, message=FALSE, warning=FALSE}
+bod_tab2 <- dt_bod[, .(Deaths  = sum(deaths_averted, na.rm = TRUE),
+                       YLLs    = sum(yll_averted,    na.rm = TRUE),
+                       YLDs    = sum(yld_averted,    na.rm = TRUE),
+                       DALYs   = sum(daly_averted,   na.rm = TRUE)),
+                   by = .(intervention, cause)]
+bod_tab2[, intervention := factor(intervention, levels = int_order)]
+
+# Compute % contribution within each scenario
+bod_tab2[, pct_deaths := Deaths / sum(Deaths) * 100, by = intervention]
+bod_tab2[, pct_dalys  := DALYs  / sum(DALYs)  * 100, by = intervention]
+
+bod_tab2[, cause_lbl := fcase(
+  cause == "ihd",     "Ischemic heart disease",
+  cause == "istroke", "Ischemic stroke",
+  cause == "hstroke", "Intracerebral hemorrhage",
+  cause == "hhd",     "Hypertensive heart disease",
+  default = cause
+)]
+setorder(bod_tab2, intervention, cause)
+
+bod_tab2_fmt <- bod_tab2[, .(
+  Intervention        = intervention,
+  Cause               = cause_lbl,
+  Deaths              = fmt_m(Deaths),
+  YLLs                = fmt_m(YLLs),
+  YLDs                = fmt_m(YLDs),
+  DALYs               = fmt_m(DALYs),
+  `% Deaths`          = paste0(round(pct_deaths, 1), "%"),
+  `% DALYs`           = paste0(round(pct_dalys,  1), "%")
+)]
+
+kable(bod_tab2_fmt,
+      caption = "Cumulative burden of disease averted (millions, 2026\u20132050) by intervention and cause.",
+      align = c("l", "l", "r", "r", "r", "r", "r", "r")) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE, font_size = 12) |>
+  row_spec(0, bold = TRUE) |>
+  footnote(general = paste0(
+    "Values in millions. % columns show each cause\u2019s share of the total reduction ",
+    "within that intervention scenario."
+  ))
+```
+
+## Table --- Burden of Disease Averted by WHO Region and Intervention Scenario
+
+Cumulative 2026--2050 deaths, YLLs, YLDs, and DALYs averted by WHO region and intervention scenario.
+
+```{r bod-table3, echo=FALSE, message=FALSE, warning=FALSE}
+bod_tab3 <- dt_bod[, .(Deaths  = sum(deaths_averted, na.rm = TRUE),
+                       YLLs    = sum(yll_averted,    na.rm = TRUE),
+                       YLDs    = sum(yld_averted,    na.rm = TRUE),
+                       DALYs   = sum(daly_averted,   na.rm = TRUE)),
+                   by = .(region, intervention)]
+bod_tab3[, intervention := factor(intervention, levels = int_order)]
+setorder(bod_tab3, region, intervention)
+
+bod_tab3_fmt <- bod_tab3[, .(
+  Region       = region,
+  Intervention = intervention,
+  Deaths       = fmt_m(Deaths),
+  YLLs         = fmt_m(YLLs),
+  YLDs         = fmt_m(YLDs),
+  DALYs        = fmt_m(DALYs)
+)]
+
+kable(bod_tab3_fmt,
+      caption = "Cumulative burden of disease averted (millions, 2026\u20132050) by WHO region and intervention.",
+      align = c("l", "l", "r", "r", "r", "r")) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE, font_size = 12) |>
+  row_spec(0, bold = TRUE) |>
+  footnote(general = "Values in millions. Averted = business-as-usual minus intervention scenario.")
+```
+
+## Table --- Burden of Disease Averted by World Bank Income Group and Intervention Scenario
+
+Cumulative 2026--2050 deaths, YLLs, YLDs, and DALYs averted by World Bank income group classification and intervention scenario.
+
+```{r bod-table4, echo=FALSE, message=FALSE, warning=FALSE}
+income_order <- c("Low income", "Lower-middle income", "Upper-middle income", "High income")
+
+bod_tab4 <- dt_bod[, .(Deaths  = sum(deaths_averted, na.rm = TRUE),
+                       YLLs    = sum(yll_averted,    na.rm = TRUE),
+                       YLDs    = sum(yld_averted,    na.rm = TRUE),
+                       DALYs   = sum(daly_averted,   na.rm = TRUE)),
+                   by = .(location_income, intervention)]
+bod_tab4[, intervention    := factor(intervention, levels = int_order)]
+bod_tab4[, location_income := factor(location_income, levels = income_order)]
+setorder(bod_tab4, location_income, intervention)
+
+bod_tab4_fmt <- bod_tab4[, .(
+  `Income Group` = location_income,
+  Intervention   = intervention,
+  Deaths         = fmt_m(Deaths),
+  YLLs           = fmt_m(YLLs),
+  YLDs           = fmt_m(YLDs),
+  DALYs          = fmt_m(DALYs)
+)]
+
+kable(bod_tab4_fmt,
+      caption = "Cumulative burden of disease averted (millions, 2026\u20132050) by World Bank income group and intervention.",
+      align = c("l", "l", "r", "r", "r", "r")) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = TRUE, font_size = 12) |>
+  row_spec(0, bold = TRUE) |>
+  footnote(general = "Values in millions. Income groups based on World Bank 2026 classification.")
+```
+
+## Figure --- DALYs Averted Time Series by Intervention Scenario
+
+Cumulative DALYs averted over time (2026--2050), with one line per intervention scenario.
+
+```{r bod-fig1-dalys-ts, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=5}
+bod_annual <- dt_bod[, .(daly_averted = sum(daly_averted, na.rm = TRUE)),
+                     by = .(intervention, year)]
+bod_annual[, intervention := factor(intervention, levels = int_order)]
+setorder(bod_annual, intervention, year)
+bod_annual[, cum_daly_averted := cumsum(daly_averted), by = intervention]
+
+g <- ggplot(bod_annual, aes(x = year, y = cum_daly_averted / 1e6,
+                             color = intervention)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_manual(values = int_cols, name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title = "Cumulative DALYs Averted by Intervention Scenario, 2026\u20132050",
+    x     = "Year",
+    y     = "Cumulative DALYs averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        plot.title = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_bod_fig1_dalys_ts.png"), plot = g,
+       width = 10, height = 5, dpi = 300)
+```
+
+## Figure --- Cumulative DALYs Averted by WHO Region (All Interventions Combined)
+
+Total cumulative DALYs averted per WHO region under the combined all-interventions scenario.
+
+```{r bod-fig2-dalys-region, echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=5}
+bod_region_all <- dt_bod[intervention == "All Interventions",
+                          .(daly_averted = sum(daly_averted, na.rm = TRUE)),
+                          by = region]
+setorder(bod_region_all, -daly_averted)
+bod_region_all[, region := factor(region, levels = rev(region))]
+
+g <- ggplot(bod_region_all, aes(x = daly_averted / 1e6, y = region)) +
+  geom_col(fill = "#6a3d9a", width = 0.65) +
+  scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(
+    title = "Cumulative DALYs Averted by WHO Region, 2026\u20132050",
+    subtitle = "All Interventions combined",
+    x     = "DALYs averted (millions)",
+    y     = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(panel.grid.minor   = element_blank(),
+        panel.grid.major.y = element_blank(),
+        plot.title         = element_text(face = "bold"),
+        plot.subtitle      = element_text(color = "grey40"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_bod_fig2_dalys_region.png"), plot = g,
+       width = 10, height = 5, dpi = 300)
+```
+
+---
+
 # Excel Export
 
 ```{r excel-export, message=FALSE, warning=FALSE, echo=FALSE}
