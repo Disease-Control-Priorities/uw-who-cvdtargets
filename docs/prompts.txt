@@ -551,3 +551,454 @@ only cross-reference it.
 
 Only after completing this inventory should you begin editing the file.
 Produce a summary of all changes made at the end, organized by subsection.
+
+############################################################################
+############################################################################
+
+You are making targeted additions to two manuscript files to incorporate 
+burden of disease metrics (YLL, YLD, DALY). You will modify exactly two files.
+Do not touch any other file.
+
+---
+
+## FILES YOU MAY MODIFY
+- `who_cvd_targets_paper1.RMD` — main manuscript
+- `aim1_executive_slides.RMD` — executive summary slide deck
+
+## FILES TO READ BUT NOT MODIFY (context only)
+- `07_output_dalys.R` — SOURCE OF TRUTH for how YLL, YLD, and DALY are
+  computed. All mathematical descriptions must reflect what is actually
+  implemented here. This overrides any verbal description or assumption.
+- `aim1_report.RMD` — SOURCE OF TRUTH for all computed DALY/YLL/YLD output
+  objects and numeric results. Numbers consumed by both manuscript and slides
+  must come from objects already defined here. Do not compute anything new
+  in the manuscript or slides.
+- `math-doc.RMD` — notation reference (use for LaTeX conventions where
+  consistent with 07_output_dalys.R; defer to R file where they conflict)
+- `06_run_scenarios_multiple.R` — model context for intervention scenarios
+  under which DALYs are computed
+
+---
+
+## OVERARCHING RULES
+
+- No calculations of any kind may be added to `who_cvd_targets_paper1.RMD`
+  or `aim1_executive_slides.RMD`
+- All numeric results displayed in either file must be consumed from objects
+  defined and computed in `aim1_report.RMD`
+- Before modifying either file, read `07_output_dalys.R` completely and
+  extract the exact computational logic — do not paraphrase or reconstruct
+  from general epidemiological knowledge
+- Mathematical content must render correctly in Word (pandoc LaTeX:
+  `$...$` inline, `$$...$$` display — no HTML math, no MathJax extensions)
+- Slide content must render correctly in the existing slide format of
+  `aim1_executive_slides.RMD` (preserve whatever output format, theme,
+  and slide separator syntax is already in use)
+- All symbols introduced must be consistent with notation already
+  established in the Mathematical Details section of
+  `who_cvd_targets_paper1.RMD`
+
+---
+
+## TASK 1 — MODIFICATIONS TO who_cvd_targets_paper1.RMD
+
+### 1A — Methods Section: Outcomes Paragraph
+
+Locate the outcomes or statistical analysis paragraph in the Methods section.
+
+Add a paragraph stating that burden of disease was quantified using three
+metrics: Years of Life Lost (YLL), Years Lived with Disability (YLD), and
+Disability-Adjusted Life Years (DALY). The paragraph must:
+
+- State that DALYs = YLL + YLD
+- Name the specific life table standard used (extract from 07_output_dalys.R —
+  e.g., Global Burden of Disease standard life table, WHO life table, or
+  other — use only what is coded, do not assume)
+- Name the specific disability weight source used (extract from
+  07_output_dalys.R — e.g., GBD 2019 disability weights, WHO weights —
+  use only what is coded)
+- State the age weighting and time discounting assumptions applied,
+  if any (extract from 07_output_dalys.R — if no discounting is applied,
+  state that explicitly)
+- Add a cross-reference directing readers to the Supplemental Mathematical
+  Details for full derivation:
+  "(see Supplemental Material: DALY Calculation Methods)"
+- Keep the paragraph concise — this is the Methods summary, not the
+  full derivation. Three to five sentences maximum.
+
+### 1B — Supplemental Material: DALY Mathematical Details Subsection
+
+Locate the Supplemental Material section in `who_cvd_targets_paper1.RMD`.
+Add a new subsection after the existing supplemental mathematical content:
+
+## DALY Calculation Methods
+
+This subsection must be organized as follows and written in formal
+epidemiological notation consistent with the Mathematical Notation Summary
+already in the manuscript:
+
+#### Years of Life Lost (YLL)
+
+- State the YLL formula in display math `$$...$$`
+- Formula must match exactly what is implemented in `07_output_dalys.R`
+- Define all symbols: number of deaths (by age, sex, country, scenario),
+  remaining life expectancy at age of death from the reference life table,
+  any age-weighting function, any discounting factor
+- State explicitly which life table standard provides the remaining
+  life expectancy values — name the source, year, and geographic scope
+  (e.g., "GBD 2019 standard life table, providing remaining life expectancy
+  at each age for a frontier population")
+- If YLL is computed separately by age group, sex, country, and scenario,
+  show the full index notation
+
+#### Years Lived with Disability (YLD)
+
+- State the YLD formula in display math `$$...$$`
+- Formula must match exactly what is implemented in `07_output_dalys.R`
+- Define all symbols: number of prevalent CVD cases (or incident cases,
+  whichever is used — derive from R code), disability weight, average
+  duration of disability
+- State explicitly which disability weight source is used — name the
+  source, year, and the specific weight value(s) applied to CVD
+  (extract exact values from `07_output_dalys.R`)
+- State the duration assumption used — whether duration is modeled
+  explicitly or assumed (extract from R code — do not assume)
+- If YLD is computed separately by age group, sex, country, and scenario,
+  show the full index notation
+
+#### Disability-Adjusted Life Years (DALY)
+
+- State the DALY aggregation formula: DALY = YLL + YLD in display math
+- Show how DALYs averted are computed as the difference between the
+  counterfactual and intervention scenario:
+  DALYs averted = DALY(counterfactual) − DALY(intervention)
+- This must match the differencing logic in `07_output_dalys.R`
+
+#### Reference Standards and Weights — Parameter Table
+
+Create a Word-compatible table (same package used elsewhere in the manuscript)
+with these columns:
+  Parameter | Value or Source | Year | Notes
+
+Populate with:
+- Life table standard name and source
+- Disability weight for CVD (exact numeric value from R code)
+- Age weighting applied (K constant if used, or "none")
+- Time discount rate (r value if used, or "none — undiscounted")
+- Duration of disability assumption
+
+Add a footnote with full APA-format citations for each source.
+
+#### Cross-reference
+
+At the end of this subsection add:
+"All DALY, YLL, and YLD results reported in the main manuscript are
+computed using the above specifications, as implemented in
+`07_output_dalys.R`."
+
+---
+
+## TASK 2 — MODIFICATIONS TO aim1_executive_slides.RMD
+
+### BEFORE WRITING ANY SLIDES
+
+1. Read `aim1_report.RMD` completely and catalog every object related
+   to DALYs, YLLs, and YLDs — list their exact R object names,
+   what they contain (scalar, table, figure), and the scenario/
+   stratification they represent
+2. Read the existing `aim1_executive_slides.RMD` to understand:
+   - The slide separator syntax in use (e.g., `---`, `##`, or `###`)
+   - The existing theme, layout, and chunk option conventions
+   - Where in the slide deck to insert the two new slides (after the
+     existing methods slide and after the existing results slides,
+     respectively — place burden of disease slides adjacent to
+     thematically related content)
+3. Only after this inventory should you write the new slides
+
+### SLIDE 1 — Burden of Disease: Methods
+
+Add one new slide titled:
+"Burden of Disease: Methods"
+
+Content must include:
+- A brief visual summary of the three metrics: YLL, YLD, DALY
+  (use a simple bullet structure or a three-cell layout consistent
+  with the existing slide style — do not add R execution)
+- The DALY = YLL + YLD equation rendered in the slide format
+  (use `$DALY = YLL + YLD$` inline math or display math consistent
+  with the slide output format)
+- The life table standard used (name only — one line)
+- The disability weight source and CVD-specific weight value
+  (extract from `07_output_dalys.R`)
+- The discounting and age-weighting assumptions
+  (extract from `07_output_dalys.R` — state "undiscounted" if applicable)
+- A footer note: "Full derivation in Supplemental Mathematical Details"
+- No R chunks on this slide — all content is static text and inline math
+
+### SLIDE 2 — Burden of Disease: Results
+
+Add one new slide titled:
+"Burden of Disease Averted: YLLs, YLDs, and DALYs"
+
+Content must:
+- Display the key DALY, YLL, and YLD results from `aim1_report.RMD`
+  using inline R calls to the objects cataloged in the pre-writing
+  inventory above (e.g., `r total_dalys_averted`, `r yll_combined_scenario`)
+- Use only objects already defined in `aim1_report.RMD` — do not
+  define new objects in the slide file
+- If `aim1_report.RMD` does not yet contain a needed summary object
+  (e.g., a total DALYs averted scalar or a scenario-comparison table),
+  FLAG THIS EXPLICITLY in a comment at the top of the slide chunk:
+  `<!-- NEEDS: object_name must be added to aim1_report.RMD -->`
+  Do not create the object in the slide file itself
+- Present results by intervention scenario (consistent with how other
+  result slides present CVD deaths averted)
+- If a figure object exists in `aim1_report.RMD` for DALYs averted,
+  reference it on this slide using the same chunk call pattern used
+  for other figures in the slide deck
+- Keep the slide uncluttered — prioritize the two or three most
+  impactful numbers (total DALYs averted under the combined scenario,
+  YLL vs YLD split, scenario comparison)
+
+---
+
+## CONSTRAINTS
+- Modify ONLY `who_cvd_targets_paper1.RMD` and `aim1_executive_slides.RMD`
+- Do not add any computations, data loading, or object definitions to
+  either file — all numbers flow from `aim1_report.RMD`
+- Do not alter any existing sections, slides, figures, tables, or prose
+  outside of the specific insertion points described above
+- Do not alter YAML headers in either file
+- Mathematical notation must be consistent with the existing Mathematical
+  Notation Summary in `who_cvd_targets_paper1.RMD`
+- Slide formatting must match the existing visual style and separator
+  syntax of `aim1_executive_slides.RMD`
+- All formulas must be derived from `07_output_dalys.R` — do not use
+  textbook DALY formulas that differ from what is coded
+
+---
+
+## BEFORE YOU BEGIN — REQUIRED READING SEQUENCE
+
+Complete all reading before making any edits:
+
+1. Read `07_output_dalys.R` in full — extract:
+   (a) the YLL formula as implemented
+   (b) the YLD formula as implemented
+   (c) the life table standard referenced
+   (d) the disability weight value(s) and their source
+   (e) any discounting or age-weighting parameters
+   (f) how DALYs averted are computed (counterfactual minus intervention)
+
+2. Read `aim1_report.RMD` in full — catalog:
+   (a) all DALY/YLL/YLD objects by exact name
+   (b) whether each is a scalar, vector, data frame, or plot
+   (c) which scenarios and stratifications each covers
+
+3. Read `who_cvd_targets_paper1.RMD` — identify:
+   (a) the exact insertion point in the Methods outcomes paragraph
+   (b) the end of the Supplemental Material section where the new
+       subsection will be appended
+   (c) the notation conventions in the existing Mathematical Notation
+       Summary to ensure new symbols are consistent
+
+4. Read `aim1_executive_slides.RMD` — identify:
+   (a) slide separator syntax
+   (b) chunk option conventions
+   (c) position of existing methods slide and results slides
+   (d) inline R call syntax used in other results slides
+
+5. Produce an internal checklist:
+   (a) YLL/YLD/DALY formulas confirmed from R code
+   (b) parameter table values confirmed from R code
+   (c) aim1_report.RMD objects available for slides (list by name)
+   (d) any missing objects that need flagging (do not create them)
+
+Only after completing this checklist should you begin editing either file.
+Produce a summary of all changes at the end, organized by file and task.
+
+##############################################################################33
+##############################################################################
+
+You are making targeted fixes to one file only to resolve flagged missing 
+objects identified during a previous editing pass. Modify ONLY aim1_report.RMD.
+Do not touch any other file.
+
+---
+
+## FILE TO MODIFY
+- `aim1_report.RMD` only
+
+## FILES TO READ BUT NOT MODIFY (context only)
+- `aim1_executive_slides.RMD` — to confirm exact object names expected
+  by the slides (the HTML flag comments at the top of the burden of disease
+  slide are the authoritative list of what is needed)
+- `07_output_dalys.R` — to confirm how DALYs, YLLs, and YLDs are computed
+  and what intermediate objects are available to derive the missing scalars
+- `who_cvd_targets_paper1.RMD` — to confirm object names used in the
+  manuscript so nothing is broken by this change
+
+---
+
+## CONTEXT
+
+A previous editing pass flagged the following missing objects via HTML
+comments in `aim1_executive_slides.RMD`:
+
+MISSING SCALARS (currently only saved to `output/paper_scalars.rds`,
+not available to slides):
+  - `total_dalys_all`    — total DALYs averted under combined scenario
+  - `total_ylls_all`     — total YLLs averted under combined scenario
+  - `total_ylds_all`     — total YLDs averted under combined scenario
+  - `total_dalys_bp`     — total DALYs averted under blood pressure
+                           intervention scenario only
+  - `total_dalys_bpd`    — total DALYs averted under blood pressure
+                           plus diabetes intervention scenario
+  - `total_dalys_stat`   — total DALYs averted under statin
+                           intervention scenario only
+
+MISSING SAVED OBJECT:
+  - `sl_bod_summary.rds` — a summary data frame of burden of disease
+                           results by scenario, needed by the slides,
+                           currently not saved to `output/slides/`
+
+---
+
+## TASK 1 — VERIFY SCALAR COMPUTATION
+
+Before adding any export code, read `aim1_report.RMD` and confirm whether
+`total_dalys_all`, `total_ylls_all`, `total_ylds_all`, `total_dalys_bp`,
+`total_dalys_bpd`, and `total_dalys_stat` are already computed as named
+objects anywhere in the file.
+
+- If any scalar IS already computed under a different name, create an
+  alias assignment (e.g., `total_dalys_all <- existing_object_name`)
+  immediately before the export chunk — do not duplicate computation
+- If any scalar is NOT yet computed, derive it from the DALY/YLL/YLD
+  objects already present in `aim1_report.RMD` or from intermediate
+  objects produced by `07_output_dalys.R` — read that file to confirm
+  the correct aggregation logic (e.g., sum across countries, age groups,
+  years for the relevant scenario)
+- Do not invent values or use placeholder numbers
+- Document each scalar with an inline comment stating what it represents
+  and which scenario it corresponds to, e.g.:
+  `# Total DALYs averted 2025-2050, combined BP + statin scenario`
+
+---
+
+## TASK 2 — CREATE sl_bod_summary OBJECT
+
+Create a summary data frame object named `sl_bod_summary` that contains
+burden of disease results by intervention scenario, suitable for display
+in the executive slides.
+
+Structure the data frame with these columns:
+  scenario | total_dalys | total_ylls | total_ylds
+
+Where:
+- `scenario` is a character label matching the scenario naming convention
+  already used elsewhere in `aim1_report.RMD` and `aim1_executive_slides.RMD`
+  (read both files to confirm the exact labels in use — do not introduce
+  new scenario label strings)
+- `total_dalys`, `total_ylls`, `total_ylds` are the aggregated numeric
+  values for each scenario, derived from existing computed objects
+- Rows should cover at minimum: the counterfactual (BAU), the blood
+  pressure scenario, the statin scenario, and the combined scenario
+  Include additional scenarios only if they already exist in the model output
+
+Derive all values from objects already computed in `aim1_report.RMD` or
+available from `07_output_dalys.R` output — do not re-run model code
+or reload raw data files in this step.
+
+---
+
+## TASK 3 — EXPORT TO SLIDES OUTPUT DIRECTORY
+
+Add a clearly labeled export chunk to `aim1_report.RMD` that saves:
+
+1. All six missing scalars packaged into a named list, saved as:
+   `output/slides/sl_scalars.rds`
+
+   The list must contain these named elements, in this order:
+   list(
+total_dalys_all  = total_dalys_all,
+total_ylls_all   = total_ylls_all,
+total_ylds_all   = total_ylds_all,
+total_dalys_bp   = total_dalys_bp,
+total_dalys_bpd  = total_dalys_bpd,
+total_dalys_stat = total_dalys_stat
+)
+
+2. The summary data frame saved as:
+   `output/slides/sl_bod_summary.rds`
+
+### Export chunk requirements:
+- Label the chunk clearly: `{r export-slides-bod-scalars}`
+- Add a chunk comment at the top:
+  `# Exports burden of disease scalars and summary for aim1_executive_slides.RMD`
+- Check whether `output/slides/` directory already exists in the project
+  before saving — if not, create it with `dir.create("output/slides/",
+  recursive = TRUE, showWarnings = FALSE)`
+- Confirm the export chunk is placed AFTER all scalar and summary object
+  definitions — do not place it before the objects are created
+- Confirm the export chunk is placed AFTER any existing `paper_scalars.rds`
+  export chunk so execution order is logical
+- Use `saveRDS()` for both files — do not use `save()` or `write_rds()`
+  unless the rest of the file already uses those conventions consistently
+
+---
+
+## TASK 4 — VERIFY CONSISTENCY WITH MANUSCRIPT EXPORTS
+
+After adding the new exports, check that:
+- The existing `paper_scalars.rds` export in `aim1_report.RMD` is
+  unchanged and still contains all objects the manuscript needs
+- No object is renamed or removed that was previously exported
+- The new `sl_scalars.rds` is additive — it supplements, not replaces,
+  the existing paper scalars export
+- If `total_dalys_all` and the other scalars are also used in
+  `who_cvd_targets_paper1.RMD` via inline R calls, confirm they are
+  still available through whichever mechanism the manuscript uses
+  (shared environment, child document, or loaded RDS) — do not break
+  any existing manuscript inline calls
+
+---
+
+## CONSTRAINTS
+- Modify ONLY `aim1_report.RMD`
+- Do not add model-running code, data loading from raw sources, or
+  any computation that re-executes the simulation
+- Do not alter existing chunks, object names, or export paths already
+  in `aim1_report.RMD` — only add new code
+- Do not modify the YAML header
+- All new code must follow the coding style already present in the file
+  (tidyverse vs base R, pipe operator choice, indentation convention —
+  read the file and match it)
+
+---
+
+## BEFORE YOU BEGIN — REQUIRED READING SEQUENCE
+
+1. Read `aim1_executive_slides.RMD` — locate and copy out every HTML
+   flag comment to confirm the complete list of missing objects and
+   their exact expected names
+
+2. Read `aim1_report.RMD` fully and produce an inventory:
+   (a) Are any of the six scalars already computed? Under what names?
+   (b) What DALY/YLL/YLD objects exist that can be aggregated?
+   (c) Where is the existing paper_scalars.rds export chunk?
+   (d) Does output/slides/ already exist as a save path anywhere?
+   (e) What coding style conventions are used (pipe, tidyverse, etc.)?
+
+3. Read `07_output_dalys.R` — confirm the aggregation logic needed
+   to derive each scalar from available intermediate objects
+
+4. Produce an internal checklist before writing any code:
+   (a) scalar name → source object → aggregation needed (or alias only)
+   (b) sl_bod_summary columns → source objects → confirmed scenario labels
+   (c) export chunk placement → after which existing chunk?
+   (d) directory check needed? yes/no
+
+Only after completing this checklist should you add any code.
+Produce a summary of all changes at the end, listing every new object
+created, every existing object aliased, and the exact file paths written.
