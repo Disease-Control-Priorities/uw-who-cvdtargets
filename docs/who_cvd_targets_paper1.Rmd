@@ -1,5 +1,5 @@
 ---
-title: "Projected cardiovascular health gains from achieving WHO targets for hypertension control and lipid-lowering therapy: a global modelling study, 2026-2050"
+title: "Projected cardiovascular health gains from achieving WHO targets for hypertension control and lipid-lowering therapy: a global modeling study, 2026-2050"
 author:
   - "WHO $\\cdot$ University of Washington"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
@@ -88,6 +88,8 @@ Funding
 
 [Write the funding statement here.]
 
+\newpage
+
 ## Research in context
 
 Evidence before this study
@@ -101,6 +103,8 @@ This study provides the first comprehensive global projection of CVD deaths aver
 Implications of all the available evidence
 
 The evidence supports prioritising concurrent investment in hypertension management and lipid-lowering therapy as complementary, high-impact strategies for reducing global CVD mortality. The benefits are largest in absolute terms in high-burden countries, but proportional gains are substantial across all income groups, reinforcing the case for universal scale-up through primary health care platforms such as the WHO HEARTS technical package.
+
+\newpage
 
 # Introduction
 Cardiovascular diseases (CVDs) remain the world's leading cause of death and disability-adjusted life years (DALYs). CVD deaths increased globally from 13.1 million in 1990 to 19.2 million in 2023, with ischaemic heart disease, intracerebral haemorrhagic stroke, ischaemic stroke, and hypertensive heart disease among the leading causes [@Chong2024]. Age-standardized CVD DALY rates were highest in low and low-middle Socio-demographic Index (SDI) settings, and the number of prevalent CVD cases more than doubled between 1990 and 2023, rising from 311 million to 626 million. In 2023, modifiable risk factors accounted for 79.6% of CVD burden, equivalent to 347 million DALYs --- underscoring that the majority of this burden is preventable.
@@ -566,6 +570,8 @@ notation <- data.frame(
 )
 kable(notation, col.names = c("Symbol", "Definition"), align = c("l", "l"))
 ```
+
+\newpage
 
 ### Key Parameter Appendix {#sec:param-appendix}
 

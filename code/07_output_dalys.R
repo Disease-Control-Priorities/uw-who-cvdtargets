@@ -58,6 +58,16 @@ dw[
 
 # Life expectancy
 
+# The life expectancy data is from the UN World Population Prospects 2024, 
+# which provides life expectancy by age for both sexes. We will use the medium variant projections for our analysis. The data is in the "WPP2024_MORT_F05_1_LIFE_EXPECTANC
+
+# Web link: https://population.un.org/wpp/downloads?folder=Standard%20Projections&group=Mortality
+# Life Expectancy at Exact Age x (ex) - Both Sexes (XLSX) WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx
+
+# The average number of remaining years of life expected by a hypothetical cohort of 
+# individuals alive at age x who would be subject during the remaining of their lives 
+# to the mortality rates of a given year. It is expressed as years.
+
 lt <- as.data.table(read_excel(paste0(wd_raw,"WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx"), 
                                sheet = "Medium variant", range = "A17:DH22967"))
 
