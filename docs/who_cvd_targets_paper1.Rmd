@@ -117,7 +117,7 @@ This study addresses that gap by estimating the health outcomes associated with 
 
 ## Study design
 
-We conducted a multi-country comparative modelling study using a discrete-time multi-state transition model projecting CVD mortality across `r n_countries` countries from 2026 to 2050. Four causes of CVD death were modelled jointly: ischaemic heart disease (IHD), ischaemic stroke, intracerebral haemorrhage (haemorrhagic stroke), and hypertensive heart disease. Three health states --- Well, Sick, and Dead --- were tracked for each cause, stratified by single year of age (20--95), sex, and country. The model was calibrated to observed epidemiological data from 2019 and projected forward using annual time steps.
+We conducted a multi-country comparative modelling study using a discrete-time multi-state transition model projecting CVD mortality across `r n_countries` countries from 2026 to 2050. Four causes of CVD death were modelled jointly: ischaemic heart disease (IHD), ischaemic stroke, intracerebral haemorrhage (haemorrhagic stroke), and hypertensive heart disease. Three health states --- Well, Sick, and Dead --- were tracked for each cause, stratified by single year of age (20--95), sex, and country. The model was calibrated to observed epidemiological data from 2019 and projected forward using annual time steps (see Multi-State Transition Model).
 
 ## Data sources
 
@@ -128,21 +128,21 @@ Death counts and mortality rates were derived from the World Health Organization
 
 Three active intervention scenarios were modelled against a business-as-usual (BAU) reference in which 2024 coverage rates were held constant through 2050:
 
-1. **Hypertension control (general population):** Linear scale-up of population-level blood pressure control by 2030, beginning in 2026, corresponding to the WHO target of 150 million additional people with controlled hypertension. Effect sizes were derived from the Ettehad et al. meta-analysis, applied across eight blood pressure bins with incremental coverage above baseline generating new risk reductions for incidence and case fatality.
+1. **Hypertension control (general population):** Linear scale-up of population-level blood pressure control by 2030, beginning in 2026, corresponding to the WHO target of 150 million additional people with controlled hypertension. Effect sizes were derived from the Ettehad et al. meta-analysis, applied across eight blood pressure bins with incremental coverage above baseline generating new risk reductions for incidence and case fatality (see Hypertension Control Intervention Model).
 
-2. **Hypertension control (diabetes subgroup):** Linear scale-up to 80% blood pressure control among people with diagnosed diabetes by 2030. Effect sizes were weighted by country-level diabetes prevalence and blended with general-population hypertension effects.
+2. **Hypertension control (diabetes subgroup):** Linear scale-up to 80% blood pressure control among people with diagnosed diabetes by 2030. Effect sizes were weighted by country-level diabetes prevalence and blended with general-population hypertension effects (see Hypertension Control Intervention Model: Diabetes Component).
 
-3. **Lipid-lowering therapy:** Linear scale-up to 50% statin coverage among eligible adults (aged 40 years and older) by 2030. Effects were restricted to IHD and ischaemic stroke and applied through an attributable-fraction approach, with an atherosclerotic fraction of 0.60 for ischaemic stroke.
+3. **Lipid-lowering therapy:** Linear scale-up to 50% statin coverage among eligible adults (aged 40 years and older) by 2030. Effects were restricted to IHD and ischaemic stroke and applied through an attributable-fraction approach, with an atherosclerotic fraction of 0.60 for ischaemic stroke (see Statin Therapy Intervention Model).
 
-A fourth combination scenario applied all three interventions simultaneously, with effects combining multiplicatively across interventions.
+A fourth combination scenario applied all three interventions simultaneously, with effects combining multiplicatively across interventions (see Multi-State Transition Model).
 
 ## Modelling framework
 
-The core model is a discrete-time state-transition framework in which individuals move between Well, Sick, and Dead states at each annual time step according to cause-specific incidence rates (Well to Sick), case fatality rates (Sick to Dead), and background mortality rates (all states to Dead). Interventions modify incidence and case fatality through multiplicative effect ratios ($\varepsilon_{IR}$, $\varepsilon_{CF}$), which are computed from the intervention-specific coverage increment above baseline. Only incremental coverage above baseline was credited with new effects, avoiding double-counting of existing treatment benefits. For hypertension control, effect ratios are derived from a nine-step pipeline incorporating blood pressure bin distributions, GBD relative risks, Ettehad trial effect sizes, and population-weighted aggregation. For statin therapy, incremental coverage generates cause- and location-specific risk reductions applied to incidence and case fatality. Under the combined scenario, effects combine multiplicatively: $\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}$.
+The core model is a discrete-time state-transition framework in which individuals move between Well, Sick, and Dead states at each annual time step according to cause-specific incidence rates (Well to Sick), case fatality rates (Sick to Dead), and background mortality rates (all states to Dead). Interventions modify incidence and case fatality through multiplicative effect ratios ($\varepsilon_{IR}$, $\varepsilon_{CF}$), which are computed from the intervention-specific coverage increment above baseline. Only incremental coverage above baseline was credited with new effects, avoiding double-counting of existing treatment benefits. For hypertension control, effect ratios are derived from a nine-step pipeline incorporating blood pressure bin distributions, GBD relative risks, Ettehad trial effect sizes, and population-weighted aggregation. For statin therapy, incremental coverage generates cause- and location-specific risk reductions applied to incidence and case fatality. Under the combined scenario, effects combine multiplicatively: $\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}$ (see Mathematical Notation Summary).
 
 ## Calibration
 
-Incidence (IR) and case fatality (CF) parameters were calibrated jointly to ensure consistency with external data sources: incidence rates were adjusted to reproduce age-, sex-, country-, and cause-specific incidence patterns from GBD 2023, while case-fatality parameters were calibrated to match observed cause-specific mortality counts from WHO GHE within each stratum. COVID-19 excess mortality was incorporated for 2020–2021 only.
+Incidence (IR) and case fatality (CF) parameters were calibrated jointly to ensure consistency with external data sources: incidence rates were adjusted to reproduce age-, sex-, country-, and cause-specific incidence patterns from GBD 2023, while case-fatality parameters were calibrated to match observed cause-specific mortality counts from WHO GHE within each stratum. COVID-19 excess mortality was incorporated for 2020–2021 only (see Key Parameter Appendix).
 
 
 ## Data and code availability
@@ -204,19 +204,19 @@ This study projected that simultaneous achievement of WHO targets for hypertensi
 
 ## Interpretation of hypertension control findings
 
-The projected impact of hypertension control is consistent with the well-established dose--response relationship between blood pressure reduction and cardiovascular risk described by Ettehad et al. [-@Ettehad2016], in which every 10 mmHg reduction in systolic blood pressure was associated with a 20% reduction in major cardiovascular events, a 17% reduction in coronary heart disease, and a 27% reduction in stroke. Our findings extend this evidence by quantifying the population-level health gains achievable when these effect sizes are applied at scale across diverse country settings, accounting for heterogeneous baseline blood pressure distributions, varying levels of current hypertension control, and country-specific demographic trajectories.
+The projected impact of hypertension control is consistent with the well-established dose--response relationship between blood pressure reduction and cardiovascular risk described by Ettehad et al. [-@Ettehad2016], in which every 10 mmHg reduction in systolic blood pressure was associated with a 20% reduction in major cardiovascular events, a 17% reduction in coronary heart disease, and a 27% reduction in stroke (see Hypertension Control Intervention Model for the formal specification). Our findings extend this evidence by quantifying the population-level health gains achievable when these effect sizes are applied at scale across diverse country settings, accounting for heterogeneous baseline blood pressure distributions, varying levels of current hypertension control, and country-specific demographic trajectories.
 
 The concentration of benefits in older age groups reflects the age-dependent increase in both baseline CVD mortality rates and the absolute risk reduction achievable through blood pressure lowering. The consistent benefit across all four modelled CVD causes --- including haemorrhagic stroke and hypertensive heart disease --- underscores the broad pathophysiological relevance of blood pressure control beyond ischaemic outcomes alone.
 
 ## Interpretation of lipid-lowering therapy findings
 
-Lipid-lowering therapy with statins was projected to avert `r fmt_m(total_stat)` million deaths, with effects concentrated in ischaemic heart disease and ischaemic stroke. This cause-specific profile is consistent with the atherogenic mechanism of LDL cholesterol and the evidence base from major statin trials, which have demonstrated significant reductions in coronary events and ischaemic stroke with minimal effect on haemorrhagic stroke or hypertensive heart disease [@Fulcher2015]. The modelling of statin effects only in adults aged 40 and above, and only for IHD and ischaemic stroke, represents a conservative approach that may underestimate the total benefit if future evidence supports broader indications or earlier initiation.
+Lipid-lowering therapy with statins was projected to avert `r fmt_m(total_stat)` million deaths, with effects concentrated in ischaemic heart disease and ischaemic stroke. This cause-specific profile is consistent with the atherogenic mechanism of LDL cholesterol and the evidence base from major statin trials, which have demonstrated significant reductions in coronary events and ischaemic stroke with minimal effect on haemorrhagic stroke or hypertensive heart disease [@Fulcher2015] (see Statin Therapy Intervention Model). The modelling of statin effects only in adults aged 40 and above, and only for IHD and ischaemic stroke, represents a conservative approach that may underestimate the total benefit if future evidence supports broader indications or earlier initiation.
 
 Adherence to statin therapy remains a critical implementation challenge. Meta-analytic evidence suggests that real-world statin adherence ranges from 40% to 75% depending on the clinical context and follow-up duration [@Basios2025]. Our model assumed full adherence for newly covered individuals under hypertension therapy and adjusted statin adherence for primary and secondary prevention; true population-level effects may be lower if adherence is suboptimal, particularly in settings with limited health system capacity for long-term medication management.
 
 ## Combined policy meaning
 
-The combined scenario demonstrates that hypertension control and lipid-lowering therapy are complementary rather than substitutable interventions. Because blood pressure and LDL cholesterol act through partially independent causal pathways, their multiplicative combination generates health gains greater than the sum of their individual effects. This finding has direct policy relevance: programmes that integrate blood pressure measurement and treatment with lipid assessment and statin therapy --- such as the WHO HEARTS technical package --- can capture these synergistic benefits within existing primary health care platforms [@Banigbe2025; @Moran2024].
+The combined scenario demonstrates that hypertension control and lipid-lowering therapy are complementary rather than substitutable interventions. Because blood pressure and LDL cholesterol act through partially independent causal pathways, their multiplicative combination generates health gains greater than the sum of their individual effects (see Multi-State Transition Model). This finding has direct policy relevance: programmes that integrate blood pressure measurement and treatment with lipid assessment and statin therapy --- such as the WHO HEARTS technical package --- can capture these synergistic benefits within existing primary health care platforms [@Banigbe2025; @Moran2024].
 
 The projected `r fmt_m(total_all)` million deaths averted and `r fmt_m(total_dalys_all)` million DALYs averted under the combined scenario represent a substantial return on investment in cardiovascular risk-factor management. Recent costing analyses of the HEARTS programme in low- and middle-income countries have demonstrated favourable cost-effectiveness ratios for integrated hypertension and statin management [@Husain2022HeartsCosting; @Garcia2026HEARTS4Countries], suggesting that the health gains projected here are achievable within realistic resource envelopes.
 
@@ -469,28 +469,448 @@ knitr::include_graphics(paste0(wd_outp, "aim1_fig6_map.png"))
 
 \newpage
 
-## Methodology and mathematical details
+## Methodology and Mathematical Details {#sec:math-details}
 
-The multi-state transition model operates in discrete annual time steps. At each step, for each country $\ell$, single year of age $a$, sex $s$, and cause $c$:
+### Mathematical Notation Summary {#sec:math-notation}
 
-$$W_{t+1} = W_t - W_t \cdot IR_{a,s,c} \cdot \varepsilon_{IR} - W_t \cdot BG.mx$$
-$$K_{t+1} = K_t + W_t \cdot IR_{a,s,c} \cdot \varepsilon_{IR} - K_t \cdot CF_{a,s,c} \cdot \varepsilon_{CF} - K_t \cdot BG.mx.all$$
-$$D_{t+1} = D_t + K_t \cdot CF_{a,s,c} \cdot \varepsilon_{CF} + W_t \cdot BG.mx + K_t \cdot BG.mx.all$$
+All symbols used in subsequent subsections are defined in the table below. R variable names from the implementation code (`06_run_scenarios_multiple.R`) are mapped to mathematical symbols as follows: `well` $\to W$, `sick` $\to K$, `dead` $\to D$, `IR` $\to IR$, `CF` $\to CF$, `eff_ir` $\to \varepsilon_{IR}$, `eff_cf` $\to \varepsilon_{CF}$, `BG.mx` $\to BG.mx$, `BG.mx.all` $\to BG.mx.all$, `Nx` $\to N$, `PREVt0` $\to PREV$, `DIS.mx.t0` $\to DIS.mx$.
 
-where $\varepsilon_{IR}$ and $\varepsilon_{CF}$ are the multiplicative effect ratios from the intervention module (equal to 1 under BAU), $BG.mx$ is cause-specific background mortality, and $BG.mx.all$ is all-cause background mortality applied to the Sick compartment.
+```{r notation-table, echo=FALSE}
+# R object name -> LaTeX symbol mappings documented above
+notation <- data.frame(
+  Symbol = c(
+    "a, s, c, t, l",
+    "BP_cat",
+    "W, K, D",
+    "N",
+    "IR",
+    "CF",
+    "BG.mx",
+    "BG.mx.all",
+    "covid.mx",
+    "PREV",
+    "DIS.mx",
+    "epsilon_IR, epsilon_CF",
+    "epsilon_IR,BP ; epsilon_CF,BP",
+    "epsilon_IR,BP,DM ; epsilon_CF,BP,DM",
+    "epsilon_IR,statin ; epsilon_CF,statin",
+    "epsilon_IR,total ; epsilon_CF,total",
+    "C_baseline",
+    "C_target",
+    "C_0, C_t",
+    "Delta C_target",
+    "C_agg^Delta",
+    "P(BP_cat)",
+    "RR_GBD",
+    "alpha (normalisation)",
+    "IR_bin",
+    "E_trial",
+    "E_adj",
+    "w_DM",
+    "rho_CF,c",
+    "T_start, T_end",
+    "U_0,l",
+    "U_target",
+    "Delta U(t,l)",
+    "RR^IR_c, RR^CF_c",
+    "delta^IR_c, delta^CF_c",
+    "AF_c,l",
+    "psi_athero",
+    "alpha_IR, alpha_CF",
+    "E^IR_c,l(t), E^CF_c,l(t)",
+    "Deaths averted"
+  ),
+  Definition = c(
+    "Age (single year, 20-95), sex, cause, time (year), location (country)",
+    "Blood pressure category (eight bins: <120 through 180+)",
+    "Well (disease-free), Sick (prevalent), and Dead (disease-specific) populations",
+    "Total population",
+    "Incidence rate (Well to Sick transition)",
+    "Case fatality rate (Sick to Dead transition)",
+    "Cause-deleted background mortality",
+    "All-cause background mortality",
+    "COVID-19 excess mortality (2020-2021 only)",
+    "Baseline disease prevalence (initial condition)",
+    "Baseline disease-specific mortality rate (initial condition)",
+    "Multiplicative effect ratios for incidence and case fatality (<1 = reduction)",
+    "Effect ratios from general-population hypertension control",
+    "Effect ratios from diabetes-specific hypertension control",
+    "Effect ratios from statin therapy",
+    "Combined effect ratios (multiplicative product across interventions)",
+    "Baseline hypertension control rate (country-specific)",
+    "Target hypertension control rate",
+    "Baseline and time-varying coverage for hypertensive BP bins",
+    "Incremental coverage target (C_target - C_baseline)",
+    "Aggregate incremental coverage (population-weighted over hypertensive bins)",
+    "Population probability distribution across BP categories",
+    "GBD relative risk per 10 mmHg SBP increase (age- and cause-specific)",
+    "Normalisation factor = sum of P(BP) x RR_GBD across bins",
+    "Bin-specific baseline incidence",
+    "Ettehad trial effect size (diabetes-weighted, per BP bin and cause)",
+    "Coverage-adjusted effect size",
+    "Diabetes prevalence weight (country-specific)",
+    "Case-fatality reduction factor per unit coverage (cause-specific)",
+    "Scale-up start and end years",
+    "Baseline statin coverage at start year (country-specific)",
+    "Target total statin coverage",
+    "Incremental statin coverage above baseline at time t",
+    "Trial-based relative risks for incidence and case fatality",
+    "Risk reductions (= 1 - RR) for incidence and case fatality",
+    "Attributable fraction (cause- and location-specific; used for IR only)",
+    "Proportion of ischaemic stroke that is atherosclerotic (CF only)",
+    "Adherence for primary (IR) and secondary (CF) prevention",
+    "Incremental statin effect sizes for IR and CF",
+    "Cumulative difference: D_BAU - D_intervention, summed over a, s, c, t"
+  ),
+  stringsAsFactors = FALSE
+)
+kable(notation, col.names = c("Symbol", "Definition"), align = c("l", "l"))
+```
 
-For the hypertension control module, the effect ratio for incidence is computed via a nine-step pipeline:
+### Key Parameter Appendix {#sec:param-appendix}
 
-1. Derive baseline blood pressure distribution $P(\text{BP}_{\text{cat}})$ without treatment
-2. Apply GBD relative risks per 10 mmHg SBP to obtain bin-specific incidence $IR_{\text{bin}}$
-3. Compute diabetes-weighted Ettehad trial effect sizes $E_{\text{trial}}$ per BP bin and cause
-4. Linear coverage scale-up from $C_0$ to $C_{\text{target}}$, beginning 2026
-5. Coverage adjustment: $E_{\text{adj}} = E_{\text{trial}}(C_t - C_0) / (1 - E_{\text{trial}} \cdot C_0)$
-6. New bin incidence: $IR_{\text{bin,new}} = IR_{\text{bin}} \times (1 - E_{\text{adj}})$
-7. Aggregate: $IR_{\text{new}} = \sum IR_{\text{bin,new}} \times P(\text{BP}_{\text{cat}})$
-8. Incidence effect ratio: $\varepsilon_{IR} = IR_{\text{new}} / IR_{\text{original}}$
-9. Case-fatality effect ratio: $\varepsilon_{CF} = 1 - \rho_{CF} \times C_{\text{agg}}^{\Delta}$
+The table below lists all base parameter values used in the analysis. All parameters are deterministic in the present analysis; formal probabilistic sensitivity analysis is planned as a subsequent extension.
 
-For statins, the incremental effect size is: $E^{IR}_{c,\ell}(t) = 1 - \Delta U(t,\ell) \cdot AF_{c,\ell} \cdot \delta^{IR}_c$, where $AF_{c,\ell}$ is the cause- and location-specific attributable fraction and $\delta^{IR}_c = 1 - RR^{IR}_c$ is the trial-based risk reduction.
+```{r param-appendix-table, echo=FALSE}
+# R variable name -> parameter mapping:
+# target_control (0.50), control_start_year (2026), control_target_year (2030)
+# target_control_diabetes (0.80)
+# cf_reduction_per_control: c(ihd=0.24, istroke=0.36, hstroke=0.76, hhd=0.20)
+# rr_ir_ihd (0.74), rr_ir_istroke (0.80), rr_cf_ihd (0.80), rr_cf_istroke (0.96)
+# af_ihd (0.1497), af_istroke (0.1161) -- defaults; country-specific from GBD
+# prop_athero_stroke (0.60)
+# statin_target_coverage (0.50), statin_start_year (2026), statin_target_year (2030)
+# adherence_ir (1), adherence_cf (1)
 
-Under the combined scenario, effects combine multiplicatively: $\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}$.
+params <- data.frame(
+  Parameter = c(
+    "Time step",
+    "Age range",
+    "Causes modelled",
+    "Incidence rate (IR)",
+    "Case fatality rate (CF)",
+    "Background mortality (BG.mx)",
+    "Population (N)",
+    "---",
+    "HTN target control (general)",
+    "HTN target control (diabetes)",
+    "HTN scale-up start year",
+    "HTN scale-up target year",
+    "HTN baseline control",
+    "CF reduction factor: IHD",
+    "CF reduction factor: Ischaemic stroke",
+    "CF reduction factor: Haemorrhagic stroke",
+    "CF reduction factor: HHD",
+    "Ettehad RR per 10 mmHg",
+    "GBD RR per 10 mmHg",
+    "Diabetes prevalence weight",
+    "---",
+    "Statin target coverage",
+    "Statin scale-up start year",
+    "Statin scale-up target year",
+    "Statin RR incidence: IHD",
+    "Statin RR incidence: Ischaemic stroke",
+    "Statin RR case fatality: IHD",
+    "Statin RR case fatality: Ischaemic stroke",
+    "Attributable fraction: IHD",
+    "Attributable fraction: Ischaemic stroke",
+    "Atherosclerotic stroke proportion",
+    "Adherence (primary prevention)",
+    "Adherence (secondary prevention)",
+    "Statin age eligibility"
+  ),
+  Symbol = c(
+    "--", "a", "c", "IR", "CF", "BG.mx", "N",
+    "",
+    "C_target", "C_target,DM", "T_start", "T_end", "C_baseline",
+    "rho_CF,IHD", "rho_CF,IS", "rho_CF,HS", "rho_CF,HHD",
+    "RR_trial", "RR_GBD", "w_DM",
+    "",
+    "U_target", "T_stat,start", "T_stat,end",
+    "RR^IR_IHD", "RR^IR_IS", "RR^CF_IHD", "RR^CF_IS",
+    "AF_IHD", "AF_IS", "psi_athero",
+    "alpha_IR", "alpha_CF", "--"
+  ),
+  Base_Value = c(
+    "1 year", "20-95", "IHD, IS, HS, HHD",
+    "Country-specific", "Country-specific", "Country-specific", "Country-specific",
+    "",
+    "0.50", "0.80", "2026", "2030", "Country-specific",
+    "0.24", "0.36", "0.76", "0.20",
+    "Cause- and BP-bin-specific", "Age- and cause-specific", "Country-specific",
+    "",
+    "0.50", "2026", "2030",
+    "0.74", "0.80", "0.80", "0.96",
+    "0.15 (default)", "0.12 (default)", "0.60",
+    "1.0", "1.0", ">= 40 years"
+  ),
+  Data_Source = c(
+    "Model structure", "UNWPP 2024", "GBD 2023",
+    "GBD 2023 / WHO GHE", "GBD 2023 / WHO GHE", "WHO GHE", "UNWPP 2024",
+    "",
+    "WHO NCD targets", "Global Diabetes Compact", "Model assumption", "WHO target year",
+    "WHO / country data",
+    "Ettehad et al. 2016", "Ettehad et al. 2016", "Ettehad et al. 2016", "Ettehad et al. 2016",
+    "Ettehad et al. 2016", "GBD 2019", "Country-level estimates",
+    "",
+    "WHO NCD targets", "Model assumption", "WHO target year",
+    "CTT Collaboration 2015", "CTT Collaboration 2015",
+    "CTT Collaboration 2015", "CTT Collaboration 2015",
+    "GBD 2021", "GBD 2021", "Literature estimate",
+    "Model assumption", "Model assumption", "WHO guidelines"
+  ),
+  Transformation = c(
+    "--", "Single-year ages; 95+ collapsed", "--",
+    "Calibrated jointly with CF", "Calibrated to WHO GHE deaths", "Cause-deleted from all-cause", "Single-year age projections",
+    "",
+    "--", "--", "--", "--", "--",
+    "--", "--", "--", "--",
+    "Cumulative effect per BP bin step", "RR^(Delta/10) from reference", "Weighted blend of DM/non-DM effects",
+    "",
+    "--", "--", "--",
+    "Per ~1 mmol/L LDL-C reduction", "Per ~1 mmol/L LDL-C reduction",
+    "Per ~1 mmol/L LDL-C reduction", "Per ~1 mmol/L LDL-C reduction",
+    "Country-specific where available", "Country-specific where available",
+    "Applied to IS CF effect only",
+    "Full adherence assumed", "Full adherence assumed", "Effects = 0 for age < 40"
+  ),
+  Uncertainty = c(
+    rep("Deterministic", 7),
+    "",
+    rep("Deterministic", 12),
+    "",
+    rep("Deterministic", 13)
+  ),
+  stringsAsFactors = FALSE
+)
+
+# Remove separator rows for display
+params_display <- params[params$Parameter != "---", ]
+kable(params_display,
+      col.names = c("Parameter", "Symbol", "Base Value", "Data Source",
+                     "Transformation", "Uncertainty"),
+      align = c("l", "l", "l", "l", "l", "l"))
+```
+
+*Data sources: Ettehad et al. [-@Ettehad2016]; CTT Collaboration: Fulcher et al. [-@Fulcher2015]; GBD 2023: Chong et al. [-@Chong2024]; UNWPP 2024: United Nations World Population Prospects 2024 revision.*
+
+### Multi-State Transition Model {#sec:transition-model}
+
+The model comprises three mutually exclusive health states for each cause $c \in \{\text{IHD}, \text{ischaemic stroke}, \text{haemorrhagic stroke}, \text{HHD}\}$:
+
+- **Well** ($W_{a,s,c,t}$): Disease-free individuals at risk of developing cause $c$
+- **Sick** ($K_{a,s,c,t}$): Individuals living with prevalent disease $c$
+- **Dead** ($D_{a,s,c,t}$): Individuals who have died from cause $c$
+
+Individuals transition between states according to cause-specific incidence rates ($IR$: Well $\to$ Sick), case fatality rates ($CF$: Sick $\to$ Dead), and background mortality ($BG.mx$: exits from Sick; $BG.mx.all$: all-cause mortality applied to the total population). The four causes are modelled jointly but independently within each country--age--sex stratum; population-level accounting is maintained through all-cause mortality applied to the total population.
+
+The model operates in discrete annual time steps with simultaneous age advancement: at each step, individuals at age $a$ in year $t$ advance to age $a+1$ in year $t+1$. New cohorts enter at age 20 each year. The projection period runs from 2017 (calibration start) through 2050.
+
+**State transition equations.** For each location $\ell$, sex $s$, cause $c$, at age $a$ in year $t$, the state occupancies at age $a+1$ in year $t+1$ are:
+
+*New cases:*
+
+$$\text{NewCases}_{a+1,s,c,t+1} = W_{a,s,c,t} \times IR_{a,s,c,t} \times \varepsilon_{IR}(a,s,c,t)$$
+
+*Sick population:*
+
+$$K_{a+1,s,c,t+1} = K_{a,s,c,t} \times \left[1 - CF_{a,s,c,t} \times \varepsilon_{CF}(a,s,c,t) - BG.mx_{a,s,c,t} - covid.mx_{a,s,t}\right] + W_{a,s,c,t} \times IR_{a,s,c,t} \times \varepsilon_{IR}(a,s,c,t)$$
+
+*Disease-specific deaths:*
+
+$$D_{a+1,s,c,t+1} = K_{a,s,c,t} \times CF_{a,s,c,t} \times \varepsilon_{CF}(a,s,c,t)$$
+
+*Total population (updated from external demographic projection):*
+
+$$N_{a+1,s,t+1} = N_{a,s,t} - ALL.mx_{a,s,t}$$
+
+*All-cause mortality:*
+
+$$ALL.mx_{a,s,t} = \sum_c D_{a+1,s,c,t+1} + N_{a+1,s,t+1} \times \left(BG.mx.all_{a,s,t} + covid.mx_{a,s,t}\right)$$
+
+*Well population (computed as residual):*
+
+$$W_{a+1,s,c,t+1} = N_{a+1,s,t+1} - ALL.mx_{a+1,s,t+1} - K_{a+1,s,c,t+1}$$
+
+where $\varepsilon_{IR}$ and $\varepsilon_{CF}$ are the multiplicative effect ratios from the intervention modules (equal to 1 under the business-as-usual scenario). COVID-19 excess mortality ($covid.mx$) is applied only for 2020--2021. All state occupancies are bounded below at zero, and transition rates are capped: $CF \leq 0.99$, $IR \leq 0.99$.
+
+**Initial conditions.** At the model start year (2017) and for each new cohort entering at age 20:
+
+$$K_{20,s,c,t_0} = N_{20,s,c,t_0} \times PREV_{20,s,c}$$
+
+$$D_{20,s,c,t_0} = N_{20,s,c,t_0} \times DIS.mx_{20,s,c}$$
+
+$$W_{20,s,c,t_0} = N_{20,s,c,t_0} \times \left(1 - PREV_{20,s,c} - BG.mx_{20,s,c}\right)$$
+
+**Intervention combination.** When multiple interventions are applied simultaneously, their effect ratios combine multiplicatively:
+
+$$\varepsilon_{IR,\text{total}}(a,s,c,t) = \varepsilon_{IR,\text{BP}}(a,s,c,t) \times \varepsilon_{IR,\text{BP,DM}}(a,s,c,t) \times \varepsilon_{IR,\text{statin}}(a,s,c,t)$$
+
+$$\varepsilon_{CF,\text{total}}(a,s,c,t) = \varepsilon_{CF,\text{BP}}(a,s,c,t) \times \varepsilon_{CF,\text{BP,DM}}(a,s,c,t) \times \varepsilon_{CF,\text{statin}}(a,s,c,t)$$
+
+Each intervention effect ratio defaults to 1 when the intervention is not active, so single-intervention and combined scenarios use the same multiplicative framework.
+
+**Primary outcome.** Cumulative CVD deaths averted over the study period are computed as:
+
+$$\text{Deaths averted} = \sum_{a,s,c,t} D^{\text{BAU}}_{a,s,c,t} - \sum_{a,s,c,t} D^{\text{intervention}}_{a,s,c,t}$$
+
+(Parameter values for all transition rates are listed in the Key Parameter Appendix.)
+
+### Hypertension Control Intervention Model {#sec:htn-model}
+
+The hypertension control intervention modifies incidence and case fatality rates through a multi-step pipeline that integrates blood pressure distributions, GBD relative risks, Ettehad trial effect sizes, and linear coverage scale-up. Only *incremental* coverage above country-specific baseline control is credited with new effects, preventing double-counting of existing treatment benefits.
+
+**Coverage scale-up.** Treatment coverage increases linearly from baseline to target over a specified period. The incremental coverage target above baseline is:
+
+$$\Delta C_{\text{target}} = \max(C_{\text{target}} - C_{\text{baseline}}, 0)$$
+
+The time-varying incremental coverage is:
+
+$$\Delta C(t) = \Delta C_{\text{target}} \times \min\left(\frac{t - T_{\text{start}} + 1}{T_{\text{end}} - T_{\text{start}} + 1},\; 1\right)$$
+
+with boundary conditions: $\Delta C(t) = 0$ for $t < T_{\text{start}}$ and $\Delta C(t) = \Delta C_{\text{target}}$ for $t > T_{\text{end}}$.
+
+Coverage is applied only to hypertensive blood pressure bins ($\geq$ 140 mmHg). For hypertensive bins: $C_0 = C_{\text{baseline}}$ and $C_t(t) = C_{\text{baseline}} + \Delta C(t)$. For non-hypertensive bins ($<$ 140 mmHg): $C_0 = C_t = 0$.
+
+**Step 1: Baseline blood pressure distribution.** The untreated population distribution across eight BP bins ($<$120, 120--129, ..., 180+) is obtained for each age--sex--location stratum: $P(\text{BP}_{\text{cat}} \mid a, s, \ell)$.
+
+**Step 2: Bin-specific baseline incidence via GBD relative risks.** GBD relative risks per 10 mmHg SBP increase above the reference ($<$120 mmHg) are applied as a power function of the distance from reference:
+
+$$RR_{\text{GBD}}(\text{BP}_{\text{cat}}, a, c) = RR_{\text{per10}}^{(\text{SBP}_{\text{mid}} - 120)/10}$$
+
+where $\text{SBP}_{\text{mid}}$ is the midpoint of the BP bin. A normalisation factor anchors bin-level rates to the overall incidence:
+
+$$\alpha_{a,s,c,t} = \sum_{\text{BP}_{\text{cat}}} P(\text{BP}_{\text{cat}}) \times RR_{\text{GBD}}(\text{BP}_{\text{cat}}, a, c)$$
+
+Bin-specific incidence is then:
+
+$$IR_{\text{bin}}(\text{BP}_{\text{cat}}) = \frac{RR_{\text{GBD}}(\text{BP}_{\text{cat}}, a, c) \times IR_{a,s,c,t}}{\alpha_{a,s,c,t}}$$
+
+**Step 3: Diabetes-weighted Ettehad trial effect sizes.** The cumulative BP-reduction effect size for each bin and cause is computed as a diabetes-prevalence-weighted average of Ettehad trial estimates:
+
+$$E_{\text{trial}}(\text{BP}_{\text{cat}}, c) = (1 - w_{\text{DM}}) \times E_{\text{noDM}}(\text{BP}_{\text{cat}}, c) + w_{\text{DM}} \times E_{\text{DM}}(\text{BP}_{\text{cat}}, c)$$
+
+where $w_{\text{DM}}$ is the country-specific diabetes prevalence and $E_{\text{noDM}}$, $E_{\text{DM}}$ are cumulative bin-specific effect sizes from the Ettehad meta-analysis for non-diabetic and diabetic populations respectively.
+
+**Step 4--5: Coverage-adjusted effect sizes.** The trial effect size is adjusted by the incremental coverage above baseline:
+
+$$E_{\text{adj}}(t) = \frac{E_{\text{trial}} \times (C_t(t) - C_0)}{1 - E_{\text{trial}} \times C_0}$$
+
+When $C_0 = 0$ (no prior treatment), this simplifies to $E_{\text{adj}}(t) = E_{\text{trial}} \times C_t(t)$.
+
+**Step 6: New bin-specific incidence.**
+
+$$IR_{\text{bin,new}}(\text{BP}_{\text{cat}}, t) = IR_{\text{bin}}(\text{BP}_{\text{cat}}) \times \left[1 - E_{\text{adj}}(t, \text{BP}_{\text{cat}}, c)\right]$$
+
+**Step 7: Population-weighted aggregate incidence.**
+
+$$IR_{\text{new}}(a, s, c, t) = \sum_{\text{BP}_{\text{cat}}} IR_{\text{bin,new}}(\text{BP}_{\text{cat}}, t) \times P(\text{BP}_{\text{cat}})$$
+
+**Step 8: Incidence effect ratio.**
+
+$$\varepsilon_{IR,\text{BP}}(a, s, c, t) = \frac{IR_{\text{new}}(a, s, c, t)}{IR_{\text{original}}(a, s, c, t)}$$
+
+Values of $\varepsilon_{IR,\text{BP}} < 1$ indicate reductions in disease incidence attributable to the intervention.
+
+**Step 9: Case-fatality effect ratio.** Case fatality reductions are computed from the *incremental* aggregate coverage across hypertensive bins, preventing double-counting of baseline treatment effects:
+
+$$\Delta C_{\text{delta}}(t, \text{BP}_{\text{cat}}) = \max\left(C_t(t) - C_0, 0\right)$$
+
+$$C_{\text{agg}}^{\Delta}(a, s, c, t) = \frac{\sum_{\text{BP}_{\text{cat}} \in \text{HTN}} \Delta C_{\text{delta}}(t, \text{BP}_{\text{cat}}) \times P(\text{BP}_{\text{cat}})}{\sum_{\text{BP}_{\text{cat}} \in \text{HTN}} P(\text{BP}_{\text{cat}})}$$
+
+where the summation is restricted to hypertensive bins (BP $\geq$ 140 mmHg). The case-fatality effect ratio is:
+
+$$\varepsilon_{CF,\text{BP}}(a, s, c, t) = 1 - \rho_{CF,c} \times C_{\text{agg}}^{\Delta}(a, s, c, t)$$
+
+where the cause-specific CF reduction factors are: $\rho_{CF,\text{IHD}} = 0.24$, $\rho_{CF,\text{IS}} = 0.36$, $\rho_{CF,\text{HS}} = 0.76$, $\rho_{CF,\text{HHD}} = 0.20$.
+
+**Step 10.** The final output collapses across BP bins, retaining only the aggregate $IR_{\text{new}}$, $CF_{\text{new}}$, $\varepsilon_{IR,\text{BP}}$, and $\varepsilon_{CF,\text{BP}}$ per age--sex--cause--year stratum.
+
+(See Multi-State Transition Model for the baseline transition structure into which these effect ratios enter; see Key Parameter Appendix for all intervention effect sizes and their sources.)
+
+#### Diabetes Component {#sec:htn-diabetes}
+
+The diabetes-specific hypertension control intervention applies the same pipeline as the general-population intervention with three key modifications:
+
+1. **Coverage target**: $C_{\text{target,DM}} = 0.80$ (versus 0.50 in the general population), corresponding to the Global Diabetes Compact target of 80% blood pressure control among people with diagnosed diabetes.
+
+2. **Diabetes weighting**: The Ettehad effect sizes are computed with $w_{\text{DM}} = 1$ (full diabetes-specific effects), rather than the country-specific diabetes prevalence weight used in the general-population intervention.
+
+3. **Population downscaling**: Because the intervention targets only the diabetic subpopulation, the effect is downscaled by the proportion of the population with diabetes ($d_{a,s,\ell}$) and raised blood pressure ($\phi_{\text{hyp}}$):
+
+*Incidence:*
+
+$$IR_{\text{bin,new}} = IR_{\text{bin}} \times \left(1 - d_{a,s,\ell} \times E_{\text{adj,DM}}(t)\right)$$
+
+*Effect ratio blending (population-level):*
+
+$$\varepsilon_{IR,\text{BP,DM}} = 1 \times (1 - d_{a,s,\ell} \times \phi_{\text{hyp}}) + \varepsilon_{IR,\text{raw}} \times d_{a,s,\ell} \times \phi_{\text{hyp}}$$
+
+This ensures that the diabetes-specific intervention affects only the diabetic hypertensive fraction of the population, with the remainder retaining the baseline (unmodified) transition rate.
+
+*Case fatality* is similarly downscaled: the incremental coverage delta is multiplied by the diabetes prevalence before aggregation, so that CF reductions apply only to the diabetic fraction:
+
+$$\Delta C_{\text{delta,DM}} = d_{a,s,\ell} \times \max(C_t - C_0, 0)$$
+
+The same CF reduction factors ($\rho_{CF,c}$) are applied to this diabetes-adjusted aggregate coverage.
+
+(See Hypertension Control Intervention Model above for the general-population coverage scale-up structure, which shares the same functional form.)
+
+### Statin Therapy Intervention Model {#sec:statin-model}
+
+The statin intervention models the impact of scaling up lipid-lowering therapy among adults, with effects restricted to IHD and ischaemic stroke for ages $\geq 40$ years. The implementation: (i) scales up *incremental* coverage above country-specific baseline (to avoid double-counting), (ii) applies attributable fractions ($AF_{c,\ell}$) only for incidence effects (primary prevention), and (iii) applies trial-based relative risks directly for case fatality effects (secondary prevention), with ischaemic stroke CF effects restricted to the atherosclerotic fraction.
+
+**Eligibility.** Statin effects are applied only to individuals aged $a \geq 40$ and for causes $c \in \{\text{IHD}, \text{ischaemic stroke}\}$. For ages $a < 40$ or other causes, the effect ratios are set to 1 (no effect).
+
+**Coverage scale-up.** The same linear scale-up function is used as for hypertension control (see Hypertension Control Intervention Model). Let $U_{0,\ell}$ denote baseline statin coverage at $T_{\text{stat,start}}$. The incremental target is:
+
+$$\Delta U_{\text{target},\ell} = \max(U_{\text{target}} - U_{0,\ell},\; 0)$$
+
+The time-varying incremental coverage above baseline is:
+
+$$\Delta U(t, \ell) = \Delta U_{\text{target},\ell} \times \min\left(\frac{t - T_{\text{stat,start}} + 1}{T_{\text{stat,end}} - T_{\text{stat,start}} + 1},\; 1\right)$$
+
+with $\Delta U(t,\ell) = 0$ for $t < T_{\text{stat,start}}$ and $\Delta U(t,\ell) = \Delta U_{\text{target},\ell}$ for $t > T_{\text{stat,end}}$.
+
+**Trial-based relative risks and risk reductions.** Per approximately 1 mmol/L LDL-C reduction:
+
+| Cause | $RR^{IR}_c$ | $RR^{CF}_c$ | $\delta^{IR}_c = 1 - RR^{IR}_c$ | $\delta^{CF}_c = 1 - RR^{CF}_c$ |
+|-------|------------|------------|------|------|
+| IHD | 0.74 | 0.80 | 0.26 | 0.20 |
+| Ischaemic stroke | 0.80 | 0.96 | 0.20 | 0.04 |
+
+Table: Statin relative risks from the Cholesterol Treatment Trialists' Collaboration [@Fulcher2015]
+
+**Incidence effect size.** For $c \in \{\text{IHD}, \text{ischaemic stroke}\}$ and $a \geq 40$, the incidence effect size incorporates the cause- and location-specific attributable fraction and a baseline-coverage adjustment in the denominator:
+
+$$E^{IR}_{c,\ell}(t) = \frac{AF_{c,\ell} \times \delta^{IR}_c \times \Delta U(t,\ell) \times \alpha_{IR}}{1 - \delta^{IR}_c \times U_{0,\ell} \times \alpha_{IR}}$$
+
+where $AF_{c,\ell}$ is the attributable fraction from GBD 2021 (default values: $AF_{\text{IHD}} = 0.15$, $AF_{\text{IS}} = 0.12$; country-specific values used where available) and $\alpha_{IR}$ is adherence for primary prevention (default: 1.0).
+
+**Case fatality effect size.** CF effects are modelled directly from trial relative risks without attributable fractions. For ischaemic stroke, only the atherosclerotic fraction contributes:
+
+$$E^{CF}_{c,\ell}(t) = \begin{cases} \dfrac{\delta^{CF}_{\text{IHD}} \times \Delta U(t,\ell) \times \alpha_{CF}}{1 - \delta^{CF}_{\text{IHD}} \times U_{0,\ell} \times \alpha_{CF}} & \text{if } c = \text{IHD} \\[1em] \dfrac{\psi_{\text{athero}} \times \delta^{CF}_{\text{IS}} \times \Delta U(t,\ell) \times \alpha_{CF}}{1 - \delta^{CF}_{\text{IS}} \times U_{0,\ell} \times \alpha_{CF}} & \text{if } c = \text{ischaemic stroke} \end{cases}$$
+
+where $\psi_{\text{athero}} = 0.60$ and $\alpha_{CF}$ is adherence for secondary prevention (default: 1.0).
+
+**Modified rates.** For ages $a \geq 40$ and $c \in \{\text{IHD}, \text{ischaemic stroke}\}$:
+
+$$IR_{\text{new}}(a,s,c,t) = IR(a,s,c,t) \times \left[1 - E^{IR}_{c,\ell}(t)\right]$$
+
+$$CF_{\text{new}}(a,s,c,t) = CF(a,s,c,t) \times \left[1 - E^{CF}_{c,\ell}(t)\right]$$
+
+**Statin effect ratios:**
+
+$$\varepsilon_{IR,\text{statin}}(a,s,c,t) = \begin{cases} 1 - E^{IR}_{c,\ell}(t) & \text{if } a \geq 40 \text{ and } c \in \{\text{IHD}, \text{IS}\} \\ 1 & \text{otherwise} \end{cases}$$
+
+$$\varepsilon_{CF,\text{statin}}(a,s,c,t) = \begin{cases} 1 - E^{CF}_{c,\ell}(t) & \text{if } a \geq 40 \text{ and } c \in \{\text{IHD}, \text{IS}\} \\ 1 & \text{otherwise} \end{cases}$$
+
+**Combined intervention effect.** When statin and hypertension control interventions are applied simultaneously, their effect ratios combine multiplicatively (see Multi-State Transition Model):
+
+$$\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{BP,DM}} \times \varepsilon_{IR,\text{statin}}$$
+
+$$\varepsilon_{CF,\text{total}} = \varepsilon_{CF,\text{BP}} \times \varepsilon_{CF,\text{BP,DM}} \times \varepsilon_{CF,\text{statin}}$$
+
+This multiplicative structure means the combined benefit exceeds the sum of individual effects, reflecting the partially independent causal pathways through which blood pressure control and lipid lowering reduce cardiovascular risk.
+
+(See Key Parameter Appendix for all statin effect sizes and their sources.)
