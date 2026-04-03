@@ -1,10 +1,10 @@
 ---
 title: "Projected cardiovascular health gains from achieving WHO targets for hypertension control and lipid-lowering therapy: a global modelling study, 2026-2050"
 author:
-  - "William Garcia"
+  - "WHO $\\cdot$ University of Washington"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
-  word_document:
+  bookdown::word_document2:
     toc: true
     toc_depth: 3
     number_sections: true
@@ -117,17 +117,18 @@ This study addresses that gap by estimating the health outcomes associated with 
 
 ## Study design
 
-We conducted a multi-country comparative modelling study using a discrete-time multi-state transition model projecting CVD mortality across `r n_countries` countries from 2026 to 2050. Four causes of CVD death were modelled jointly: ischaemic heart disease (IHD), ischaemic stroke, intracerebral haemorrhage (haemorrhagic stroke), and hypertensive heart disease (HHD). Three health states --- Well, Sick, and Dead --- were tracked for each cause, stratified by single year of age (20--95), sex, and country. The model was calibrated to observed epidemiological data from 2019 and projected forward using annual time steps.
+We conducted a multi-country comparative modelling study using a discrete-time multi-state transition model projecting CVD mortality across `r n_countries` countries from 2026 to 2050. Four causes of CVD death were modelled jointly: ischaemic heart disease (IHD), ischaemic stroke, intracerebral haemorrhage (haemorrhagic stroke), and hypertensive heart disease. Three health states --- Well, Sick, and Dead --- were tracked for each cause, stratified by single year of age (20--95), sex, and country. The model was calibrated to observed epidemiological data from 2019 and projected forward using annual time steps.
 
 ## Data sources
 
-Baseline transition rates --- incidence (IR), case fatality (CF), cause-specific background mortality, and prevalence --- were derived from the Global Burden of Disease (GBD) 2023 study [@Chong2024]. Population denominators were obtained from the United Nations World Population Prospects 2024, using single-year age and sex projections for each country. Blood pressure distributions by country, age, and sex were sourced from the NCD Risk Factor Collaboration, and baseline hypertension control rates were derived from country-level NCD-RisC estimates. Relative risks for blood pressure reduction were based on the meta-analysis by Ettehad et al. [-@Ettehad2016], stratified by blood pressure category and cause. COVID-19 excess mortality was applied for 2020--2021 only. Statin coverage estimates were derived from published and imputed country-level data, with intervention effect sizes drawn from established randomised controlled trial evidence [@Fulcher2015].
+Death counts and mortality rates were derived from the World Health Organization Global Health Estimates (GHE). Prevalence estimates were obtained from the Global Burden of Disease (GBD) 2023 study. Population denominators were taken from the United Nations World Population Prospects 2024 revision, using single-year age- and sex-specific projections for each country. Blood pressure distributions were sourced from the NCD Risk Factor Collaboration, and baseline hypertension control rates were based on country-level analyses provided by WHO. Relative risks for blood pressure reduction were based on the meta-analysis by Ettehad et al. [-@Ettehad2016], stratified by blood pressure category and cause. COVID-19 excess mortality was applied for 2020--2021 only. Statin coverage estimates were derived from published and imputed country-level data, with intervention effect sizes drawn from established randomised controlled trial evidence [@Fulcher2015].
+
 
 ## Intervention scenarios
 
 Three active intervention scenarios were modelled against a business-as-usual (BAU) reference in which 2024 coverage rates were held constant through 2050:
 
-1. **Hypertension control (general population):** Linear scale-up to 50% population-level blood pressure control by 2030, beginning in 2026, corresponding to the WHO target of 150 million additional people with controlled hypertension. Effect sizes were derived from the Ettehad et al. meta-analysis, applied across eight blood pressure bins with incremental coverage above baseline generating new risk reductions for incidence and case fatality.
+1. **Hypertension control (general population):** Linear scale-up of population-level blood pressure control by 2030, beginning in 2026, corresponding to the WHO target of 150 million additional people with controlled hypertension. Effect sizes were derived from the Ettehad et al. meta-analysis, applied across eight blood pressure bins with incremental coverage above baseline generating new risk reductions for incidence and case fatality.
 
 2. **Hypertension control (diabetes subgroup):** Linear scale-up to 80% blood pressure control among people with diagnosed diabetes by 2030. Effect sizes were weighted by country-level diabetes prevalence and blended with general-population hypertension effects.
 
@@ -137,9 +138,17 @@ A fourth combination scenario applied all three interventions simultaneously, wi
 
 ## Modelling framework
 
-The core model is a discrete-time state-transition framework in which individuals move between Well, Sick, and Dead states at each annual time step according to cause-specific incidence rates (Well to Sick), case fatality rates (Sick to Dead), and background mortality rates (all states to Dead). Interventions modify incidence and case fatality through multiplicative effect ratios ($\varepsilon_{IR}$, $\varepsilon_{CF}$), which are computed from the intervention-specific coverage increment above baseline. For hypertension control, effect ratios are derived from a nine-step pipeline incorporating blood pressure bin distributions, GBD relative risks, Ettehad trial effect sizes, and population-weighted aggregation. For statin therapy, incremental coverage generates cause- and location-specific risk reductions applied to incidence and case fatality. Under the combined scenario, effects combine multiplicatively: $\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}$.
+The core model is a discrete-time state-transition framework in which individuals move between Well, Sick, and Dead states at each annual time step according to cause-specific incidence rates (Well to Sick), case fatality rates (Sick to Dead), and background mortality rates (all states to Dead). Interventions modify incidence and case fatality through multiplicative effect ratios ($\varepsilon_{IR}$, $\varepsilon_{CF}$), which are computed from the intervention-specific coverage increment above baseline. Only incremental coverage above baseline was credited with new effects, avoiding double-counting of existing treatment benefits. For hypertension control, effect ratios are derived from a nine-step pipeline incorporating blood pressure bin distributions, GBD relative risks, Ettehad trial effect sizes, and population-weighted aggregation. For statin therapy, incremental coverage generates cause- and location-specific risk reductions applied to incidence and case fatality. Under the combined scenario, effects combine multiplicatively: $\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}$.
 
-Each country was run independently in parallel using the `doParallel` framework in R. Only incremental coverage above baseline was credited with new effects, avoiding double-counting of existing treatment benefits.
+## Calibration
+
+Incidence (IR) and case fatality (CF) parameters were calibrated jointly to ensure consistency with external data sources: incidence rates were adjusted to reproduce age-, sex-, country-, and cause-specific incidence patterns from GBD 2023, while case-fatality parameters were calibrated to match observed cause-specific mortality counts from WHO GHE within each stratum. COVID-19 excess mortality was incorporated for 2020–2021 only.
+
+
+## Data and code availability
+
+All input data used in this analysis are publicly available from their original sources (e.g., WHO Global Health Estimates). Processed inputs and model code are provided in the project repository: https://github.com/Disease-Control-Priorities/uw-who-cvdtargets. Model outputs (results) can be accessed and downloaded at the same link. All analyses were conducted in R (version 4.5.1), and full scripts are openly available in the repository.
+
 
 ## Outcomes
 
@@ -235,9 +244,13 @@ Several limitations should be considered when interpreting these results. First,
 
 Achievement of WHO targets for hypertension control and lipid-lowering therapy by 2030, sustained through 2050, could avert approximately `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs across `r n_countries` countries. Hypertension control in the general population and lipid-lowering therapy are complementary strategies whose combined benefit exceeds the sum of their individual effects. The projected health gains are substantial across all world regions and income groups, with the largest proportional benefits accruing to countries with the lowest current treatment coverage. These findings provide a quantitative foundation for accelerated investment in integrated cardiovascular risk-factor management through primary health care, and support the case for sustained political commitment to the WHO NCD targets as a cornerstone of global health policy.
 
+\newpage
+
 # References
 
 <div id="refs"></div>
+
+\newpage
 
 # Tables
 
@@ -362,6 +375,8 @@ kable(income_display, align = c("l", "r", "r", "r", "r"))
 
 *Note: Values in millions. All Interventions scenario. Income groups based on World Bank 2026 classification.*
 
+\newpage
+
 # Figures
 
 **Figure 1.** Cumulative CVD deaths averted over time by intervention scenario, `r study_years`.
@@ -378,23 +393,25 @@ knitr::include_graphics(paste0(wd_outp, "aim1_fig4_cum_averted.png"))
 knitr::include_graphics(paste0(wd_outp, "aim1_fig5_demo_age.png"))
 ```
 
+\newpage
+
 # Supplemental Material
 
-## Additional results
+## Supplemental Tables
 
-### Figure: conceptual framework of the modelling approach
-
-The pathway from target achievement to risk-factor change to cause-specific outcomes and economic consequences.
-
-### Table: global projected health outcomes by scenario
+**Table: global projected health outcomes by scenario**
 
 See Table 3 (burden of disease summary) and the supplementary Excel workbook exported from aim1_report.Rmd for the full country-level dataset.
 
-### Table: regional and income-group results
+**Table: regional and income-group results**
 
 See Tables 4--5 for WHO region and World Bank income group breakdowns.
 
 ## Supplemental Figures
+
+**Figure: conceptual framework of the modelling approach**
+
+**FigureThe pathway from target achievement to risk-factor change to cause-specific outcomes and economic consequences.**
 
 **Supplemental Figure S1.** Projected cumulative CVD deaths under the business-as-usual scenario, 2026--2050, across `r n_countries` countries.
 
@@ -449,6 +466,8 @@ knitr::include_graphics(paste0(wd_outp, "aim1_bod_fig1_dalys_ts.png"))
 ```{r fig10-paper, echo=FALSE, fig.cap="Note: Choropleth map showing cumulative CVD deaths averted per 100,000 population across all modelled countries under the combined intervention scenario (all three WHO targets achieved by 2030, sustained through 2050). Darker shading indicates larger per-capita health gains. Geographic variation reflects differences in baseline CVD burden, population age structure, and current treatment coverage."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig6_map.png"))
 ```
+
+\newpage
 
 ## Methodology and mathematical details
 

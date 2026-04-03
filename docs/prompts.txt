@@ -116,3 +116,438 @@ Insert the following figures in the Figures section. Each figure must:
 - All citations must use keys from `references.bib` and render in APA format
 - Do not alter the Methods section or any front matter (title, authors, abstract) unless explicitly instructed
 - Preserve all existing chunk labels, YAML headers, and cross-reference infrastructure in both files
+
+##########################################################################################################
+########################################################################################################33
+
+You are making targeted structural and content edits to the manuscript file 
+`who_cvd_targets_paper1.RMD`. Modify ONLY this file. Do not touch any other file.
+
+---
+
+## FILE TO MODIFY
+- `who_cvd_targets_paper1.RMD` only
+
+## FILES TO READ BUT NOT MODIFY (context only)
+- `aim1_report.RMD` — to verify figure chunk names for correct cross-referencing
+
+---
+
+## CHANGE 1 — DELETE ONE FIGURE ENTIRELY
+
+Remove the following figure completely from the manuscript:
+- "Top 20 countries by projected CVD deaths averted under the combined 
+  intervention scenario, 2025–2050, coloured by WHO region"
+
+This means:
+- Delete its R chunk (the chunk that calls or displays this figure)
+- Delete its figure title and subcaption
+- Delete any cross-reference to it in the main text (e.g., any 
+  `\@ref(fig:...)` pointing to this figure's chunk label)
+- Delete any prose in Results or Discussion that describes country-level 
+  findings derived from this figure
+- Do not leave a blank line or comment where the chunk was — close the gap cleanly
+
+---
+
+## CHANGE 2 — REMOVE ALL COUNTRY-LEVEL DESCRIPTION FROM MAIN TEXT
+
+Audit the entire Results and Discussion sections for any sentences or 
+paragraphs that describe findings by individual country (e.g., naming 
+specific countries, ranking countries, comparing country-level estimates).
+
+- Remove all such country-level descriptions from Results and Discussion
+- If a sentence is partially country-level (e.g., "Globally, deaths were 
+  reduced, with India and China accounting for..."), trim only the 
+  country-specific portion and preserve the global/regional claim
+- Do not remove regional-level (WHO region) descriptions — only country-named content
+
+---
+
+## CHANGE 3 — RESTRUCTURE THE FIGURES SECTION
+
+### Main Figures section must contain ONLY these two figures:
+  1. Cumulative CVD deaths averted over time by intervention scenario
+  2. Distribution of projected CVD deaths averted by age group, sex, 
+     and intervention scenario
+
+All other figures currently in the Main Figures section must be moved 
+to the Supplemental Material section (see Change 4).
+
+### Steps:
+- Retain the two figures above in the Main Figures section, in this order
+- Number them Figure 1 and Figure 2 respectively in their titles
+- Preserve their existing R chunk labels exactly — do not rename chunks, 
+  as chunk labels are used for cross-referencing
+- Preserve their subcaptions exactly as written
+
+---
+
+## CHANGE 4 — MOVE REMAINING FIGURES TO SUPPLEMENTAL MATERIAL
+
+All figures that were in the Main Figures section but are NOT the two 
+figures listed in Change 3 must be relocated to the Supplemental Material 
+section.
+
+### Steps:
+- Move each figure chunk and its title/subcaption block to the 
+  Supplemental Material section, preserving chunk labels exactly
+- Renumber these figures sequentially as Supplemental Figure S1, S2, S3... 
+  in their title text (e.g., "Supplemental Figure S1. ...")
+- Do not rename chunk labels — only update the display title text
+- If a Supplemental Material section does not already exist in the file, 
+  create one at the end of the document with the heading:
+  `# Supplemental Material`
+  followed by the subheading:
+  `## Supplemental Figures`
+
+### Rewrite Supplemental Figure descriptions:
+- For each figure moved to Supplemental Material, rewrite its subcaption 
+  to be fully self-contained for a reader who reads supplemental material 
+  independently — include enough context about the scenario, population, 
+  time horizon, and metric so the figure is interpretable without reading 
+  the main text
+- Keep the scientific content accurate; only expand for standalone clarity
+
+---
+
+## CHANGE 5 — UPDATE ALL CROSS-REFERENCES IN MAIN TEXT
+
+After completing Changes 1–4, audit every figure cross-reference in 
+the entire manuscript (Results, Discussion, and any other section).
+
+### Rules:
+- All cross-references must use bookdown-style syntax:
+  `(Figure \@ref(fig:chunk-label))`
+  For example: `(Figure \@ref(fig:fig-bau-deaths))`
+- Cross-references to the two main figures must read "Figure 1" and 
+  "Figure 2" — confirm the chunk labels resolve to these correctly
+- Cross-references to supplemental figures must read 
+  "Supplemental Figure S1", "Supplemental Figure S2", etc. — update 
+  all corresponding `\@ref()` calls and surrounding text accordingly
+- Remove any cross-references that pointed to the deleted figure 
+  (Change 1) — do not leave orphaned `\@ref()` calls
+- Do not use hardcoded figure numbers anywhere in prose — all figure 
+  numbers in text must flow through `\@ref()` cross-references
+
+---
+
+## CHANGE 6 — RENUMBER FIGURE TITLES CONSISTENTLY
+
+After all moves and deletions are complete, verify that every figure 
+title in the document uses the correct sequential number matching its 
+position and section:
+
+- Main Figures section: Figure 1, Figure 2 (in order of appearance)
+- Supplemental Material section: Supplemental Figure S1, S2, S3... 
+  (in order of appearance)
+- No figure number should be skipped or duplicated
+- The number in the title text and the number implied by the 
+  cross-reference in the main text must match
+
+---
+
+## CONSTRAINTS
+- Modify ONLY `who_cvd_targets_paper1.RMD`
+- Do not rename, modify, or add any R chunk labels — chunk labels are 
+  the anchor for `\@ref()` and must remain stable
+- Do not alter any table chunks, table titles, or table cross-references
+- Do not alter the Methods or Abstract sections
+- Do not alter any prose in Results or Discussion except to:
+  (a) remove country-level descriptions (Change 2)
+  (b) update figure cross-references (Change 5)
+- Do not add new analytical content or interpret results differently
+
+---
+
+## BEFORE YOU BEGIN
+1. Read the entire `who_cvd_targets_paper1.RMD` file from top to bottom
+2. List every figure currently in the file: its chunk label, its current 
+   title/number, and its current location (Main or Supplemental)
+3. Identify the chunk label of the figure to be deleted (Change 1)
+4. Identify which two chunk labels correspond to the two figures 
+   that stay in Main Figures (Change 3)
+5. Identify all remaining figure chunk labels to be moved (Change 4)
+6. Produce this inventory as an internal checklist before making any edits
+
+Only after completing the inventory should you begin editing the file.
+Produce a summary of all changes made at the end.
+
+
+#####################################################################################
+#####################################################################################
+
+You are making targeted mathematical and structural edits to the manuscript file
+`who_cvd_targets_paper1.RMD`. Modify ONLY this file. Do not touch any other file.
+
+---
+
+## FILE TO MODIFY
+- `who_cvd_targets_paper1.RMD` only
+
+## FILES TO READ BUT NOT MODIFY (context only)
+- `06_run_scenarios_multiple.R` — SOURCE OF TRUTH for all mathematical logic,
+  parameter names, transformations, and model structure. What is implemented
+  here governs what appears in the manuscript. This overrides any verbal
+  description currently in the manuscript.
+- `math-doc.RMD` — related project notation reference. Use for LaTeX formatting
+  conventions and symbol choices where they are consistent with
+  06_run_scenarios_multiple.R. Where they conflict, defer to the R file.
+- `aim1_report.RMD` — for parameter values, data sources, and uncertainty
+  distributions actually used in the model runs
+
+---
+
+## OVERARCHING RULES
+
+- Mathematical documentation must be internally consistent across the entire
+  manuscript — every symbol introduced must be defined once, used consistently,
+  and never redefined with a different meaning elsewhere in the document
+- The main manuscript text (Abstract, Introduction, Methods narrative, Results,
+  Discussion) must cross-reference the Mathematical Details section for formal
+  derivations, e.g.:
+  "(see Mathematical Details: Multi-State Transition Model)"
+  or
+  "(Mathematical Notation Summary, Table A)"
+  Add these cross-references wherever the main text describes a process that
+  is formally specified in the math section — do not duplicate the math in
+  the narrative, only reference it
+- All formulas must render correctly in a Word document output (word_document
+  or officedown::rdocx_document). Use only pandoc-compatible LaTeX math:
+  inline math with `$...$` and display math with `$$...$$`
+  Do NOT use raw HTML math, MathJax-specific syntax, or LaTeX environments
+  that do not compile through pandoc (e.g., \begin{align} is acceptable;
+  \begin{equation*} with AMS extensions may not be — test conservatively)
+
+---
+
+## TASK — RESTRUCTURE AND COMPLETE THE MATHEMATICAL DETAILS SECTION
+
+Locate the existing "Methodology and mathematical details" section in
+`who_cvd_targets_paper1.RMD`. Reorganize it and fill it according to the
+five subsections below. Preserve any existing correct formulas; complete
+or correct any that are missing symbols, incomplete, or only verbally described.
+
+The section heading and all five subsections must appear in this exact order:
+
+# Methodology and Mathematical Details
+
+## Mathematical Notation Summary
+
+## Key Parameter Appendix
+
+## Multi-State Transition Model
+
+## Hypertension Control Intervention Model
+
+## Statin Therapy Intervention Model
+
+---
+
+### SUBSECTION 1 — Mathematical Notation Summary
+
+Purpose: Define every symbol used anywhere in the mathematical sections,
+in one consolidated reference table.
+
+- Create a two-column display table (Symbol | Definition) listing every
+  mathematical symbol, subscript, and superscript used across all subsections
+- Format as a Word-compatible table (use flextable or kable with
+  format = "pandoc" — whichever is already standard in this manuscript)
+- Include: state variables, transition rates, time indices, intervention
+  effect parameters, country/age/sex indices, and any summary output
+  metrics (e.g., deaths averted, DALYs)
+- Derive symbol names directly from variable and parameter names in
+  `06_run_scenarios_multiple.R` — map R object names to LaTeX symbols
+  and document that mapping explicitly in a comment in the RMD chunk
+- Do not introduce symbols that do not correspond to something implemented
+  in the R code
+- Add a sentence at the top of this subsection directing readers:
+  "All symbols used in subsequent subsections are defined in Table [X] below."
+
+---
+
+### SUBSECTION 2 — Key Parameter Appendix
+
+Purpose: Provide a complete reference table of all base parameter values
+used in the model.
+
+- Create a multi-column Word-compatible table with these columns:
+  Parameter | Symbol | Base Value | Unit | Data Source | Transformation Applied |
+  Uncertainty Distribution
+- Populate by reading `06_run_scenarios_multiple.R` for parameter names
+  and transformations, and `aim1_report.RMD` for base values, data sources,
+  and uncertainty specifications
+- "Transformation Applied" column must describe any mathematical operation
+  applied to the raw data value before it enters the model (e.g.,
+  "log-transformed", "converted from annual to monthly rate via 1-(1-r)^(1/12)",
+  "age-standardized per 100,000")
+- "Uncertainty Distribution" column must state the distributional assumption
+  used in sensitivity or probabilistic analyses (e.g., "Beta(α, β)",
+  "Normal(μ, σ)", "Fixed — no uncertainty applied")
+- If a parameter has no uncertainty distribution in the model, state
+  "Deterministic" explicitly — do not leave the cell blank
+- Sort rows by subsection: first transition model parameters, then
+  hypertension intervention parameters, then statin intervention parameters
+- Add a footnote below the table listing all data sources in APA format,
+  keyed by a superscript in the Data Source column
+
+---
+
+### SUBSECTION 3 — Multi-State Transition Model
+
+Purpose: Formally specify the disease progression model structure.
+
+Read `06_run_scenarios_multiple.R` carefully and extract:
+- The health states modeled (e.g., Healthy, Hypertensive, CVD event,
+  CVD death, Non-CVD death — use whatever states are actually coded)
+- All transition probabilities or rates between states
+- The time step used (annual, monthly, etc.)
+- Any age-, sex-, or country-specific stratification applied to transitions
+- Any baseline mortality or background hazard applied
+
+Write this subsection to include:
+
+1. A state diagram described in text (e.g., "The model comprises N health
+   states: [list]. Individuals transition between states according to..."
+   — do not attempt to render a graphical diagram in Word)
+2. The core transition equation(s) in display math `$$...$$`, using symbols
+   defined in the Notation Summary
+3. Explicit notation for time indexing, cohort stratification (age, sex,
+   country), and cycle length
+4. The formula for computing the primary outcome (CVD deaths averted)
+   expressed as the difference between scenario and counterfactual state
+   occupancy
+5. A cross-reference at the end: "(Parameter values for all transition
+   rates are listed in the Key Parameter Appendix)"
+
+If any formula currently in the manuscript is only verbally described,
+replace the verbal description with the proper LaTeX display equation.
+If any formula is missing a symbol (renders as a blank or placeholder),
+identify the correct symbol from the R code and insert it.
+
+---
+
+### SUBSECTION 4 — Hypertension Control Intervention Model
+
+Purpose: Formally specify how hypertension treatment affects model transitions,
+including the diabetes component if it is modeled jointly.
+
+Read `06_run_scenarios_multiple.R` and extract:
+- How hypertension control coverage is parameterized (target coverage,
+  scale-up function, time trajectory)
+- How achieving hypertension control modifies transition probabilities
+  (e.g., relative risk reduction applied to which transitions)
+- If diabetes is modeled as a joint risk factor or separate state,
+  specify its interaction with hypertension control explicitly
+
+Write this subsection to include:
+
+1. The coverage scale-up equation in display math, showing how coverage
+   C(t) changes over time from baseline to target
+2. The relative risk or rate ratio applied to transition probabilities
+   under treatment, in display math
+3. The net effect equation showing how modified transition probabilities
+   are computed from baseline rates and the intervention effect
+4. If diabetes is included: a clearly labeled sub-subsection
+   "Diabetes Component" that specifies whether diabetes acts as a
+   modifier of hypertension transitions, a parallel state, or a separate
+   risk multiplier — derive this entirely from what is coded in the R file
+5. A cross-reference back to the Multi-State Transition Model subsection
+   for the baseline transition structure
+6. A cross-reference forward to the Key Parameter Appendix for all
+   intervention effect sizes and their sources
+
+---
+
+### SUBSECTION 5 — Statin Therapy Intervention Model
+
+Purpose: Formally specify how statin therapy affects model transitions.
+
+Read `06_run_scenarios_multiple.R` and extract:
+- How statin eligibility is defined (age thresholds, risk thresholds,
+  or other criteria actually coded)
+- How statin coverage is parameterized (target coverage, scale-up)
+- How statin therapy modifies transition probabilities (relative risk
+  reduction, which transitions are affected)
+- Whether statin effects interact with hypertension control effects
+  (additive, multiplicative, independent — use what is coded)
+
+Write this subsection to include:
+
+1. The eligibility definition in formal notation
+2. The statin coverage scale-up equation in display math
+3. The relative risk or hazard ratio applied under statin therapy,
+   in display math
+4. The combined intervention equation if statin and hypertension
+   effects are combined (showing whether effects are multiplicative
+   or additive as implemented in the R code)
+5. A cross-reference back to the Hypertension subsection for the
+   coverage scale-up structure if the same functional form is used
+6. A cross-reference forward to the Key Parameter Appendix for all
+   statin effect sizes and their sources
+
+---
+
+## CHANGE — ADD CROSS-REFERENCES IN MAIN TEXT
+
+After completing the math section, audit the main manuscript text
+(Methods narrative, Results, Discussion) and insert cross-references
+to the math subsections wherever the text describes:
+
+- The disease model structure or health states
+  → add: "(see Multi-State Transition Model)"
+- Hypertension treatment coverage or effect
+  → add: "(see Hypertension Control Intervention Model)"
+- Statin eligibility, coverage, or effect
+  → add: "(see Statin Therapy Intervention Model)"
+- Any specific parameter value, data source, or uncertainty range
+  → add: "(see Key Parameter Appendix)"
+- Any symbol defined in the notation table
+  → add: "(see Mathematical Notation Summary)"
+
+Use bookdown-style section cross-references where the document structure
+supports it (e.g., `\@ref(sec:label)`), otherwise use plain parenthetical
+text references. Do not duplicate mathematical content in the narrative —
+only cross-reference it.
+
+---
+
+## CONSTRAINTS
+- Modify ONLY `who_cvd_targets_paper1.RMD`
+- All math must be derived from what is actually implemented in
+  `06_run_scenarios_multiple.R` — do not invent parameters, states,
+  or equations not present in the code
+- Do not alter figure chunks, table chunks, Results prose (except to
+  add cross-references), Discussion prose (except to add cross-references),
+  Abstract, or Introduction
+- Do not alter the YAML header
+- All new tables in this section must use the same Word-compatible
+  table package already established in the manuscript
+- Symbol definitions in the Notation Summary must be exactly consistent
+  with symbol usage in all three model subsections — audit for consistency
+  after drafting all subsections
+
+---
+
+## BEFORE YOU BEGIN
+1. Read `06_run_scenarios_multiple.R` completely and extract:
+   (a) all health states
+   (b) all transition parameters and their R names
+   (c) intervention effect parameters for hypertension and statins
+   (d) coverage scale-up functions
+   (e) how combined scenarios are constructed
+   (f) the primary outcome computation
+2. Read `math-doc.RMD` and note which notation conventions are
+   consistent with the R code and which conflict
+3. Read the current Methodology and Mathematical Details section in
+   `who_cvd_targets_paper1.RMD` and catalog:
+   (a) formulas already present and correct
+   (b) formulas present but incomplete or missing symbols
+   (c) content described only verbally that needs a formal equation
+4. Read `aim1_report.RMD` for base parameter values, data sources,
+   and uncertainty specifications
+5. Produce an internal inventory of all of the above before writing
+   any LaTeX or editing any prose
+
+Only after completing this inventory should you begin editing the file.
+Produce a summary of all changes made at the end, organized by subsection.
