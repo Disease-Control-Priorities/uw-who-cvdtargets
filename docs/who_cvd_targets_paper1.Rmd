@@ -158,6 +158,8 @@ All input data used in this analysis are publicly available from their original 
 
 The primary outcome was cumulative CVD deaths averted relative to the BAU scenario over 2026--2050, disaggregated by intervention, cause of death, age group, sex, WHO region, and World Bank income group. Secondary outcomes included years of life lost (YLLs) averted, years lived with disability (YLDs) averted, disability-adjusted life years (DALYs) averted, and age-standardised mortality rates (ASMR) over time.
 
+Burden of disease was quantified using three complementary metrics: years of life lost (YLL), years lived with disability (YLD), and disability-adjusted life years (DALY), where $DALY = YLL + YLD$. Remaining life expectancy at each age of death was obtained from the United Nations World Population Prospects 2024 revision (medium variant), providing country- and year-specific values. Disability weights were derived from GBD 2023 data as the ratio of cause-specific YLDs to prevalence for each cause and location. No age weighting or time discounting was applied; all estimates are undiscounted (see Supplemental Material: DALY Calculation Methods).
+
 ## Sensitivity and uncertainty analysis
 
 The model was run under the primary set of assumptions described above. Formal probabilistic sensitivity analysis incorporating GBD uncertainty intervals and parameter distributions is planned as a subsequent extension. The present analysis reports central estimates derived from mean input parameters.
@@ -920,3 +922,85 @@ $$\varepsilon_{CF,\text{total}} = \varepsilon_{CF,\text{BP}} \times \varepsilon_
 This multiplicative structure means the combined benefit exceeds the sum of individual effects, reflecting the partially independent causal pathways through which blood pressure control and lipid lowering reduce cardiovascular risk.
 
 (See Key Parameter Appendix for all statin effect sizes and their sources.)
+
+### DALY Calculation Methods {#sec:daly-methods}
+
+Burden of disease was quantified using disability-adjusted life years (DALYs), computed as the sum of years of life lost due to premature mortality (YLL) and years lived with disability (YLD). No age weighting or time discounting was applied. All computations were performed separately by age $a$, sex $s$, cause $c$, year $t$, location $\ell$, and intervention scenario $j$.
+
+#### Years of Life Lost (YLL)
+
+YLLs were computed as the product of the number of disease-specific deaths and the remaining life expectancy at the age of death:
+
+$$YLL_{a,s,c,t,\ell,j} = D_{a,s,c,t,\ell,j} \times e_x(a, t, \ell)$$
+
+where $D_{a,s,c,t,\ell,j}$ is the number of CVD deaths from cause $c$ (the `dead` variable from the state-transition model output) and $e_x(a, t, \ell)$ is the remaining life expectancy at exact age $a$ in year $t$ for location $\ell$, taken from the United Nations World Population Prospects 2024 revision, medium variant (both sexes combined). Life expectancy values are country- and year-specific, reflecting projected demographic conditions rather than a fixed global standard.
+
+#### Years Lived with Disability (YLD)
+
+YLDs were computed using a prevalence-based approach as the product of the number of prevalent CVD cases and a cause- and location-specific disability weight:
+
+$$YLD_{a,s,c,t,\ell,j} = K_{a,s,c,t,\ell,j} \times DW_{c,\ell}$$
+
+where $K_{a,s,c,t,\ell,j}$ is the number of individuals in the Sick (prevalent) state for cause $c$ from the state-transition model output, and $DW_{c,\ell}$ is the disability weight for cause $c$ in location $\ell$. Disability weights were derived from GBD 2023 data as the ratio of cause-specific years lived with disability to prevalence for each cause and location:
+
+$$DW_{c,\ell} = \frac{YLD^{\text{GBD}}_{c,\ell}}{Prevalence^{\text{GBD}}_{c,\ell}}$$
+
+This approach yields an implicit, frequency-weighted average disability weight that reflects the severity distribution observed in each country. No explicit duration of disability was modelled; the prevalence-based formulation captures the YLD burden attributable to the stock of prevalent cases at each time point.
+
+#### Disability-Adjusted Life Years (DALY)
+
+Total DALYs were computed as:
+
+$$DALY_{a,s,c,t,\ell,j} = YLL_{a,s,c,t,\ell,j} + YLD_{a,s,c,t,\ell,j}$$
+
+DALYs averted were computed as the difference between the business-as-usual (BAU) scenario and each intervention scenario, summed across all strata:
+
+$$\text{DALYs averted}_j = \sum_{a,s,c,t,\ell} DALY^{\text{BAU}}_{a,s,c,t,\ell} - \sum_{a,s,c,t,\ell} DALY^{j}_{a,s,c,t,\ell}$$
+
+The same differencing logic was applied separately to YLLs averted and YLDs averted.
+
+#### Reference Standards and Weights
+
+```{r daly-param-table, echo=FALSE}
+daly_params <- data.frame(
+  Parameter = c(
+    "Life table standard",
+    "Disability weight source",
+    "Disability weight derivation",
+    "Age weighting",
+    "Time discount rate",
+    "Duration of disability"
+  ),
+  Value = c(
+    "UNWPP 2024, medium variant",
+    "GBD 2023 (IHME)",
+    "YLD / Prevalence, by cause and location",
+    "None (K = 0)",
+    "None --- undiscounted (r = 0)",
+    "Prevalence-based (not explicitly modelled)"
+  ),
+  Year = c(
+    "2024",
+    "2023",
+    "2023",
+    "---",
+    "---",
+    "---"
+  ),
+  Notes = c(
+    "Country- and year-specific remaining life expectancy at exact age x (ex), both sexes combined",
+    "IHME-GBD_2023_DATA-52d32656-1",
+    "Implicit frequency-weighted severity; country-specific for IHD, ischaemic stroke, haemorrhagic stroke, HHD",
+    "Uniform weighting across all ages",
+    "Future health losses valued equally regardless of when they occur",
+    "YLD = prevalent cases x DW at each annual time step; no explicit incidence x duration calculation"
+  ),
+  stringsAsFactors = FALSE
+)
+kable(daly_params, col.names = c("Parameter", "Value or Source", "Year", "Notes"),
+      align = c("l", "l", "c", "l"))
+```
+
+*Sources: United Nations, Department of Economic and Social Affairs, Population Division (2024). World Population Prospects 2024, Online Edition. Institute for Health Metrics and Evaluation (IHME). Global Burden of Disease Study 2023 (GBD 2023) Results. Seattle, United States: IHME, 2024.*
+
+All DALY, YLL, and YLD results reported in the main manuscript are computed using the above specifications, as implemented in `07_output_dalys.R`.
