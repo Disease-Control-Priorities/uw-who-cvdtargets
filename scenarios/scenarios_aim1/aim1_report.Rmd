@@ -1808,6 +1808,26 @@ saveRDS(copy(dt_age_sex),   paste0(paper_dir, "paper_dt_age_sex.rds"))
 message("Paper tables saved to: ", paper_dir)
 ```
 
+```{r export-slides-bod-scalars, message=FALSE, warning=FALSE, echo=FALSE}
+# Exports burden of disease scalars and summary for aim1_executive_slides.RMD
+
+# Extend sl_scalars with BOD scalars (already computed above) and re-save
+sl_scalars$total_dalys_all  <- total_dalys_all   # Total DALYs averted 2026-2050, All Interventions
+sl_scalars$total_ylls_all   <- total_ylls_all    # Total YLLs averted 2026-2050, All Interventions
+sl_scalars$total_ylds_all   <- total_ylds_all    # Total YLDs averted 2026-2050, All Interventions
+sl_scalars$total_dalys_bp   <- total_dalys_bp    # Total DALYs averted 2026-2050, HTN Control (General)
+sl_scalars$total_dalys_bpd  <- total_dalys_bpd   # Total DALYs averted 2026-2050, HTN Control (Diabetes)
+sl_scalars$total_dalys_stat <- total_dalys_stat   # Total DALYs averted 2026-2050, Improved Statin Uptake
+
+saveRDS(sl_scalars, paste0(slides_dir, "sl_scalars.rds"))
+message("SL-01 updated: sl_scalars.rds (with BOD scalars)")
+
+# Create and save sl_bod_summary — burden of disease by intervention scenario
+sl_bod_summary <- copy(bod_tab1)
+saveRDS(sl_bod_summary, paste0(slides_dir, "sl_bod_summary.rds"))
+message("SL-17 saved: sl_bod_summary.rds")
+```
+
 ---
 
 *Report generated on `r Sys.time()` using R `r R.version$major`.`r R.version$minor`.*

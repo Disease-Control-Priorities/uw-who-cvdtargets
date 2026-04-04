@@ -206,7 +206,7 @@ The present analysis reports central estimates based on mean input parameters fr
 
 ## Principal findings
 
-This study projected that simultaneous achievement of WHO targets for hypertension control and lipid-lowering therapy across `r n_countries` countries from 2026 to 2050 would avert approximately `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs. Hypertension control in the general population was the single most impactful intervention, averting `r fmt_m(total_bp)` million deaths, while lipid-lowering therapy contributed an additional `r fmt_m(total_stat)` million deaths averted. The multiplicative combination of these interventions yielded substantially greater benefits than any single strategy alone, affirming the complementary nature of blood pressure and lipid management for CVD prevention.
+This study projected that simultaneous achievement of WHO targets for hypertension control and lipid-lowering therapy across `r n_countries` countries from 2026 to 2050 would avert approximately `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs. Hypertension control in the general population was the single most impactful intervention, averting `r fmt_m(total_bp)` million deaths, while lipid-lowering therapy contributed an additional `r fmt_m(total_stat)` million deaths averted. The multiplicative combination of these interventions yielded greater benefits than any single strategy alone, although less than the sum of individual effects due to overlapping risk pathways, underscoring the complementary nature of blood pressure and lipid management for CVD prevention.
 
 ## Interpretation of hypertension control findings
 

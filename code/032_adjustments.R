@@ -12,7 +12,7 @@ setwd(wd)
 
 if(run_adjustments_inputs) {
 
-  pop20 <- fread(paste0(wd_data,"UN2024/PopulationsAge20_full.csv"))
+  pop20 <- fread(paste0(wd_data,"PopulationsAge20_full.csv"))
   pop20<-pop20[year_id>=2010 & year_id<=2050]
   
   #baseline rates calculated in file:
@@ -75,13 +75,13 @@ if(run_adjustments_inputs) {
   
   setnames(pop20, c("year_id", "Nx"), c("year", "Nx20"))
   
-  countrylist <- read.csv("super_regions.csv", stringsAsFactors=FALSE)%>%filter(location!="Global", 
-                                                                                location!="American Samoa",location!="Andorra",location!= "Bermuda",
-                                                                                location!= "Dominica", location!="Greenland", location!="Marshall Islands",
-                                                                                location!="Northern Mariana Islands", location!="Palestine",
-                                                                                location!="Taiwan (Province of China)", location!="Guam", location!="Puerto Rico",
-                                                                                location!="South Sudan", location!="Virgin Islands, U.S.")%>%pull(location)
-  
+  # countrylist <- read.csv("super_regions.csv", stringsAsFactors=FALSE)%>%filter(location!="Global", 
+  #                                                                               location!="American Samoa",location!="Andorra",location!= "Bermuda",
+  #                                                                               location!= "Dominica", location!="Greenland", location!="Marshall Islands",
+  #                                                                               location!="Northern Mariana Islands", location!="Palestine",
+  #                                                                               location!="Taiwan (Province of China)", location!="Guam", location!="Puerto Rico",
+  #                                                                               location!="South Sudan", location!="Virgin Islands, U.S.")%>%pull(location)
+  # 
   # b_rates<-b_rates[location %in% countrylist]
   # pop20<-pop20[location %in% countrylist]
   
