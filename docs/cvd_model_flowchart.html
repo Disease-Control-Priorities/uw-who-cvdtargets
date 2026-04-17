@@ -5,7 +5,7 @@
 <title>CVD Projection Model Flowchart</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #d8d8d8; overflow: hidden; width: 100vw; height: 100vh; font-family: Arial, sans-serif; }
+body { background: #e6e6e6; overflow: hidden; width: 100vw; height: 100vh; font-family: Arial, sans-serif; }
 #wrap { width: 100%; height: 100%; cursor: grab; user-select: none; position: relative; }
 #wrap.dragging { cursor: grabbing; }
 #svg-root { display: block; transform-origin: 0 0; }
@@ -22,9 +22,8 @@ body { background: #d8d8d8; overflow: hidden; width: 100vw; height: 100vh; font-
 </head>
 <body>
 <div id="wrap">
-<svg id="svg-root" width="2200" height="1480" xmlns="http://www.w3.org/2000/svg">
+<svg id="svg-root" width="1800" height="1260" xmlns="http://www.w3.org/2000/svg">
 <defs>
-  <!-- Standard arrowhead -->
   <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5"
           markerWidth="7" markerHeight="7" orient="auto-start-reverse">
     <path d="M0,0 L10,5 L0,10 Z" fill="#444"/>
@@ -37,10 +36,6 @@ body { background: #d8d8d8; overflow: hidden; width: 100vw; height: 100vh; font-
           markerWidth="7" markerHeight="7" orient="auto-start-reverse">
     <path d="M0,0 L10,5 L0,10 Z" fill="#1E8449"/>
   </marker>
-  <marker id="ah-t" viewBox="0 0 10 10" refX="9" refY="5"
-          markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-    <path d="M0,0 L10,5 L0,10 Z" fill="#0E6655"/>
-  </marker>
   <marker id="ah-r" viewBox="0 0 10 10" refX="9" refY="5"
           markerWidth="7" markerHeight="7" orient="auto-start-reverse">
     <path d="M0,0 L10,5 L0,10 Z" fill="#C0392B"/>
@@ -51,627 +46,406 @@ body { background: #d8d8d8; overflow: hidden; width: 100vw; height: 100vh; font-
   </marker>
 </defs>
 
-<!-- ===== WHITE CANVAS ===== -->
-<rect width="2200" height="1480" fill="white"/>
+<!-- ===== CANVAS ===== -->
+<rect width="1800" height="1260" fill="white"/>
+
+<!-- ===== TITLE ===== -->
+<text x="900" y="40" text-anchor="middle" font-size="18" font-weight="bold" fill="#222">
+  WHO CVD Targets — Adult cohort state-transition model
+</text>
+<text x="900" y="62" text-anchor="middle" font-size="12" fill="#555">
+  Ages 20–95, years 2017–2058, country × sex × cause — source: code/06_run_scenarios_multiple.R
+</text>
 
 <!-- ================================================================ -->
-<!-- STEP 1: Data Preparation  (x:18–680, y:18–750) -->
+<!-- SECTION A — INPUTS / CALIBRATION DATA                            -->
 <!-- ================================================================ -->
-<rect x="18" y="18" width="662" height="735" rx="5" fill="none"
-      stroke="#4A90D9" stroke-width="1.8" stroke-dasharray="9,4"/>
-<!-- Step header -->
-<rect x="18" y="18" width="662" height="34" rx="7" fill="#D6EAF8" stroke="#4A90D9" stroke-width="1.2"/>
-<text x="349" y="40" text-anchor="middle" font-size="13" font-weight="bold" fill="#1A5276">Step 1 — Data Preparation</text>
+<rect x="30" y="90" width="1740" height="210" rx="6" fill="#F4F9FD"
+      stroke="#2471A3" stroke-width="1.6" stroke-dasharray="9,4"/>
+<rect x="30" y="90" width="1740" height="30" rx="6" fill="#D6EAF8" stroke="#2471A3" stroke-width="1.2"/>
+<text x="900" y="110" text-anchor="middle" font-size="13" font-weight="bold" fill="#1A5276">
+  A. Inputs &amp; calibration data
+</text>
 
-<!-- ---- External source: IHME GBD ---- -->
-<rect x="28" y="66" width="138" height="44" rx="4"
-      fill="#EBF5FB" stroke="#5DADE2" stroke-width="1.5"/>
-<text x="97" y="83" text-anchor="middle" font-size="10" font-weight="bold" fill="#1A5276">IHME GBD 2023</text>
-<text x="97" y="98" text-anchor="middle" font-size="10" fill="#1A5276">Results</text>
+<!-- A1: Calibrated transition rates -->
+<rect x="50" y="135" width="420" height="150" rx="5" fill="white" stroke="#2471A3" stroke-width="1.4"/>
+<text x="260" y="156" text-anchor="middle" font-size="12" font-weight="bold" fill="#1A5276">
+  Calibrated transition rates (b_rates)
+</text>
+<text x="260" y="171" text-anchor="middle" font-size="10" fill="#555">
+  per country × year × sex × age × cause
+</text>
+<line x1="70" y1="180" x2="450" y2="180" stroke="#c7d7e2" stroke-width="1"/>
+<text x="62" y="198" font-size="11" fill="#333">• IR — incidence rate (Well → Sick)</text>
+<text x="62" y="215" font-size="11" fill="#333">• CF — case-fatality (Sick → Dead)</text>
+<text x="62" y="232" font-size="11" fill="#333">• BG.mx, BG.mx.all — background mortality</text>
+<text x="62" y="249" font-size="11" fill="#333">• covid.mx — COVID excess adjustment</text>
+<text x="62" y="266" font-size="11" fill="#333">• PREVt0, DIS.mx.t0 — initial-state seeds</text>
+<text x="62" y="283" font-size="10" fill="#777">source: GBD 2023, calibrated in scripts 02–05</text>
 
-<!-- ---- GBD-derived data items column ---- -->
-<!-- Prevalence data -->
-<rect x="196" y="63" width="158" height="26" fill="white" stroke="#999" stroke-width="1"/>
-<text x="275" y="80" text-anchor="middle" font-size="10" fill="#333">Prevalence data (counts)</text>
-<!-- Mortality count data -->
-<rect x="196" y="103" width="158" height="26" fill="white" stroke="#999" stroke-width="1"/>
-<text x="275" y="120" text-anchor="middle" font-size="10" fill="#333">Mortality count data</text>
-<!-- Mortality rate data -->
-<rect x="196" y="143" width="158" height="26" fill="white" stroke="#999" stroke-width="1"/>
-<text x="275" y="160" text-anchor="middle" font-size="10" fill="#333">Mortality rate data</text>
-<!-- Incidence data -->
-<rect x="196" y="183" width="158" height="26" fill="white" stroke="#999" stroke-width="1"/>
-<text x="275" y="200" text-anchor="middle" font-size="10" fill="#333">Incidence data</text>
+<!-- A2: Populations -->
+<rect x="485" y="135" width="420" height="150" rx="5" fill="white" stroke="#2471A3" stroke-width="1.4"/>
+<text x="695" y="156" text-anchor="middle" font-size="12" font-weight="bold" fill="#1A5276">
+  Populations (Nx)
+</text>
+<text x="695" y="171" text-anchor="middle" font-size="10" fill="#555">
+  UNWPP 2024, single-year age 20–95+
+</text>
+<line x1="505" y1="180" x2="885" y2="180" stroke="#c7d7e2" stroke-width="1"/>
+<text x="497" y="198" font-size="11" fill="#333">• Used to scale rates to population counts</text>
+<text x="497" y="215" font-size="11" fill="#333">• Seeds cohort at year 2017 and at age 20</text>
+<text x="497" y="232" font-size="11" fill="#333">• No fertility / births — adult cohorts only</text>
+<text x="497" y="266" font-size="10" fill="#777">Greenland &amp; Bermuda excluded from runs</text>
 
-<!-- Arrows: GBD → data items (fan out) -->
-<path d="M168,88 Q182,76 194,76" stroke="#5DADE2" stroke-width="1.2" fill="none" marker-end="url(#ah-b)"/>
-<path d="M168,88 Q182,116 194,116" stroke="#5DADE2" stroke-width="1.2" fill="none" marker-end="url(#ah-b)"/>
-<path d="M168,88 Q180,156 194,156" stroke="#5DADE2" stroke-width="1.2" fill="none" marker-end="url(#ah-b)"/>
-<path d="M168,88 Q178,196 194,196" stroke="#5DADE2" stroke-width="1.2" fill="none" marker-end="url(#ah-b)"/>
+<!-- A3: Risk-factor and coverage inputs -->
+<rect x="920" y="135" width="420" height="150" rx="5" fill="white" stroke="#2471A3" stroke-width="1.4"/>
+<text x="1130" y="156" text-anchor="middle" font-size="12" font-weight="bold" fill="#1A5276">
+  Risk-factor &amp; coverage inputs
+</text>
+<text x="1130" y="171" text-anchor="middle" font-size="10" fill="#555">
+  feed intervention modules (Section C)
+</text>
+<line x1="940" y1="180" x2="1320" y2="180" stroke="#c7d7e2" stroke-width="1"/>
+<text x="932" y="198" font-size="11" fill="#333">• BP distribution (data.in): SBP by category</text>
+<text x="932" y="215" font-size="11" fill="#333">• HTN control baseline &amp; national targets</text>
+<text x="932" y="232" font-size="11" fill="#333">  (dt_hbp_control, dt_hbp_targets)</text>
+<text x="932" y="249" font-size="11" fill="#333">• HTN coverage scale-up (inc / covfxn2)</text>
+<text x="932" y="266" font-size="11" fill="#333">• TFA &amp; statin scenarios (dt_tfa_, dt_statin_)</text>
 
-<!-- ---- Diamond: Divide by Nx (Prevalence → severity breakdown) ---- -->
-<!-- diamond center (415, 76) -->
-<polygon points="380,76 415,58 450,76 415,94" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="415" y="73" text-anchor="middle" font-size="9" fill="#333">Divide</text>
-<text x="415" y="84" text-anchor="middle" font-size="9" fill="#333">by Nx</text>
-<line x1="354" y1="76" x2="378" y2="76" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-<!-- Severity breakdown output -->
-<rect x="456" y="63" width="150" height="26" fill="#EBF5FB" stroke="#999" stroke-width="1"/>
-<text x="531" y="77" text-anchor="middle" font-size="10" fill="#333">Severity breakdown</text>
-<text x="531" y="88" text-anchor="middle" font-size="9" fill="#777">(by CVD state)</text>
-<line x1="450" y1="76" x2="454" y2="76" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- ---- Mortality count → csDx ---- -->
-<rect x="400" y="100" width="192" height="34" fill="#EBF5FB" stroke="#999" stroke-width="1"/>
-<text x="496" y="115" text-anchor="middle" font-size="10" fill="#333">CVD-specific death counts</text>
-<text x="496" y="127" text-anchor="middle" font-size="9" fill="#777">(csDx)</text>
-<line x1="354" y1="116" x2="398" y2="116" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- ---- Mortality rate → acmx ---- -->
-<rect x="400" y="148" width="192" height="34" fill="#EBF5FB" stroke="#999" stroke-width="1"/>
-<text x="496" y="163" text-anchor="middle" font-size="10" fill="#333">All-cause mortality rate</text>
-<text x="496" y="175" text-anchor="middle" font-size="9" fill="#777">(acmx)</text>
-<line x1="354" y1="156" x2="398" y2="162" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- ---- Diamond: Divide by Nx (csDx → pcsDi) center=(430, 255) ---- -->
-<polygon points="395,255 430,237 465,255 430,273" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="430" y="252" text-anchor="middle" font-size="9" fill="#333">Divide</text>
-<text x="430" y="263" text-anchor="middle" font-size="9" fill="#333">by Nx</text>
-<!-- csDx down to diamond -->
-<path d="M496,134 L496,240 L467,255" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<!-- pcsDi output -->
-<rect x="474" y="242" width="140" height="34" fill="#EBF5FB" stroke="#999" stroke-width="1"/>
-<text x="544" y="257" text-anchor="middle" font-size="10" fill="#333">CVD death proportions</text>
-<text x="544" y="269" text-anchor="middle" font-size="9" fill="#777">(pcsDi)</text>
-<line x1="465" y1="255" x2="472" y2="255" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- ---- Diamond: Calculate bgmx center=(430, 340) ---- -->
-<polygon points="395,340 430,322 465,340 430,358" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="430" y="337" text-anchor="middle" font-size="9" fill="#333">Calculate</text>
-<text x="430" y="349" text-anchor="middle" font-size="9" fill="#333">bgmx</text>
-<!-- acmx → down → left → diamond -->
-<path d="M496,182 L496,210 L408,210 L408,320" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<!-- pcsDi → down → left → diamond -->
-<path d="M544,276 L544,310 L460,310 L460,338" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<!-- bgmx output -->
-<rect x="474" y="326" width="145" height="34" fill="#D5F5E3" stroke="#27AE60" stroke-width="1.5"/>
-<text x="546" y="341" text-anchor="middle" font-size="10" font-weight="bold" fill="#1D6A36">Background mortality</text>
-<text x="546" y="353" text-anchor="middle" font-size="9" fill="#1D6A36">(bgmx)</text>
-<line x1="465" y1="340" x2="472" y2="340" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- ---- Diamond: Back-calculate Nx center=(290, 305) ---- -->
-<polygon points="255,305 290,287 325,305 290,323" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="290" y="302" text-anchor="middle" font-size="9" fill="#333">Back-</text>
-<text x="290" y="313" text-anchor="middle" font-size="9" fill="#333">calculate</text>
-<!-- mort count data → down → diamond -->
-<path d="M275,129 L275,270 L253,305" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<!-- Nx output -->
-<rect x="334" y="291" width="86" height="28" fill="#D5F5E3" stroke="#27AE60" stroke-width="1.5"/>
-<text x="377" y="309" text-anchor="middle" font-size="12" font-weight="bold" fill="#1D6A36">Nx</text>
-<line x1="325" y1="305" x2="332" y2="305" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- ---- Other causes mortality (ocmx) – assumed fixed ---- -->
-<rect x="196" y="400" width="210" height="34" fill="white" stroke="#aaa" stroke-width="1" stroke-dasharray="5,3"/>
-<text x="301" y="415" text-anchor="middle" font-size="10" fill="#555">Other causes mort. rate (ocmx)</text>
-<text x="301" y="427" text-anchor="middle" font-size="9" fill="#999">Assumed fixed</text>
-
-<!-- ---- Incidence data label → goes to Step 3 ---- -->
-<text x="275" y="222" text-anchor="middle" font-size="9" fill="#1A5276" font-style="italic">→ flows to Step 3</text>
-
-<!-- ---- CVD Risk Factor Distribution ---- -->
-<rect x="28" y="460" width="145" height="122" rx="4"
-      fill="#FDFEFE" stroke="#5DADE2" stroke-width="1.5"/>
-<text x="100" y="477" text-anchor="middle" font-size="10" font-weight="bold" fill="#1A5276">CVD Risk Factor</text>
-<text x="100" y="489" text-anchor="middle" font-size="10" font-weight="bold" fill="#1A5276">Distribution</text>
-<text x="36" y="504" font-size="9" fill="#444">• Hypertension prevalence</text>
-<text x="36" y="517" font-size="9" fill="#444">• Diabetes prevalence</text>
-<text x="36" y="530" font-size="9" fill="#444">• Smoking prevalence</text>
-<text x="36" y="543" font-size="9" fill="#444">• Dyslipidemia</text>
-<text x="36" y="556" font-size="9" fill="#444">• Obesity</text>
-
-<!-- ---- CVD Severity Distribution ---- -->
-<rect x="28" y="600" width="145" height="112" rx="4"
-      fill="#FDFEFE" stroke="#5DADE2" stroke-width="1.5"/>
-<text x="100" y="617" text-anchor="middle" font-size="10" font-weight="bold" fill="#1A5276">CVD Severity</text>
-<text x="100" y="629" text-anchor="middle" font-size="10" font-weight="bold" fill="#1A5276">Distribution</text>
-<text x="36" y="646" font-size="9" fill="#444">• Mild</text>
-<text x="36" y="659" font-size="9" fill="#444">• Moderate</text>
-<text x="36" y="672" font-size="9" fill="#444">• Severe</text>
-<text x="36" y="685" font-size="9" fill="#444">• Post-acute event</text>
-
-<!-- Arrow: risk factor → Step 3 (calibration) label -->
-<text x="100" y="730" text-anchor="middle" font-size="9" fill="#1A5276" font-style="italic">→ risk factor calibration to Step 3</text>
+<!-- A4: Relative-risk tables -->
+<rect x="1355" y="135" width="415" height="150" rx="5" fill="white" stroke="#2471A3" stroke-width="1.4"/>
+<text x="1562" y="156" text-anchor="middle" font-size="12" font-weight="bold" fill="#1A5276">
+  Relative-risk tables
+</text>
+<text x="1562" y="171" text-anchor="middle" font-size="10" fill="#555">
+  scale IR (and CF, for statins)
+</text>
+<line x1="1375" y1="180" x2="1755" y2="180" stroke="#c7d7e2" stroke-width="1"/>
+<text x="1367" y="198" font-size="11" fill="#333">• Ettehad RR per SBP category (ETIHAD_RR)</text>
+<text x="1367" y="215" font-size="11" fill="#333">• GBD 2019 BP RR per 10 mmHg (dt_gbd_rr)</text>
+<text x="1367" y="232" font-size="11" fill="#333">  – filtered to ihd, istroke, hstroke, hhd</text>
+<text x="1367" y="249" font-size="11" fill="#333">• Statin absolute-risk effects (dt_af_statins)</text>
+<text x="1367" y="266" font-size="10" fill="#777">Hemorrhagic stroke RR cloned from istroke</text>
 
 <!-- ================================================================ -->
-<!-- STEP 2: Starting Values for Markov Trace  (x:700–1090, y:18–460) -->
+<!-- SECTION B — CORE STATE MODEL (four causes, Well–Sick–Dead)       -->
 <!-- ================================================================ -->
-<rect x="698" y="18" width="398" height="448" rx="5" fill="none"
-      stroke="#27AE60" stroke-width="1.8" stroke-dasharray="9,4"/>
-<!-- Step header -->
-<rect x="698" y="18" width="398" height="34" rx="7" fill="#D5F5E3" stroke="#27AE60" stroke-width="1.2"/>
-<text x="897" y="32" text-anchor="middle" font-size="11" font-weight="bold" fill="#1D6A36">Step 2 — Starting Values for Markov Trace</text>
-<text x="897" y="45" text-anchor="middle" font-size="9" fill="#1D6A36">(initialising the simulation)</text>
+<rect x="30" y="320" width="1740" height="320" rx="6" fill="#F4FBF7"
+      stroke="#1E8449" stroke-width="1.6" stroke-dasharray="9,4"/>
+<rect x="30" y="320" width="1740" height="30" rx="6" fill="#D5F5E3" stroke="#1E8449" stroke-width="1.2"/>
+<text x="900" y="340" text-anchor="middle" font-size="13" font-weight="bold" fill="#1D6A36">
+  B. Core state-transition model — tracked independently for each of 4 CVD causes
+</text>
 
-<!-- Operations chain (left column) -->
-<!-- Op1: Expand to all ages  center=(760, 100) -->
-<polygon points="718,100 760,82 802,100 760,118" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="760" y="97" text-anchor="middle" font-size="9" fill="#333">Expand to</text>
-<text x="760" y="108" text-anchor="middle" font-size="9" fill="#333">all ages</text>
+<!-- B1: Four causes panel (left) -->
+<rect x="55" y="370" width="330" height="250" rx="5" fill="white" stroke="#1E8449" stroke-width="1.4"/>
+<text x="220" y="392" text-anchor="middle" font-size="12" font-weight="bold" fill="#1D6A36">
+  Four CVD causes (parallel)
+</text>
+<text x="220" y="407" text-anchor="middle" font-size="10" fill="#555">
+  state model runs separately per cause
+</text>
 
-<!-- Op2: Interpolate center=(760, 162) -->
-<polygon points="718,162 760,144 802,162 760,180" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="760" y="159" text-anchor="middle" font-size="9" fill="#333">Interpolate</text>
-<text x="760" y="170" text-anchor="middle" font-size="9" fill="#333">values</text>
-<line x1="760" y1="118" x2="760" y2="142" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
+<rect x="75" y="425" width="290" height="36" rx="4" fill="#FDEDEC" stroke="#C0392B" stroke-width="1.2"/>
+<text x="220" y="443" text-anchor="middle" font-size="11" font-weight="bold" fill="#922B21">Ischemic heart disease</text>
+<text x="220" y="456" text-anchor="middle" font-size="10" fill="#922B21">ihd</text>
 
-<!-- Op3: Calculate prop well center=(760, 224) -->
-<polygon points="718,224 760,206 802,224 760,242" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="760" y="221" text-anchor="middle" font-size="9" fill="#333">Calculate</text>
-<text x="760" y="232" text-anchor="middle" font-size="9" fill="#333">prop. well</text>
-<line x1="760" y1="180" x2="760" y2="204" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
+<rect x="75" y="470" width="290" height="36" rx="4" fill="#FDF2E9" stroke="#CA6F1E" stroke-width="1.2"/>
+<text x="220" y="488" text-anchor="middle" font-size="11" font-weight="bold" fill="#784212">Ischemic stroke</text>
+<text x="220" y="501" text-anchor="middle" font-size="10" fill="#784212">istroke</text>
 
-<!-- Op4: Calculate HS distrib center=(760, 286) -->
-<polygon points="718,286 760,268 802,286 760,304" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="760" y="283" text-anchor="middle" font-size="9" fill="#333">Calculate HS</text>
-<text x="760" y="294" text-anchor="middle" font-size="9" fill="#333">distribution</text>
-<line x1="760" y1="242" x2="760" y2="266" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
+<rect x="75" y="515" width="290" height="36" rx="4" fill="#F4ECF7" stroke="#6C3483" stroke-width="1.2"/>
+<text x="220" y="533" text-anchor="middle" font-size="11" font-weight="bold" fill="#4A235A">Hemorrhagic stroke</text>
+<text x="220" y="546" text-anchor="middle" font-size="10" fill="#4A235A">hstroke — intracerebral haemorrhage</text>
 
-<!-- Arrow from last op to Markov states -->
-<path d="M802,286 L860,286" stroke="#27AE60" stroke-width="1.5" fill="none" marker-end="url(#ah-g)"/>
+<rect x="75" y="560" width="290" height="36" rx="4" fill="#D6EAF8" stroke="#2471A3" stroke-width="1.2"/>
+<text x="220" y="578" text-anchor="middle" font-size="11" font-weight="bold" fill="#1A5276">Hypertensive heart disease</text>
+<text x="220" y="591" text-anchor="middle" font-size="10" fill="#1A5276">hhd</text>
 
-<!-- Markov states vertical stack (x=862, w=165) -->
-<rect x="862" y="88"  width="165" height="26" fill="#EBF5FB" stroke="#2471A3" stroke-width="1.2"/>
-<text x="944" y="105" text-anchor="middle" font-size="10" fill="#1A5276">Well</text>
+<text x="220" y="613" text-anchor="middle" font-size="10" font-style="italic" fill="#555">
+  each applied to the state diagram →
+</text>
 
-<rect x="862" y="122" width="165" height="26" fill="#EAFAF1" stroke="#27AE60" stroke-width="1.2"/>
-<text x="944" y="139" text-anchor="middle" font-size="10" fill="#1D6A36">Mild CVD</text>
+<!-- B2: State diagram (center) -->
+<text x="880" y="392" text-anchor="middle" font-size="12" font-weight="bold" fill="#1D6A36">
+  Discrete-time state transitions (annual step, ages 20 → 95)
+</text>
+<text x="880" y="407" text-anchor="middle" font-size="10" fill="#555">
+  variables in code: well, sick, dead — plus pop, newcases, all.mx
+</text>
 
-<rect x="862" y="156" width="165" height="26" fill="#EAFAF1" stroke="#27AE60" stroke-width="1.2"/>
-<text x="944" y="173" text-anchor="middle" font-size="10" fill="#1D6A36">Moderate CVD</text>
+<!-- Well -->
+<rect x="435" y="450" width="160" height="90" rx="8" fill="#EBF5FB" stroke="#2471A3" stroke-width="2"/>
+<text x="515" y="482" text-anchor="middle" font-size="16" font-weight="bold" fill="#1A5276">Well</text>
+<text x="515" y="500" text-anchor="middle" font-size="10" fill="#1A5276">well</text>
+<text x="515" y="518" text-anchor="middle" font-size="9" fill="#555">no prior event</text>
+<text x="515" y="530" text-anchor="middle" font-size="9" fill="#555">for this cause</text>
 
-<rect x="862" y="190" width="165" height="26" fill="#EAFAF1" stroke="#27AE60" stroke-width="1.2"/>
-<text x="944" y="207" text-anchor="middle" font-size="10" fill="#1D6A36">Severe CVD</text>
+<!-- Sick -->
+<rect x="745" y="450" width="160" height="90" rx="8" fill="#FDF2E9" stroke="#CA6F1E" stroke-width="2"/>
+<text x="825" y="482" text-anchor="middle" font-size="16" font-weight="bold" fill="#784212">Sick</text>
+<text x="825" y="500" text-anchor="middle" font-size="10" fill="#784212">sick</text>
+<text x="825" y="518" text-anchor="middle" font-size="9" fill="#555">has had an event</text>
+<text x="825" y="530" text-anchor="middle" font-size="9" fill="#555">(this cause)</text>
 
-<rect x="862" y="224" width="165" height="26" fill="#FEF9E7" stroke="#D4AC0D" stroke-width="1.2"/>
-<text x="944" y="241" text-anchor="middle" font-size="10" fill="#7D6608">Post-event</text>
+<!-- Dead -->
+<rect x="1055" y="450" width="160" height="90" rx="8" fill="#FDEDEC" stroke="#C0392B" stroke-width="2"/>
+<text x="1135" y="482" text-anchor="middle" font-size="16" font-weight="bold" fill="#922B21">Dead</text>
+<text x="1135" y="500" text-anchor="middle" font-size="10" fill="#922B21">dead</text>
+<text x="1135" y="518" text-anchor="middle" font-size="9" fill="#555">cause-specific</text>
+<text x="1135" y="530" text-anchor="middle" font-size="9" fill="#555">CVD death</text>
 
-<rect x="862" y="258" width="165" height="26" fill="#FDEDEC" stroke="#C0392B" stroke-width="1.2"/>
-<text x="944" y="275" text-anchor="middle" font-size="10" fill="#922B21">Dead (CVD)</text>
+<!-- Well → Sick arrow with IR label -->
+<line x1="595" y1="495" x2="741" y2="495" stroke="#1E8449" stroke-width="2.2" marker-end="url(#ah-g)"/>
+<rect x="618" y="460" width="100" height="26" rx="4" fill="#D5F5E3" stroke="#1E8449" stroke-width="1"/>
+<text x="668" y="477" text-anchor="middle" font-size="11" font-weight="bold" fill="#1D6A36">incidence</text>
+<text x="668" y="498" text-anchor="middle" font-size="10" font-style="italic" fill="#1D6A36">IR × well</text>
 
-<rect x="862" y="292" width="165" height="26" fill="#FDEDEC" stroke="#C0392B" stroke-width="1.2"/>
-<text x="944" y="309" text-anchor="middle" font-size="10" fill="#922B21">Dead (other)</text>
+<!-- Sick → Dead arrow with CF label -->
+<line x1="905" y1="495" x2="1051" y2="495" stroke="#C0392B" stroke-width="2.2" marker-end="url(#ah-r)"/>
+<rect x="928" y="460" width="100" height="26" rx="4" fill="#FADBD8" stroke="#C0392B" stroke-width="1"/>
+<text x="978" y="477" text-anchor="middle" font-size="11" font-weight="bold" fill="#922B21">case-fatality</text>
+<text x="978" y="498" text-anchor="middle" font-size="10" font-style="italic" fill="#922B21">CF × sick</text>
 
-<!-- Output label box -->
-<rect x="846" y="338" width="198" height="38" rx="5" fill="#D5F5E3" stroke="#27AE60" stroke-width="1.5"/>
-<text x="945" y="354" text-anchor="middle" font-size="10" font-weight="bold" fill="#1D6A36">Starting Values of</text>
-<text x="945" y="368" text-anchor="middle" font-size="10" font-weight="bold" fill="#1D6A36">Markov Trace</text>
-<line x1="944" y1="318" x2="944" y2="336" stroke="#27AE60" stroke-width="1.5" marker-end="url(#ah-g)"/>
+<!-- Background mortality note -->
+<rect x="435" y="562" width="780" height="42" rx="5" fill="#FFF9E6" stroke="#B7950B" stroke-width="1.2"/>
+<text x="825" y="580" text-anchor="middle" font-size="11" font-weight="bold" fill="#7D6608">
+  Background mortality (BG.mx, BG.mx.all, covid.mx)
+</text>
+<text x="825" y="596" text-anchor="middle" font-size="10" fill="#7D6608">
+  applied to the living population each step (pop × BG.mx.all + pop × covid.mx); also removes sick members via BG.mx in the sick update
+</text>
 
-<!-- Severity data flows in from Step 1 (arrow from left) -->
-<path d="M614,76 L698,100" stroke="#4A90D9" stroke-width="1.2" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-b)"/>
-<text x="645" y="80" font-size="9" fill="#4A90D9" font-style="italic">severity</text>
+<!-- B3: "No other states" reminder (right) -->
+<rect x="1245" y="370" width="505" height="250" rx="5" fill="white" stroke="#1E8449" stroke-width="1.4"/>
+<text x="1498" y="392" text-anchor="middle" font-size="12" font-weight="bold" fill="#1D6A36">
+  What the model does NOT track
+</text>
+<text x="1498" y="407" text-anchor="middle" font-size="10" fill="#555">
+  (explicitly absent from 06_run_scenarios_multiple.R)
+</text>
+<text x="1260" y="430" font-size="11" fill="#777">✗ No mild / moderate / severe severity states</text>
+<text x="1260" y="449" font-size="11" fill="#777">✗ No post-event or recovery state</text>
+<text x="1260" y="468" font-size="11" fill="#777">✗ No fertility, births, or migration</text>
+<text x="1260" y="487" font-size="11" fill="#777">✗ No cohort-component population projection</text>
+<text x="1260" y="506" font-size="11" fill="#777">✗ No transitions between causes</text>
 
-<!-- ================================================================ -->
-<!-- STEP 3: Calculating TPs and TPM  (x:698–1240, y:478–930) -->
-<!-- ================================================================ -->
-<rect x="698" y="478" width="548" height="456" rx="5" fill="none"
-      stroke="#27AE60" stroke-width="1.8" stroke-dasharray="9,4"/>
-<!-- Step header -->
-<rect x="698" y="478" width="548" height="34" rx="7" fill="#D5F5E3" stroke="#27AE60" stroke-width="1.2"/>
-<text x="972" y="500" text-anchor="middle" font-size="12" font-weight="bold" fill="#1D6A36">Step 3 — Calculating TPs and Constructing TPM</text>
-
-<!-- Transition probability list (left column) -->
-<!-- well_mild -->
-<rect x="710" y="526" width="175" height="36" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="797" y="541" text-anchor="middle" font-size="10" fill="#333">Well → Mild CVD TP</text>
-<text x="797" y="554" text-anchor="middle" font-size="9" fill="#777">(well_mild)</text>
-
-<!-- mild_mod -->
-<rect x="710" y="572" width="175" height="36" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="797" y="587" text-anchor="middle" font-size="10" fill="#333">Mild → Moderate TP</text>
-<text x="797" y="600" text-anchor="middle" font-size="9" fill="#777">(mild_mod)</text>
-
-<!-- mod_sev -->
-<rect x="710" y="618" width="175" height="36" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="797" y="633" text-anchor="middle" font-size="10" fill="#333">Moderate → Severe TP</text>
-<text x="797" y="646" text-anchor="middle" font-size="9" fill="#777">(mod_sev)</text>
-
-<!-- any_post (flagged) -->
-<rect x="710" y="664" width="175" height="36" fill="#FEF9E7" stroke="#D4AC0D" stroke-width="1.5"/>
-<text x="797" y="679" text-anchor="middle" font-size="10" fill="#7D6608">Any → Post-event TP</text>
-<text x="797" y="692" text-anchor="middle" font-size="9" fill="#7D6608">(any_post)  ★</text>
-
-<!-- dst_d -->
-<rect x="710" y="710" width="175" height="36" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="797" y="725" text-anchor="middle" font-size="10" fill="#333">State → Dead TP</text>
-<text x="797" y="738" text-anchor="middle" font-size="9" fill="#777">(dst_d)</text>
-
-<!-- d0 -->
-<rect x="710" y="756" width="175" height="36" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="797" y="771" text-anchor="middle" font-size="10" fill="#333">Death: other causes</text>
-<text x="797" y="784" text-anchor="middle" font-size="9" fill="#777">(d0 / background)</text>
-
-<!-- Central TPM box -->
-<rect x="930" y="548" width="220" height="165" rx="6" fill="#EBF5FB" stroke="#2471A3" stroke-width="2"/>
-<text x="1040" y="572" text-anchor="middle" font-size="11" font-weight="bold" fill="#1A5276">Transition Probability</text>
-<text x="1040" y="587" text-anchor="middle" font-size="11" font-weight="bold" fill="#1A5276">Matrix (TPM)</text>
-<line x1="940" y1="596" x2="1140" y2="596" stroke="#2471A3" stroke-width="0.8" stroke-dasharray="3,2"/>
-<text x="1040" y="612" text-anchor="middle" font-size="9" fill="#555">well_mild | mild_mod | mod_sev</text>
-<text x="1040" y="626" text-anchor="middle" font-size="9" fill="#555">any_post | dst_d | d0</text>
-<text x="1040" y="640" text-anchor="middle" font-size="9" fill="#555">Background + CVD mortality</text>
-<text x="1040" y="655" text-anchor="middle" font-size="9" fill="#555">n × n state matrix</text>
-<text x="1040" y="670" text-anchor="middle" font-size="9" fill="#555">per year × age × sex</text>
-<text x="1040" y="685" text-anchor="middle" font-size="9" fill="#555">GBD 2023 + COVID adj.</text>
-<text x="1040" y="700" text-anchor="middle" font-size="9" fill="#555">UNWPP 2024 populations</text>
-
-<!-- Arrows: TPs → TPM (elbow paths) -->
-<path d="M885,544 L920,568" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M885,590 L920,590 L928,590" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M885,636 L920,615" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M885,682 L920,645" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M885,728 L920,665" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M885,774 L920,685" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-
-<!-- Risk factor calibration box -->
-<rect x="720" y="830" width="155" height="40" rx="4" fill="#FAD7A0" stroke="#CA6F1E" stroke-width="1.5"/>
-<text x="797" y="846" text-anchor="middle" font-size="10" fill="#784212">Risk factor calibration</text>
-<text x="797" y="860" text-anchor="middle" font-size="9" fill="#784212">(from CVD RF data)</text>
-<!-- Calibration → well_mild TP (upward arrow) -->
-<path d="M797,830 L797,544" stroke="#CA6F1E" stroke-width="1.2" fill="none" marker-end="url(#ah-o)"/>
-
-<!-- bgmx reference from Step 1 -->
-<rect x="890" y="830" width="155" height="30" fill="#EBF5FB" stroke="#aaa" stroke-width="1" stroke-dasharray="4,2"/>
-<text x="967" y="845" text-anchor="middle" font-size="10" fill="#555">bgmx (from Step 1)</text>
-<text x="967" y="856" text-anchor="middle" font-size="9" fill="#888">→ d0 and dst_d TPs</text>
-<!-- bgmx → d0 TP -->
-<path d="M967,830 L967,800 L885,774" stroke="#555" stroke-width="1" stroke-dasharray="4,2" fill="none" marker-end="url(#ah)"/>
-
-<!-- Diamond: Divide by state distrib → dst_d -->
-<!-- center=(1070, 800) -->
-<polygon points="1032,800 1070,782 1108,800 1070,818" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="1070" y="797" text-anchor="middle" font-size="9" fill="#333">Divide by</text>
-<text x="1070" y="808" text-anchor="middle" font-size="9" fill="#333">state distrib.</text>
-<!-- CVD-specific death rate reference -->
-<rect x="1120" y="787" width="110" height="30" fill="#EBF5FB" stroke="#aaa" stroke-width="1" stroke-dasharray="4,2"/>
-<text x="1175" y="802" text-anchor="middle" font-size="9" fill="#555">CVD-specific</text>
-<text x="1175" y="812" text-anchor="middle" font-size="9" fill="#555">death rate</text>
-<line x1="1120" y1="802" x2="1110" y2="802" stroke="#555" stroke-width="1" stroke-dasharray="4,2" fill="none" marker-end="url(#ah)"/>
-<!-- Diamond → dst_d TP (arrow back left-up) -->
-<path d="M1032,800 L900,800 L900,728 L887,728" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-
-<!-- Incidence data from Step 1 feeding in -->
-<text x="710" y="512" font-size="9" fill="#4A90D9" font-style="italic">← incidence data from Step 1 calibrates transition rates</text>
+<text x="1260" y="534" font-size="11" fill="#333">Initial seed at year 2017 (and age 20):</text>
+<text x="1260" y="551" font-size="10" fill="#555">  sick = Nx × PREVt0</text>
+<text x="1260" y="567" font-size="10" fill="#555">  dead = Nx × DIS.mx.t0</text>
+<text x="1260" y="583" font-size="10" fill="#555">  well = Nx × (1 − PREVt0 − BG.mx)</text>
+<text x="1260" y="599" font-size="10" fill="#555">  pop  = Nx</text>
 
 <!-- ================================================================ -->
-<!-- STEP 4: Creating Markov Trace  (x:1108–1580, y:18–470) -->
+<!-- SECTION C — INTERVENTION MODULES                                 -->
 <!-- ================================================================ -->
-<rect x="1106" y="18" width="484" height="458" rx="5" fill="none"
-      stroke="#1ABC9C" stroke-width="1.8" stroke-dasharray="9,4"/>
-<!-- Step header -->
-<rect x="1106" y="18" width="484" height="34" rx="7" fill="#D1F2EB" stroke="#1ABC9C" stroke-width="1.2"/>
-<text x="1348" y="40" text-anchor="middle" font-size="12" font-weight="bold" fill="#0E6655">Step 4 — Creating Markov Trace</text>
+<rect x="30" y="660" width="1740" height="260" rx="6" fill="#FEF8EE"
+      stroke="#CA6F1E" stroke-width="1.6" stroke-dasharray="9,4"/>
+<rect x="30" y="660" width="1740" height="30" rx="6" fill="#FAD7A0" stroke="#CA6F1E" stroke-width="1.2"/>
+<text x="900" y="680" text-anchor="middle" font-size="13" font-weight="bold" fill="#784212">
+  C. Intervention modules — each multiplies cause-specific IR (and CF for statins) via eff_ir / eff_cf
+</text>
 
-<!-- User-defined inputs -->
-<rect x="1116" y="60" width="160" height="110" rx="4" fill="#FDFEFE" stroke="#7DCEA0" stroke-width="1.5"/>
-<text x="1196" y="76" text-anchor="middle" font-size="10" font-weight="bold" fill="#0E6655">User-defined inputs</text>
-<text x="1122" y="92"  font-size="9" fill="#444">• Intervention effectiveness</text>
-<text x="1122" y="106" font-size="9" fill="#444">• Coverage scale-up</text>
-<text x="1122" y="120" font-size="9" fill="#444">• Time horizon (2025–2050)</text>
-<text x="1122" y="134" font-size="9" fill="#444">• Target population</text>
-<text x="1122" y="148" font-size="9" fill="#444">• Scenario definition</text>
+<!-- C1: Antihypertensives -->
+<rect x="50" y="710" width="410" height="190" rx="5" fill="white" stroke="#CA6F1E" stroke-width="1.6"/>
+<text x="255" y="732" text-anchor="middle" font-size="12" font-weight="bold" fill="#784212">
+  Antihypertensives
+</text>
+<text x="255" y="747" text-anchor="middle" font-size="10" fill="#555">
+  calculate_antihypertensive_impact_etihad()
+</text>
+<line x1="70" y1="756" x2="440" y2="756" stroke="#f2d7b5" stroke-width="1"/>
+<text x="60" y="774" font-size="11" fill="#333">• Scales HTN treatment/control coverage</text>
+<text x="60" y="791" font-size="11" fill="#333">  from baseline (dt_hbp_control) to target</text>
+<text x="60" y="808" font-size="11" fill="#333">  over [control_start_year, control_target_year]</text>
+<text x="60" y="825" font-size="11" fill="#333">• Shifts SBP by category, looks up Ettehad RR</text>
+<text x="60" y="842" font-size="11" fill="#333">• Reduces IR for ihd, istroke, hstroke, hhd</text>
+<text x="60" y="865" font-size="10" font-style="italic" fill="#784212">
+  Sub-component: calculate_antihypertensive_diabetes()
+</text>
+<text x="60" y="880" font-size="10" fill="#555">
+  diabetes-specific HTN control (target_control_diabetes)
+</text>
 
-<!-- External intervention inputs -->
-<rect x="1116" y="188" width="152" height="26" fill="white" stroke="#999" stroke-width="1"/>
-<text x="1192" y="205" text-anchor="middle" font-size="10" fill="#333">Intervention eff. (RR)</text>
+<!-- C2: Sodium -->
+<rect x="480" y="710" width="410" height="190" rx="5" fill="white" stroke="#CA6F1E" stroke-width="1.6"/>
+<text x="685" y="732" text-anchor="middle" font-size="12" font-weight="bold" fill="#784212">
+  Sodium reduction
+</text>
+<text x="685" y="747" text-anchor="middle" font-size="10" fill="#555">
+  calculate_sodium_impact_etihad()
+</text>
+<line x1="500" y1="756" x2="870" y2="756" stroke="#f2d7b5" stroke-width="1"/>
+<text x="490" y="774" font-size="11" fill="#333">• Reduces dietary sodium by salteff</text>
+<text x="490" y="791" font-size="11" fill="#333">  (method = percent or absolute)</text>
+<text x="490" y="808" font-size="11" fill="#333">  phased from saltyear1 → saltyear2</text>
+<text x="490" y="825" font-size="11" fill="#333">• Lowers SBP → re-scores Ettehad RR</text>
+<text x="490" y="842" font-size="11" fill="#333">• Reduces IR for the same four causes</text>
+<text x="490" y="865" font-size="10" font-style="italic" fill="#555">
+  Defined in code; inactive in current active run
+</text>
+<text x="490" y="880" font-size="10" fill="#555">
+  (salteff = 0 in the parallel loop)
+</text>
 
-<rect x="1116" y="224" width="152" height="26" fill="white" stroke="#999" stroke-width="1"/>
-<text x="1192" y="241" text-anchor="middle" font-size="10" fill="#333">Intervention coverage</text>
+<!-- C3: TFA -->
+<rect x="910" y="710" width="410" height="190" rx="5" fill="white" stroke="#CA6F1E" stroke-width="1.6"/>
+<text x="1115" y="732" text-anchor="middle" font-size="12" font-weight="bold" fill="#784212">
+  Trans-fatty-acid elimination
+</text>
+<text x="1115" y="747" text-anchor="middle" font-size="10" fill="#555">
+  calculate_tfa_impact()
+</text>
+<line x1="930" y1="756" x2="1300" y2="756" stroke="#f2d7b5" stroke-width="1"/>
+<text x="920" y="774" font-size="11" fill="#333">• Policy reduces %E from industrial TFA</text>
+<text x="920" y="791" font-size="11" fill="#333">  to tfa_target_tfa from</text>
+<text x="920" y="808" font-size="11" fill="#333">  tfa_policy_start_year onward</text>
+<text x="920" y="825" font-size="11" fill="#333">• Applies RR from dt_tfa_scenarios</text>
+<text x="920" y="842" font-size="11" fill="#333">• Reduces IR for ihd, istroke, hstroke</text>
+<text x="920" y="865" font-size="10" font-style="italic" fill="#555">
+  Defined in code; inactive in current active run
+</text>
+<text x="920" y="880" font-size="10" fill="#555">
+  (tfa_target_tfa = 0 but scenarios list omits TFA)
+</text>
 
-<rect x="1116" y="260" width="152" height="26" fill="white" stroke="#999" stroke-width="1"/>
-<text x="1192" y="277" text-anchor="middle" font-size="10" fill="#333">Cascade data</text>
+<!-- C4: Statins -->
+<rect x="1340" y="710" width="410" height="190" rx="5" fill="white" stroke="#CA6F1E" stroke-width="1.6"/>
+<text x="1545" y="732" text-anchor="middle" font-size="12" font-weight="bold" fill="#784212">
+  Statins
+</text>
+<text x="1545" y="747" text-anchor="middle" font-size="10" fill="#555">
+  calculate_statins_impact()
+</text>
+<line x1="1360" y1="756" x2="1730" y2="756" stroke="#f2d7b5" stroke-width="1"/>
+<text x="1350" y="774" font-size="11" fill="#333">• Scales statin coverage from baseline</text>
+<text x="1350" y="791" font-size="11" fill="#333">  (dt_statin_scenarios) to</text>
+<text x="1350" y="808" font-size="11" fill="#333">  statin_target_coverage over</text>
+<text x="1350" y="825" font-size="11" fill="#333">  [statin_start_year, statin_target_year]</text>
+<text x="1350" y="842" font-size="11" fill="#333">• Uses dt_af_statins + adherence_ir / _cf</text>
+<text x="1350" y="865" font-size="11" fill="#333">• Reduces both IR and CF for atherosclerotic</text>
+<text x="1350" y="880" font-size="11" fill="#333">  CVD (age ≥ 40; prop_athero_stroke = 0.60)</text>
 
-<!-- Define intervention scenario box -->
-<rect x="1318" y="64" width="162" height="34" rx="4" fill="#D5F5E3" stroke="#27AE60" stroke-width="1.2"/>
-<text x="1399" y="79" text-anchor="middle" font-size="10" fill="#1D6A36">Define intervention</text>
-<text x="1399" y="92" text-anchor="middle" font-size="10" fill="#1D6A36">scenario</text>
+<!-- Arrows from each intervention up into the state-transition rates (IR / CF) -->
+<path d="M255,710 L255,640 L668,540" stroke="#CA6F1E" stroke-width="1.4" stroke-dasharray="6,3"
+      fill="none" marker-end="url(#ah-o)"/>
+<path d="M685,710 L685,640 L668,540" stroke="#CA6F1E" stroke-width="1.4" stroke-dasharray="6,3"
+      fill="none" marker-end="url(#ah-o)"/>
+<path d="M1115,710 L1115,640 L668,540" stroke="#CA6F1E" stroke-width="1.4" stroke-dasharray="6,3"
+      fill="none" marker-end="url(#ah-o)"/>
+<!-- statins -> both IR and CF -->
+<path d="M1545,710 L1545,640 L668,540" stroke="#CA6F1E" stroke-width="1.4" stroke-dasharray="6,3"
+      fill="none" marker-end="url(#ah-o)"/>
+<path d="M1545,710 L1545,620 L978,540" stroke="#CA6F1E" stroke-width="1.4" stroke-dasharray="6,3"
+      fill="none" marker-end="url(#ah-o)"/>
 
-<!-- Arrows from inputs to define-scenario -->
-<path d="M1276,115 L1316,81" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<path d="M1268,201 L1316,88" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<path d="M1268,237 L1316,90" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<path d="M1268,273 L1316,94" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-
-<!-- Diamond: Correction (RR adjustment) center=(1395, 160) -->
-<polygon points="1355,160 1395,140 1435,160 1395,180" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="1395" y="157" text-anchor="middle" font-size="9" fill="#333">Correction</text>
-<text x="1395" y="168" text-anchor="middle" font-size="9" fill="#333">(RR adj.)</text>
-<!-- Define scenario → Correction -->
-<path d="M1399,98 L1399,130 L1395,130 L1395,138" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-
-<!-- Diamond: Matrix multiplication center=(1395, 250) -->
-<polygon points="1355,250 1395,230 1435,250 1395,270" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="1395" y="247" text-anchor="middle" font-size="9" fill="#333">Matrix</text>
-<text x="1395" y="258" text-anchor="middle" font-size="9" fill="#333">multiplication</text>
-<!-- Correction → Matrix mult -->
-<line x1="1395" y1="180" x2="1395" y2="228" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- TPM feeds into matrix multiplication (from Step 3) -->
-<text x="1310" y="253" text-anchor="end" font-size="9" fill="#1D6A36" font-style="italic">TPM ← from Step 3</text>
-<path d="M1312,252 L1353,252" stroke="#1D6A36" stroke-width="1.2" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-g)"/>
-
-<!-- Markov Trace box (main output) -->
-<rect x="1302" y="315" width="186" height="52" rx="6"
-      fill="#D1F2EB" stroke="#1ABC9C" stroke-width="2"/>
-<text x="1395" y="337" text-anchor="middle" font-size="12" font-weight="bold" fill="#0E6655">Markov Trace</text>
-<text x="1395" y="352" text-anchor="middle" font-size="9" fill="#555">pop. in each state × year</text>
-<text x="1395" y="364" text-anchor="middle" font-size="9" fill="#555">age × sex × scenario</text>
-<!-- Matrix mult → Markov Trace -->
-<line x1="1395" y1="270" x2="1395" y2="313" stroke="#555" stroke-width="1.5" marker-end="url(#ah)"/>
-
-<!-- "Repeat every year" loop arrow -->
-<path d="M1488,341 L1540,341 L1540,250 L1437,250"
-      stroke="#1ABC9C" stroke-width="1.5" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-t)"/>
-<text x="1548" y="310" text-anchor="middle" font-size="9" fill="#1ABC9C"
-      transform="rotate(90,1548,310)">Repeat every year</text>
-
-<!-- Starting values feed in from Step 2 -->
-<text x="1120" y="315" font-size="9" fill="#27AE60" font-style="italic">Starting values ← Step 2</text>
-<path d="M1096,376 L1106,340 L1300,335" stroke="#27AE60" stroke-width="1.2" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-g)"/>
-
-<!-- Scenarios list -->
-<rect x="1116" y="395" width="440" height="72" rx="4" fill="#F8FFF8" stroke="#7DCEA0" stroke-width="1"/>
-<text x="1190" y="411" text-anchor="start" font-size="9" font-weight="bold" fill="#1D6A36">Scenarios:</text>
-<text x="1124" y="424" font-size="9" fill="#444">baseline | bp_only | sodium_only | tfa_only | statins_only</text>
-<text x="1124" y="437" font-size="9" fill="#444">bp_sodium | bp_sodium_tfa | all_four</text>
-<text x="1124" y="450" font-size="9" fill="#777">All run in parallel via doParallel/foreach, per country</text>
-<text x="1124" y="463" font-size="9" fill="#777">Output: model_output_part_&lt;country&gt;.rds</text>
-
-<!-- ================================================================ -->
-<!-- STEP 5: Population Projection  (x:18–760, y:775–1090) -->
-<!-- ================================================================ -->
-<rect x="18" y="775" width="742" height="320" rx="5" fill="none"
-      stroke="#2471A3" stroke-width="1.8" stroke-dasharray="9,4"/>
-<!-- Step header -->
-<rect x="18" y="775" width="742" height="34" rx="7" fill="#D6EAF8" stroke="#2471A3" stroke-width="1.2"/>
-<text x="389" y="797" text-anchor="middle" font-size="12" font-weight="bold" fill="#1A5276">Step 5 — Population Projection</text>
-
-<!-- ASFR (assumed fixed) -->
-<rect x="32" y="822" width="148" height="34" fill="white" stroke="#aaa" stroke-width="1" stroke-dasharray="5,3"/>
-<text x="106" y="837" text-anchor="middle" font-size="10" fill="#555">Age-specific fertility</text>
-<text x="106" y="849" text-anchor="middle" font-size="9" fill="#888">rates (ASFR) – assumed fixed</text>
-
-<!-- Abridged life table -->
-<rect x="32" y="866" width="148" height="34" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="106" y="881" text-anchor="middle" font-size="10" fill="#555">Abridged life table</text>
-<text x="106" y="893" text-anchor="middle" font-size="9" fill="#888">(derived from acmx)</text>
-
-<!-- Diamond: Run CCPM center=(242, 874) -->
-<polygon points="200,874 242,856 284,874 242,892" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="242" y="871" text-anchor="middle" font-size="9" fill="#333">Run</text>
-<text x="242" y="882" text-anchor="middle" font-size="9" fill="#333">CCPM</text>
-<!-- ASFR + life table → CCPM -->
-<path d="M180,839 L220,864" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<path d="M180,883 L200,878" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-
-<!-- Cohort Component Projection Model -->
-<rect x="294" y="860" width="178" height="36" rx="4" fill="#EBF5FB" stroke="#2471A3" stroke-width="1.5"/>
-<text x="383" y="876" text-anchor="middle" font-size="10" fill="#1A5276">Cohort Component</text>
-<text x="383" y="888" text-anchor="middle" font-size="9" fill="#1A5276">Projection Model (CCPM)</text>
-<line x1="284" y1="874" x2="292" y2="874" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- Diamond: Matrix multiplication center=(510, 878) -->
-<polygon points="470,878 510,860 550,878 510,896" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="510" y="875" text-anchor="middle" font-size="9" fill="#333">Matrix</text>
-<text x="510" y="886" text-anchor="middle" font-size="9" fill="#333">mult.</text>
-<line x1="472" y1="878" x2="468" y2="878" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-<line x1="472" y1="878" x2="470" y2="878" stroke="white" stroke-width="0"/>
-
-<!-- Future population projection -->
-<rect x="558" y="865" width="108" height="34" rx="4" fill="#D6EAF8" stroke="#2471A3" stroke-width="1.5"/>
-<text x="612" y="880" text-anchor="middle" font-size="10" fill="#1A5276">Future pop.</text>
-<text x="612" y="892" text-anchor="middle" font-size="9" fill="#1A5276">projection</text>
-<line x1="550" y1="878" x2="556" y2="878" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- ---- Deaths row ---- -->
-<!-- Other causes deaths -->
-<rect x="32" y="950" width="148" height="34" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="106" y="966" text-anchor="middle" font-size="10" fill="#555">Other causes deaths</text>
-<text x="106" y="978" text-anchor="middle" font-size="9" fill="#888">(count)</text>
-
-<!-- CVD deaths count -->
-<rect x="32" y="994" width="148" height="34" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="106" y="1009" text-anchor="middle" font-size="10" fill="#555">CVD-specific deaths</text>
-<text x="106" y="1021" text-anchor="middle" font-size="9" fill="#888">(count)</text>
-
-<!-- Diamond: Add deaths center=(234, 987) -->
-<polygon points="196,987 234,969 272,987 234,1005" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="234" y="984" text-anchor="middle" font-size="9" fill="#333">Add</text>
-<text x="234" y="995" text-anchor="middle" font-size="9" fill="#333">deaths</text>
-<path d="M180,967 L196,978" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-<path d="M180,1011 L196,998" stroke="#555" stroke-width="1.2" fill="none" marker-end="url(#ah)"/>
-
-<!-- All-cause deaths count -->
-<rect x="280" y="974" width="148" height="34" fill="#EBF5FB" stroke="#999" stroke-width="1"/>
-<text x="354" y="990" text-anchor="middle" font-size="10" fill="#333">All-cause deaths</text>
-<text x="354" y="1002" text-anchor="middle" font-size="9" fill="#777">(count)</text>
-<line x1="272" y1="987" x2="278" y2="987" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- Diamond: Divide by Nx → acmx center=(480, 987) -->
-<polygon points="442,987 480,969 518,987 480,1005" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="480" y="984" text-anchor="middle" font-size="9" fill="#333">Divide</text>
-<text x="480" y="995" text-anchor="middle" font-size="9" fill="#333">by Nx</text>
-<line x1="428" y1="987" x2="440" y2="987" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- Updated acmx box -->
-<rect x="526" y="974" width="132" height="34" fill="#EBF5FB" stroke="#2471A3" stroke-width="1.2"/>
-<text x="592" y="989" text-anchor="middle" font-size="10" fill="#1A5276">All-cause mort. rate</text>
-<text x="592" y="1001" text-anchor="middle" font-size="9" fill="#1A5276">(acmx) updated</text>
-<line x1="518" y1="987" x2="524" y2="987" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
-
-<!-- Update loop: acmx → life table -->
-<path d="M592,974 L592,938 L106,938 L106,902"
-      stroke="#2471A3" stroke-width="1.2" stroke-dasharray="5,3" fill="none" marker-end="url(#ah-b)"/>
-<text x="350" y="933" text-anchor="middle" font-size="9" fill="#2471A3">Update: acmx → abridged life table</text>
-
-<!-- Nx reference -->
-<rect x="280" y="1046" width="120" height="26" fill="#D5F5E3" stroke="#27AE60" stroke-width="1" stroke-dasharray="4,2"/>
-<text x="340" y="1062" text-anchor="middle" font-size="10" fill="#1D6A36">Nx (from Step 1)</text>
-<!-- Nx → divide by Nx -->
-<path d="M400,1059 L480,1059 L480,1007" stroke="#27AE60" stroke-width="1" stroke-dasharray="4,2" fill="none" marker-end="url(#ah-g)"/>
+<text x="930" y="636" font-size="10" fill="#784212" font-style="italic">
+  interventions modify IR and/or CF (via eff_ir, eff_cf) — multi-intervention scenarios compose multiplicatively
+</text>
 
 <!-- ================================================================ -->
-<!-- STEP 6: Economic Evaluation  (x:780–1370, y:775–1090) -->
+<!-- SECTION D — ANNUAL UPDATE &amp; SCENARIO OUTPUTS                  -->
 <!-- ================================================================ -->
-<rect x="778" y="775" width="596" height="320" rx="5" fill="none"
-      stroke="#C0392B" stroke-width="1.8" stroke-dasharray="9,4"/>
-<!-- Step header -->
-<rect x="778" y="775" width="596" height="34" rx="7" fill="#FADBD8" stroke="#C0392B" stroke-width="1.2"/>
-<text x="1076" y="797" text-anchor="middle" font-size="12" font-weight="bold" fill="#922B21">Step 6 — Economic Evaluation</text>
+<rect x="30" y="940" width="1740" height="260" rx="6" fill="#F9F4FB"
+      stroke="#6C3483" stroke-width="1.6" stroke-dasharray="9,4"/>
+<rect x="30" y="940" width="1740" height="30" rx="6" fill="#E8DAEF" stroke="#6C3483" stroke-width="1.2"/>
+<text x="900" y="960" text-anchor="middle" font-size="13" font-weight="bold" fill="#4A235A">
+  D. Annual state update (loop 2017 → 2058) and scenario outputs
+</text>
 
-<!-- Input boxes (left column) -->
-<rect x="790" y="822" width="135" height="28" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="857" y="840" text-anchor="middle" font-size="10" fill="#333">Target population</text>
+<!-- D1: State-update equations -->
+<rect x="50" y="985" width="820" height="200" rx="5" fill="white" stroke="#6C3483" stroke-width="1.4"/>
+<text x="460" y="1007" text-anchor="middle" font-size="12" font-weight="bold" fill="#4A235A">
+  Annual update inside project.all() — for each cause, sex, age
+</text>
+<text x="460" y="1023" text-anchor="middle" font-size="10" fill="#555">
+  (age grows by 1 year, indexed t for year, t−1 taken via shift())
+</text>
+<line x1="70" y1="1033" x2="850" y2="1033" stroke="#e0d2ec" stroke-width="1"/>
+<text x="65" y="1054" font-size="12" font-family="monospace" fill="#333">
+  newcases_t = well_{t−1} · IR
+</text>
+<text x="65" y="1077" font-size="12" font-family="monospace" fill="#333">
+  sick_t     = sick_{t−1} · (1 − CF − BG.mx − covid.mx) + well_{t−1} · IR
+</text>
+<text x="65" y="1100" font-size="12" font-family="monospace" fill="#333">
+  dead_t     = sick_{t−1} · CF
+</text>
+<text x="65" y="1123" font-size="12" font-family="monospace" fill="#333">
+  pop_t      = pop_{t−1} − all.mx_{t−1}
+</text>
+<text x="65" y="1146" font-size="12" font-family="monospace" fill="#333">
+  all.mx_t   = Σ_cause dead_t + pop_t · BG.mx.all + pop_t · covid.mx
+</text>
+<text x="65" y="1169" font-size="12" font-family="monospace" fill="#333">
+  well_t     = pop_t − all.mx_t − sick_t          (floored at 0)
+</text>
 
-<rect x="790" y="860" width="135" height="28" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="857" y="878" text-anchor="middle" font-size="10" fill="#333">Cost data</text>
+<!-- D2: Scenarios &amp; outputs -->
+<rect x="890" y="985" width="860" height="200" rx="5" fill="white" stroke="#6C3483" stroke-width="1.4"/>
+<text x="1320" y="1007" text-anchor="middle" font-size="12" font-weight="bold" fill="#4A235A">
+  run_multiple_scenarios() — 6 active scenarios per country
+</text>
+<text x="1320" y="1023" text-anchor="middle" font-size="10" fill="#555">
+  parallel across countries via doParallel / foreach (Greenland, Bermuda excluded)
+</text>
+<line x1="910" y1="1033" x2="1730" y2="1033" stroke="#e0d2ec" stroke-width="1"/>
 
-<rect x="790" y="898" width="135" height="28" fill="white" stroke="#aaa" stroke-width="1"/>
-<text x="857" y="916" text-anchor="middle" font-size="10" fill="#333">Disability weights</text>
+<rect x="910" y="1045" width="395" height="24" rx="3" fill="#F4ECF7" stroke="#6C3483" stroke-width="1"/>
+<text x="918" y="1062" font-size="11" fill="#333" font-family="monospace">baseline             = character(0)</text>
 
-<!-- From Step 5: CVD deaths -->
-<rect x="790" y="942" width="145" height="36" fill="#FADBD8" stroke="#C0392B" stroke-width="1.2" stroke-dasharray="5,3"/>
-<text x="862" y="958" text-anchor="middle" font-size="10" fill="#922B21">CVD-specific deaths</text>
-<text x="862" y="970" text-anchor="middle" font-size="9" fill="#922B21">(count — from Step 5)</text>
+<rect x="910" y="1074" width="395" height="24" rx="3" fill="#F4ECF7" stroke="#6C3483" stroke-width="1"/>
+<text x="918" y="1091" font-size="11" fill="#333" font-family="monospace">bp_only              = "antihypertensive"</text>
 
-<!-- From Step 4: Markov Trace -->
-<rect x="790" y="988" width="145" height="36" fill="#D1F2EB" stroke="#1ABC9C" stroke-width="1.2" stroke-dasharray="5,3"/>
-<text x="862" y="1004" text-anchor="middle" font-size="10" fill="#0E6655">Markov Trace</text>
-<text x="862" y="1016" text-anchor="middle" font-size="9" fill="#0E6655">(from Step 4)</text>
+<rect x="910" y="1103" width="395" height="24" rx="3" fill="#F4ECF7" stroke="#6C3483" stroke-width="1"/>
+<text x="918" y="1120" font-size="11" fill="#333" font-family="monospace">bp_diabetes_only     = "antihypertensive_diabetes"</text>
 
-<!-- Diamond: Multiplication center=(1020, 925) -->
-<polygon points="978,925 1020,905 1062,925 1020,945" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="1020" y="922" text-anchor="middle" font-size="9" fill="#333">Multiply</text>
-<text x="1020" y="933" text-anchor="middle" font-size="9" fill="#333">(pop × rate)</text>
+<rect x="910" y="1132" width="395" height="24" rx="3" fill="#F4ECF7" stroke="#6C3483" stroke-width="1"/>
+<text x="918" y="1149" font-size="11" fill="#333" font-family="monospace">bp_combined          = c(both BP modules)</text>
 
-<!-- Arrows from inputs to multiplication diamond -->
-<path d="M925,836 L1000,913" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M925,874 L1000,919" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M925,912 L978,922" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M935,960 L978,928" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
-<path d="M935,1006 L978,934" stroke="#555" stroke-width="1" fill="none" marker-end="url(#ah)"/>
+<rect x="1315" y="1045" width="410" height="24" rx="3" fill="#F4ECF7" stroke="#6C3483" stroke-width="1"/>
+<text x="1323" y="1062" font-size="11" fill="#333" font-family="monospace">statins_only         = "statins"</text>
 
-<!-- Diamond: Rate-specific calculations center=(1120, 925) -->
-<polygon points="1074,925 1120,905 1166,925 1120,945" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="1120" y="922" text-anchor="middle" font-size="9" fill="#333">Rate-specific</text>
-<text x="1120" y="933" text-anchor="middle" font-size="9" fill="#333">calculations</text>
-<line x1="1062" y1="925" x2="1072" y2="925" stroke="#555" stroke-width="1.2" marker-end="url(#ah)"/>
+<rect x="1315" y="1074" width="410" height="24" rx="3" fill="#F4ECF7" stroke="#6C3483" stroke-width="1"/>
+<text x="1323" y="1091" font-size="11" fill="#333" font-family="monospace">all_interventions    = c(BP, BP_diab, statins)</text>
 
-<!-- Output 1: DALYs averted -->
-<rect x="1188" y="875" width="158" height="44" rx="5" fill="#FADBD8" stroke="#C0392B" stroke-width="1.8"/>
-<text x="1267" y="894" text-anchor="middle" font-size="11" font-weight="bold" fill="#922B21">DALYs averted</text>
-<text x="1267" y="907" text-anchor="middle" font-size="9" fill="#922B21">(YLL + YLD)</text>
-<text x="1267" y="919" text-anchor="middle" font-size="9" fill="#922B21">by scenario, country</text>
-<path d="M1166,915 L1186,896" stroke="#C0392B" stroke-width="1.5" fill="none" marker-end="url(#ah-r)"/>
+<text x="1323" y="1120" font-size="11" fill="#333">
+  Output per country × htn_target_col:
+</text>
+<text x="1323" y="1137" font-size="10" font-family="monospace" fill="#6C3483">
+  model_output_&lt;country&gt;_&lt;target&gt;.rds
+</text>
+<text x="1323" y="1155" font-size="10" fill="#555">
+  columns: age, cause, sex, year, well, sick, dead,
+</text>
+<text x="1323" y="1170" font-size="10" fill="#555">
+  newcases, pop, all.mx, eff_ir, eff_cf, intervention, …
+</text>
 
-<!-- Output 2: CEA -->
-<rect x="1188" y="960" width="158" height="44" rx="5" fill="#FADBD8" stroke="#C0392B" stroke-width="1.8"/>
-<text x="1267" y="979" text-anchor="middle" font-size="11" font-weight="bold" fill="#922B21">Cost-effectiveness</text>
-<text x="1267" y="992" text-anchor="middle" font-size="10" font-weight="bold" fill="#922B21">Analysis (CEA)</text>
-<text x="1267" y="1005" text-anchor="middle" font-size="9" fill="#922B21">$/DALY averted</text>
-<path d="M1166,935 L1186,970" stroke="#C0392B" stroke-width="1.5" fill="none" marker-end="url(#ah-r)"/>
+<!-- Cross-section flow arrows (inputs → model → interventions → outputs) -->
+<path d="M260,285 L260,365" stroke="#2471A3" stroke-width="1.4" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-b)"/>
+<path d="M695,285 L515,445" stroke="#2471A3" stroke-width="1.4" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-b)"/>
+<path d="M1130,285 L1130,705" stroke="#2471A3" stroke-width="1.4" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-b)"/>
+<path d="M1562,285 L1562,705" stroke="#2471A3" stroke-width="1.4" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-b)"/>
 
-<!-- ================================================================ -->
-<!-- CROSS-STEP ARROWS -->
-<!-- ================================================================ -->
-
-<!-- Step 1 bgmx → Step 3 bgmx reference (dashed, right-ward) -->
-<path d="M619,340 L650,340 L650,835 L718,850"
-      stroke="#27AE60" stroke-width="1.2" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-g)"/>
-<text x="655" y="600" text-anchor="start" font-size="9" fill="#27AE60" transform="rotate(90,655,600)">bgmx → Step 3</text>
-
-<!-- Step 1 incidence → Step 3 -->
-<path d="M354,196 L680,196 L680,512 L698,512"
-      stroke="#4A90D9" stroke-width="1.2" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-b)"/>
-<text x="520" y="190" text-anchor="middle" font-size="9" fill="#4A90D9">incidence → Step 3</text>
-
-<!-- Step 3 TPM → Step 4 (right-ward at mid-height) -->
-<path d="M1246,635 L1280,635 L1280,252 L1312,252"
-      stroke="#1D6A36" stroke-width="1.5" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-g)"/>
-<text x="1262" y="445" text-anchor="middle" font-size="9" fill="#1D6A36" transform="rotate(90,1262,445)">TPM → Step 4</text>
-
-<!-- Step 2 starting values → Step 4 -->
-<path d="M1044,357 L1096,357 L1096,340 L1300,335"
-      stroke="#27AE60" stroke-width="1.2" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-g)"/>
-
-<!-- Step 4 Markov Trace → Step 6 (downward) -->
-<path d="M1395,367 L1395,440 L1060,440 L1060,775 L1010,775 L1010,986"
-      stroke="#1ABC9C" stroke-width="1.5" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-t)"/>
-<text x="1072" y="620" font-size="9" fill="#1ABC9C" transform="rotate(90,1072,620)">Markov Trace → Step 6</text>
-
-<!-- Step 4 CVD deaths → Step 5 -->
-<path d="M1395,370 L1395,450 L90,450 L90,775 L90,992"
-      stroke="#C0392B" stroke-width="1.2" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-r)"/>
-<text x="74" y="615" font-size="9" fill="#C0392B" transform="rotate(90,74,615)">CVD deaths → Step 5</text>
-
-<!-- Step 5 CVD deaths → Step 6 (right-ward at deaths row) -->
-<path d="M760,1011 L778,958"
-      stroke="#C0392B" stroke-width="1.5" stroke-dasharray="6,3" fill="none" marker-end="url(#ah-r)"/>
-<text x="768" y="985" font-size="8" fill="#C0392B" font-style="italic">CVD deaths</text>
+<!-- State model → annual update (downward) -->
+<path d="M825,605 L825,935" stroke="#6C3483" stroke-width="1.5" stroke-dasharray="6,3" fill="none" marker-end="url(#ah)"/>
+<text x="835" y="770" font-size="10" fill="#6C3483" font-style="italic">state rules applied each year</text>
 
 <!-- ================================================================ -->
-<!-- LEGEND (bottom-left, inside SVG) -->
+<!-- LEGEND                                                          -->
 <!-- ================================================================ -->
-<rect x="18" y="1115" width="510" height="122" rx="6" fill="#F8F9FA" stroke="#ccc" stroke-width="1.2"/>
-<text x="28" y="1133" font-size="11" font-weight="bold" fill="#333">Legend</text>
-
-<!-- Data rectangle -->
-<rect x="28" y="1142" width="72" height="22" fill="white" stroke="#999" stroke-width="1"/>
-<text x="106" y="1157" font-size="10" fill="#444">Data variable / intermediate result</text>
-
-<!-- Diamond -->
-<polygon points="28,1186 54,1173 80,1186 54,1199" fill="#FFF9C4" stroke="#888" stroke-width="1"/>
-<text x="106" y="1190" font-size="10" fill="#444">Operation / calculation</text>
-
-<!-- Step header rounded rect -->
-<rect x="28" y="1210" width="72" height="18" rx="6" fill="#D6EAF8" stroke="#4A90D9" stroke-width="1.2"/>
-<text x="106" y="1223" font-size="10" fill="#444">Step header (blue=data prep, green=modelling, pink=eval)</text>
-
-<!-- Dashed border -->
-<rect x="180" y="1142" width="72" height="22" fill="white" stroke="#999" stroke-width="1" stroke-dasharray="5,3"/>
-<text x="258" y="1157" font-size="10" fill="#444">Fixed / reference input</text>
-
-<!-- Solid arrow -->
-<line x1="365" y1="1153" x2="415" y2="1153" stroke="#444" stroke-width="1.5" marker-end="url(#ah)"/>
-<text x="422" y="1157" font-size="10" fill="#444">Data flow</text>
-
-<!-- Dashed arrow -->
-<line x1="365" y1="1185" x2="415" y2="1185" stroke="#444" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ah)"/>
-<text x="422" y="1189" font-size="10" fill="#444">Cross-step / reference flow</text>
-
-<!-- Loop arrow -->
-<path d="M365,1218 L390,1218 L390,1208 L415,1218 L390,1228 L390,1218" stroke="#1ABC9C" stroke-width="1.5" fill="none"/>
-<text x="422" y="1222" font-size="10" fill="#444">Repeated loop</text>
-
-<!-- Step color guide -->
-<rect x="28" y="1248" width="14" height="12" rx="2" fill="#D6EAF8" stroke="#4A90D9"/>
-<text x="48" y="1259" font-size="9" fill="#444">Data step</text>
-<rect x="110" y="1248" width="14" height="12" rx="2" fill="#D5F5E3" stroke="#27AE60"/>
-<text x="130" y="1259" font-size="9" fill="#444">Modelling step</text>
-<rect x="220" y="1248" width="14" height="12" rx="2" fill="#D1F2EB" stroke="#1ABC9C"/>
-<text x="240" y="1259" font-size="9" fill="#444">Projection step</text>
-<rect x="330" y="1248" width="14" height="12" rx="2" fill="#FADBD8" stroke="#C0392B"/>
-<text x="350" y="1259" font-size="9" fill="#444">Evaluation step</text>
-
-<!-- ================================================================ -->
-<!-- MODEL METADATA (bottom-right) -->
-<!-- ================================================================ -->
-<rect x="820" y="1115" width="520" height="100" rx="5" fill="#FAFAFA" stroke="#ddd" stroke-width="1"/>
-<text x="830" y="1133" font-size="10" font-weight="bold" fill="#333">Model Overview</text>
-<text x="830" y="1149" font-size="9" fill="#555">Discrete-time state-transition model, 2017–2050, 5-year age groups (20–85+)</text>
-<text x="830" y="1163" font-size="9" fill="#555">Four CVD causes: IHD, ischemic stroke, hemorrhagic stroke, hypertensive heart disease</text>
-<text x="830" y="1177" font-size="9" fill="#555">Four interventions: BP drugs · Sodium reduction · Trans-fat elimination · Statins</text>
-<text x="830" y="1191" font-size="9" fill="#555">Data sources: GBD 2023 · UNWPP 2024 · NCD-RisC · Intervention RR literature</text>
-<text x="830" y="1205" font-size="9" fill="#555">Runs country-by-country in parallel; 8 scenarios per country</text>
+<rect x="30" y="1215" width="1740" height="35" rx="5" fill="#F8F9FA" stroke="#ccc" stroke-width="1"/>
+<rect x="45" y="1225" width="22" height="14" fill="#D6EAF8" stroke="#2471A3"/>
+<text x="75" y="1237" font-size="11" fill="#333">A — inputs &amp; calibration</text>
+<rect x="265" y="1225" width="22" height="14" fill="#D5F5E3" stroke="#1E8449"/>
+<text x="295" y="1237" font-size="11" fill="#333">B — state-transition model (4 causes, Well/Sick/Dead)</text>
+<rect x="685" y="1225" width="22" height="14" fill="#FAD7A0" stroke="#CA6F1E"/>
+<text x="715" y="1237" font-size="11" fill="#333">C — intervention modules (modify IR/CF)</text>
+<rect x="1045" y="1225" width="22" height="14" fill="#E8DAEF" stroke="#6C3483"/>
+<text x="1075" y="1237" font-size="11" fill="#333">D — annual update loop &amp; scenario outputs</text>
+<line x1="1425" y1="1232" x2="1465" y2="1232" stroke="#444" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ah)"/>
+<text x="1472" y="1237" font-size="11" fill="#333">reference / cross-section flow</text>
 
 </svg>
 </div>
@@ -687,7 +461,7 @@ body { background: #d8d8d8; overflow: hidden; width: 100vw; height: 100vh; font-
 const wrap = document.getElementById('wrap');
 const svg  = document.getElementById('svg-root');
 
-let tx = 0, ty = 0, scale = 0.62;
+let tx = 0, ty = 0, scale = 0.72;
 let dragging = false, ox, oy;
 
 function applyTransform() {
@@ -712,7 +486,6 @@ window.addEventListener('mouseup', () => {
 });
 wrap.addEventListener('wheel', e => {
   e.preventDefault();
-  // Zoom toward cursor
   const rect = wrap.getBoundingClientRect();
   const mx = e.clientX - rect.left;
   const my = e.clientY - rect.top;
@@ -724,9 +497,7 @@ wrap.addEventListener('wheel', e => {
   applyTransform();
 }, { passive: false });
 
-// Touch support
 let lastDist = null;
-let lastTX, lastTY;
 wrap.addEventListener('touchstart', e => {
   if (e.touches.length === 1) {
     dragging = true;
@@ -760,7 +531,7 @@ wrap.addEventListener('touchmove', e => {
 }, { passive: true });
 wrap.addEventListener('touchend', () => { dragging = false; lastDist = null; });
 
-function resetView() { tx = 0; ty = 0; scale = 0.62; applyTransform(); }
+function resetView() { tx = 0; ty = 0; scale = 0.72; applyTransform(); }
 function zoomIn()    { scale = Math.min(scale * 1.2, 4); applyTransform(); }
 function zoomOut()   { scale = Math.max(scale * 0.83, 0.15); applyTransform(); }
 
