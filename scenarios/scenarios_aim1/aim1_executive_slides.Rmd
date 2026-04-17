@@ -412,6 +412,40 @@ ggplot() +
 \end{column}
 \end{columns}
 
+## Burden of Disease: Methods
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Three burden-of-disease metrics}
+\begin{itemize}\footnotesize
+  \item \textbf{YLL} (Years of Life Lost): deaths $\times$ remaining life expectancy at age of death
+  \item \textbf{YLD} (Years Lived with Disability): prevalent CVD cases $\times$ disability weight
+  \item \textbf{DALY} (Disability-Adjusted Life Years): $DALY = YLL + YLD$
+\end{itemize}
+
+\medskip
+\textbf{DALYs averted} = $DALY_{\text{BAU}} - DALY_{\text{intervention}}$
+\end{column}
+
+\begin{column}{0.43\textwidth}
+\begin{exampleblock}{Reference standards}
+\footnotesize
+\textbf{Life table:} UNWPP 2024, medium variant (country- and year-specific $e_x$)
+
+\medskip
+\textbf{Disability weights:} GBD 2023, derived as YLD/Prevalence per cause and location
+
+\medskip
+\textbf{Discounting:} None (undiscounted)
+
+\textbf{Age weighting:} None
+\end{exampleblock}
+\end{column}
+\end{columns}
+
+\vspace{4pt}
+\footnotesize Full derivation in Supplemental Mathematical Details.
+
 <!-- ======================================================================
      RESULTS
      ====================================================================== -->
@@ -552,6 +586,107 @@ ggplot(sl_dt_age,
         panel.grid.minor = element_blank()) +
   guides(fill = guide_legend(nrow = 2))
 ```
+
+## Burden of Disease Averted: YLLs, YLDs, and DALYs
+
+<!-- NEEDS: sl_scalars.rds must be extended in aim1_report.Rmd to include
+     total_dalys_all, total_ylls_all, total_ylds_all, total_dalys_bp,
+     total_dalys_bpd, total_dalys_stat so these inline R calls resolve.
+     Currently these scalars are saved only to paper_scalars.rds, not
+     sl_scalars.rds. Until then, this slide will error on knit. -->
+
+<!-- NEEDS: sl_bod_summary.rds (= copy of bod_tab1) must be saved to
+     output/slides/ in aim1_report.Rmd for the table below. -->
+
+```{r bod-slide-objects, include=FALSE}
+# If not already loaded earlier in the deck:
+if (file.exists(paste0(slides_dir, "sl_bod_summary.rds"))) {
+  sl_bod_summary <- readRDS(paste0(slides_dir, "sl_bod_summary.rds"))
+}
+
+fmt_big <- function(x, digits = 1) {
+  if (is.na(x)) return("[missing]")
+  if (abs(x) >= 1e6) return(paste0(formatC(round(x/1e6, digits), format = "f",
+                                           digits = digits, big.mark = ","), " M"))
+  formatC(round(x, digits), format = "f", digits = digits, big.mark = ",")
+}
+
+total_dalys_all <- sl$total_dalys_all
+total_ylls_all  <- sl$total_ylls_all
+total_ylds_all  <- sl$total_ylds_all
+
+total_dalys_bp   <- sl$total_dalys_bp
+total_dalys_bpd  <- sl$total_dalys_bpd
+total_dalys_stat <- sl$total_dalys_stat
+```
+
+- DALYs averted: `r fmt_big(sl$total_dalys_all)`
+- YLLs averted: `r fmt_big(sl$total_ylls_all)`
+- YLDs averted: `r fmt_big(sl$total_ylds_all)`
+
+```{r}
+if (exists("sl_bod_summary")) {
+  
+  # Copy table
+  bod_tab <- copy(sl_bod_summary)
+  
+  # Convert to millions and format
+  fmt_millions <- function(x) {
+    paste0(formatC(x / 1e6, format = "f", digits = 1, big.mark = ","), " M")
+  }
+  
+  # Apply formatting (skip first column)
+  for (j in names(bod_tab)[-1]) {
+    bod_tab[, (j) := fmt_millions(get(j))]
+  }
+  
+  # Rename columns
+  setnames(bod_tab,
+           old = names(bod_tab),
+           new = c("Intervention", "Deaths averted","DALYs averted","YLDs averted","YLLs averted"))
+  
+  # Print table (Word-friendly)
+  knitr::kable(
+    bod_tab,
+    format = "pipe",
+    align = c("l", "r", "r", "r", "r")
+  )
+}
+```
+
+\begin{exampleblock}{Headline}
+\footnotesize
+The combined WHO target package generates large health gains, with most benefits coming through avoided premature CVD deaths rather than morbidity reduction alone.
+\end{exampleblock}
+
+<!-- \begin{columns}[T] -->
+<!-- \begin{column}{0.55\textwidth} -->
+<!-- \textbf{Combined scenario (All Interventions), 2026--2050} -->
+<!-- \begin{itemize} -->
+<!--   \item \textbf{DALYs averted:} \texttt{[requires sl\_scalars\$total\_dalys\_all]} -->
+<!--   \item \textbf{YLLs averted:} \texttt{[requires sl\_scalars\$total\_ylls\_all]} -->
+<!--   \item \textbf{YLDs averted:} \texttt{[requires sl\_scalars\$total\_ylds\_all]} -->
+<!-- \end{itemize} -->
+
+<!-- \medskip -->
+<!-- \textbf{By individual intervention} -->
+<!-- \begin{itemize}\footnotesize -->
+<!--   \item HTN Control (General): \texttt{[requires sl\_scalars\$total\_dalys\_bp]} DALYs -->
+<!--   \item HTN Control (Diabetes): \texttt{[requires sl\_scalars\$total\_dalys\_bpd]} DALYs -->
+<!--   \item Improved Statin Uptake: \texttt{[requires sl\_scalars\$total\_dalys\_stat]} DALYs -->
+<!-- \end{itemize} -->
+<!-- \end{column} -->
+
+<!-- \begin{column}{0.43\textwidth} -->
+<!-- \begin{block}{YLL vs.\ YLD} -->
+<!-- \footnotesize -->
+<!-- YLLs (premature mortality) dominate the DALY total; YLDs (morbidity from prevalent cases) contribute a smaller but non-negligible share, reflecting the large prevalent CVD pool. -->
+<!-- \end{block} -->
+<!-- \end{column} -->
+<!-- \end{columns} -->
+
+<!-- \vspace{4pt} -->
+<!-- \footnotesize See Table 3 in the manuscript for the full burden-of-disease summary by intervention scenario. -->
 
 <!-- ## Top 15 Countries by Projected Impact -->
 

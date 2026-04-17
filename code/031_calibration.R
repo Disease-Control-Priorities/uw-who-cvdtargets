@@ -21,7 +21,7 @@ locs<- as.vector(locs$location)
 
 files <- list.files(
   path       = wd_data, 
-  pattern    = "tps", 
+  pattern    = "tps_inpt", 
   full.names = TRUE
 )
 
@@ -46,7 +46,7 @@ b_rates[IR<0, IR:=0]
 
 # Updating UNWPP2024
 
-pop20 <- fread(paste0(wd_data,"UN2024/","PopulationsAge20_full.csv")) 
+pop20 <- fread(paste0(wd_data,"PopulationsAge20_full.csv")) 
 
 pop20[location=="Turkiye", location:="Türkiye"]
 # China, Taiwan Province of China

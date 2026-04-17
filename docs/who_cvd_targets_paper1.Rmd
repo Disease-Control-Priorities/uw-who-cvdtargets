@@ -158,6 +158,8 @@ All input data used in this analysis are publicly available from their original 
 
 The primary outcome was cumulative CVD deaths averted relative to the BAU scenario over 2026--2050, disaggregated by intervention, cause of death, age group, sex, WHO region, and World Bank income group. Secondary outcomes included years of life lost (YLLs) averted, years lived with disability (YLDs) averted, disability-adjusted life years (DALYs) averted, and age-standardised mortality rates (ASMR) over time.
 
+Burden of disease was quantified using three complementary metrics: years of life lost (YLL), years lived with disability (YLD), and disability-adjusted life years (DALY), where $DALY = YLL + YLD$. Remaining life expectancy at each age of death was obtained from the United Nations World Population Prospects 2024 revision (medium variant), providing country- and year-specific values. Disability weights were derived from GBD 2023 data as the ratio of cause-specific YLDs to prevalence for each cause and location. No age weighting or time discounting was applied; all estimates are undiscounted (see Supplemental Material: DALY Calculation Methods).
+
 ## Sensitivity and uncertainty analysis
 
 The model was run under the primary set of assumptions described above. Formal probabilistic sensitivity analysis incorporating GBD uncertainty intervals and parameter distributions is planned as a subsequent extension. The present analysis reports central estimates derived from mean input parameters.
@@ -204,7 +206,7 @@ The present analysis reports central estimates based on mean input parameters fr
 
 ## Principal findings
 
-This study projected that simultaneous achievement of WHO targets for hypertension control and lipid-lowering therapy across `r n_countries` countries from 2026 to 2050 would avert approximately `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs. Hypertension control in the general population was the single most impactful intervention, averting `r fmt_m(total_bp)` million deaths, while lipid-lowering therapy contributed an additional `r fmt_m(total_stat)` million deaths averted. The multiplicative combination of these interventions yielded substantially greater benefits than any single strategy alone, affirming the complementary nature of blood pressure and lipid management for CVD prevention.
+This study projected that simultaneous achievement of WHO targets for hypertension control and lipid-lowering therapy across `r n_countries` countries from 2026 to 2050 would avert approximately `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs. Hypertension control in the general population was the single most impactful intervention, averting `r fmt_m(total_bp)` million deaths, while lipid-lowering therapy contributed an additional `r fmt_m(total_stat)` million deaths averted. The multiplicative combination of these interventions yielded greater benefits than any single strategy alone, although less than the sum of individual effects due to overlapping risk pathways, underscoring the complementary nature of blood pressure and lipid management for CVD prevention.
 
 ## Interpretation of hypertension control findings
 
@@ -415,7 +417,50 @@ See Tables 4--5 for WHO region and World Bank income group breakdowns.
 
 **Figure: conceptual framework of the modelling approach**
 
-**FigureThe pathway from target achievement to risk-factor change to cause-specific outcomes and economic consequences.**
+```{r state-diagram, fig.height=2.7}
+library(ggplot2)
+nodes <- data.table(
+  x=c(1,3.2,5.4), y=c(1,1,1),
+  label=c("Well\n(W)","Sick\n(K)","Dead\n(D)"),
+  fill=c("#d4edda","#fff3cd","#f8d7da")
+)
+arr_main <- data.table(
+  x1=c(1.40,3.60), y1=c(1,1), x2=c(2.80,5.00), y2=c(1,1),
+  lbl=c("IR \u00d7 \u03b5_IR","CF \u00d7 \u03b5_CF")
+)
+arr_bg <- data.table(
+  x1=c(1.0,3.2,3.0), y1=c(1.25,1.25,1.0),
+  x2=c(1.0,3.2,5.0), y2=c(0.62,0.62,0.62),
+  lbl=c("BG.mx","BG.mx","BG.mx.all")
+)
+ggplot() +
+  geom_tile(data=nodes, aes(x=x,y=y,fill=fill),
+            width=0.75,height=0.42,color="grey30",linewidth=0.8) +
+  scale_fill_identity() +
+  geom_text(data=nodes, aes(x=x,y=y,label=label), size=4, fontface="bold") +
+  geom_segment(data=arr_main,
+    aes(x=x1,y=y1,xend=x2,yend=y2),
+    arrow=arrow(length=unit(0.22,"cm"),type="closed"),
+    linewidth=1.2, color="#2171b5") +
+  geom_label(data=arr_main,
+    aes(x=(x1+x2)/2, y=y1+0.22, label=lbl),
+    size=3.2, fill="white", label.padding=unit(0.12,"cm"), color="#2171b5") +
+  geom_segment(data=arr_bg,
+    aes(x=x1,y=y1,xend=x2,yend=y2),
+    arrow=arrow(length=unit(0.16,"cm"),type="closed"),
+    linewidth=0.7, color="grey55", linetype="dashed") +
+  geom_label(data=arr_bg,
+    aes(x=(x1+x2)/2+0.2, y=(y1+y2)/2, label=lbl),
+    size=2.6, fill="white", color="grey50", label.padding=unit(0.08,"cm")) +
+  scale_x_continuous(limits=c(0.5,6.0)) +
+  scale_y_continuous(limits=c(0.28,1.58)) +
+  theme_void(base_size=11) +
+  labs(title="Multi-State Transition Model  |  Annual time step  |  Ages 20-95  |  4 CVD causes")
+```
+
+\small \textbf{Key:} $\varepsilon_{IR}$, $\varepsilon_{CF}$ = multiplicative effect ratios from the intervention module $\cdot$ BG.mx = background mortality $\cdot$ COVID-19 excess mortality applied 2020--2021 only
+
+**Figure: The pathway from target achievement to risk-factor change to cause-specific outcomes and economic consequences.**
 
 **Supplemental Figure S1.** Projected cumulative CVD deaths under the business-as-usual scenario, 2026--2050, across `r n_countries` countries.
 
@@ -920,3 +965,85 @@ $$\varepsilon_{CF,\text{total}} = \varepsilon_{CF,\text{BP}} \times \varepsilon_
 This multiplicative structure means the combined benefit exceeds the sum of individual effects, reflecting the partially independent causal pathways through which blood pressure control and lipid lowering reduce cardiovascular risk.
 
 (See Key Parameter Appendix for all statin effect sizes and their sources.)
+
+### DALY Calculation Methods {#sec:daly-methods}
+
+Burden of disease was quantified using disability-adjusted life years (DALYs), computed as the sum of years of life lost due to premature mortality (YLL) and years lived with disability (YLD). No age weighting or time discounting was applied. All computations were performed separately by age $a$, sex $s$, cause $c$, year $t$, location $\ell$, and intervention scenario $j$.
+
+#### Years of Life Lost (YLL)
+
+YLLs were computed as the product of the number of disease-specific deaths and the remaining life expectancy at the age of death:
+
+$$YLL_{a,s,c,t,\ell,j} = D_{a,s,c,t,\ell,j} \times e_x(a, t, \ell)$$
+
+where $D_{a,s,c,t,\ell,j}$ is the number of CVD deaths from cause $c$ (the `dead` variable from the state-transition model output) and $e_x(a, t, \ell)$ is the remaining life expectancy at exact age $a$ in year $t$ for location $\ell$, taken from the United Nations World Population Prospects 2024 revision, medium variant (both sexes combined). Life expectancy values are country- and year-specific, reflecting projected demographic conditions rather than a fixed global standard.
+
+#### Years Lived with Disability (YLD)
+
+YLDs were computed using a prevalence-based approach as the product of the number of prevalent CVD cases and a cause- and location-specific disability weight:
+
+$$YLD_{a,s,c,t,\ell,j} = K_{a,s,c,t,\ell,j} \times DW_{c,\ell}$$
+
+where $K_{a,s,c,t,\ell,j}$ is the number of individuals in the Sick (prevalent) state for cause $c$ from the state-transition model output, and $DW_{c,\ell}$ is the disability weight for cause $c$ in location $\ell$. Disability weights were derived from GBD 2023 data as the ratio of cause-specific years lived with disability to prevalence for each cause and location:
+
+$$DW_{c,\ell} = \frac{YLD^{\text{GBD}}_{c,\ell}}{Prevalence^{\text{GBD}}_{c,\ell}}$$
+
+This approach yields an implicit, frequency-weighted average disability weight that reflects the severity distribution observed in each country. No explicit duration of disability was modelled; the prevalence-based formulation captures the YLD burden attributable to the stock of prevalent cases at each time point.
+
+#### Disability-Adjusted Life Years (DALY)
+
+Total DALYs were computed as:
+
+$$DALY_{a,s,c,t,\ell,j} = YLL_{a,s,c,t,\ell,j} + YLD_{a,s,c,t,\ell,j}$$
+
+DALYs averted were computed as the difference between the business-as-usual (BAU) scenario and each intervention scenario, summed across all strata:
+
+$$\text{DALYs averted}_j = \sum_{a,s,c,t,\ell} DALY^{\text{BAU}}_{a,s,c,t,\ell} - \sum_{a,s,c,t,\ell} DALY^{j}_{a,s,c,t,\ell}$$
+
+The same differencing logic was applied separately to YLLs averted and YLDs averted.
+
+#### Reference Standards and Weights
+
+```{r daly-param-table, echo=FALSE}
+daly_params <- data.frame(
+  Parameter = c(
+    "Life table standard",
+    "Disability weight source",
+    "Disability weight derivation",
+    "Age weighting",
+    "Time discount rate",
+    "Duration of disability"
+  ),
+  Value = c(
+    "UNWPP 2024, medium variant",
+    "GBD 2023 (IHME)",
+    "YLD / Prevalence, by cause and location",
+    "None (K = 0)",
+    "None --- undiscounted (r = 0)",
+    "Prevalence-based (not explicitly modelled)"
+  ),
+  Year = c(
+    "2024",
+    "2023",
+    "2023",
+    "---",
+    "---",
+    "---"
+  ),
+  Notes = c(
+    "Country- and year-specific remaining life expectancy at exact age x (ex), both sexes combined",
+    "IHME-GBD_2023_DATA-52d32656-1",
+    "Implicit frequency-weighted severity; country-specific for IHD, ischaemic stroke, haemorrhagic stroke, HHD",
+    "Uniform weighting across all ages",
+    "Future health losses valued equally regardless of when they occur",
+    "YLD = prevalent cases x DW at each annual time step; no explicit incidence x duration calculation"
+  ),
+  stringsAsFactors = FALSE
+)
+kable(daly_params, col.names = c("Parameter", "Value or Source", "Year", "Notes"),
+      align = c("l", "l", "c", "l"))
+```
+
+*Sources: United Nations, Department of Economic and Social Affairs, Population Division (2024). World Population Prospects 2024, Online Edition. Institute for Health Metrics and Evaluation (IHME). Global Burden of Disease Study 2023 (GBD 2023) Results. Seattle, United States: IHME, 2024.*
+
+All DALY, YLL, and YLD results reported in the main manuscript are computed using the above specifications, as implemented in `07_output_dalys.R`.

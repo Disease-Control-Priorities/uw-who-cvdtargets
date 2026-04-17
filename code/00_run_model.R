@@ -114,3 +114,8 @@ source("06_run_scenarios_multiple.R")
 # Run Aim 2: HTN control scenarios, 150 Million by 2030
 source("06_run_scenarios_targets.R")
 
+#...........................................................
+# 07. Run Burden of Disease ----
+#...........................................................
+
+source("07_output_dalys.R")

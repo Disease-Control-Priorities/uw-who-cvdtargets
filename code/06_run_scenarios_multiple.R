@@ -485,6 +485,8 @@ calculate_antihypertensive_impact_etihad <- function(intervention_rates,
   diabetes_prop <- diabetes_prop[, .(location, Year, age, sex, bp_cat, diabetes)]
   setnames(diabetes_prop, "Year", "year")
   
+  etihad_effects <- merge(etihad_effects, diabetes_prop, all.x = TRUE)
+  
   etihad_effects[, etihad_effect :=
                    calculate_etihad_cumulative_rr(bp_cat, cause,
                                                   diabetes_weight = diabetes)]
