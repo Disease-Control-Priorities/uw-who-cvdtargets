@@ -1002,3 +1002,116 @@ After adding the new exports, check that:
 Only after completing this checklist should you add any code.
 Produce a summary of all changes at the end, listing every new object
 created, every existing object aliased, and the exact file paths written.
+
+#######################################################3
+Please modify the attached HTML figure `cvd_model_flowchart.html` so it is faithful to the actual model logic in `06_run_scenarios_multiple.R`.
+
+Goal:
+Revise the figure to be more loyal to the implemented model, improve visual separation between blocks, and remove any elements that are not in the code. Do not hallucinate new modules, states, or pathways. Only show structures that are explicitly supported by the model code.
+
+Only Files to modify:
+- `cvd_model_flowchart.html`
+
+
+Required changes
+
+1) Make the four modeled CVD causes explicit
+The figure must clearly show that the model tracks four CVD causes separately:
+- Ischemic heart disease (IHD / ihd)
+- Ischemic stroke (istroke)
+- Hypertensive heart disease (hhd)
+- Hemorrhagic stroke / intracerebral hemorrhage (hstroke)
+
+These causes are explicitly coded in the model. Show them as parallel cause-specific model dimensions, not as a vague generic “CVD” block.
+
+2) Remove unsupported disease-state detail
+The current figure shows:
+- Mild CVD
+- Moderate CVD
+- Severe CVD
+- Post-event
+- Mild → Moderate
+- Moderate → Severe
+- Any → Post-event
+
+These are not part of the implemented model and must be removed.
+
+The implemented state model is much simpler and should be represented as:
+- Well
+- Sick
+- Dead
+
+Use the variable names when helpful:
+- well
+- sick
+- dead
+
+If you want to show transition logic, keep it aligned with the code:
+- Well → Sick via incidence / new cases
+- Sick → Dead via cause-specific fatality
+- Background mortality separately affects population survival
+Do not invent extra sub-states or post-event pathways.
+
+3) Remove or rewrite unsupported population/fertility content
+The current figure includes age-specific fertility and a cohort-component population projection / CCPM section. That should not appear unless you can verify it is truly part of this run script and model logic.
+
+The user’s model is an adult cohort model, so there should be no fertility module shown. Do not show births, fertility, or a general population-projection module unless directly supported by the code used here.
+
+If that entire panel is unsupported, delete it and rebalance the layout.
+
+4) Highlight all four intervention/risk-factor pathways actually included
+The figure must clearly show the four intervention families that are included in the model:
+- Antihypertensives / hypertension control
+- Sodium intake reduction (salt reduction)
+- Industrial trans fat elimination / TFA ban
+- Statin uptake
+
+Show them as intervention inputs that modify the cause-specific rates already in the model. Keep wording concrete and policy-relevant.
+
+If helpful, note that antihypertensive control includes a diabetes-specific hypertension-control component in the code, but the main visual emphasis should remain on the four primary intervention groups above.
+
+5) Improve visual separation and eliminate overlap
+The current display has overlapping blocks and crowded spacing.
+Please:
+- increase whitespace between step boxes
+- prevent labels and arrows from crossing text
+- align columns and headers cleanly
+- make block boundaries clearer
+- keep the figure readable at normal browser zoom
+- rebalance the canvas after removing unsupported modules
+
+Do not just slightly nudge objects; redesign spacing so the diagram reads cleanly.
+
+6) Keep the figure conservative and code-faithful
+Important constraints:
+- Do not add modules that are not explicit in the code
+- Do not add fertility, births, migration, post-event states, severity ladders, or recovery states unless directly implemented
+- Do not imply a richer natural-history model than what exists
+- Prefer a simpler but correct diagram over a more elaborate but inaccurate one
+
+7) Keep current steps but align better with conceptual structure
+A simpler structure would be better, for example:
+- Inputs / calibration data
+- Initial adult cohort states (well, sick, dead)
+-  Cause-specific transition/rate framework across the four CVD causes
+- Intervention modules (antihypertensives, sodium, TFA, statins) modifying incidence and/or fatality
+- Annual state updating / scenario outputs
+
+This is only a suggestion. Final structure should follow the actual code.
+
+8) Deliverables
+- directly edit `cvd_model_flowchart.html`
+- keep it as a self-contained HTML/SVG file
+- preserve pan/zoom behavior if possible
+- provide a short summary of what you changed and why
+- explicitly list any figure elements you removed because they were unsupported by the model
+
+Grounding notes from the code and current figure
+Use these as hard constraints:
+- The code tracks the four causes explicitly: ihd, istroke, hstroke, hhd
+- The implemented state variables include well, sick, dead, pop, newcases
+- The current HTML figure incorrectly includes mild/moderate/severe/post-event states
+- The current HTML figure also includes a fertility / CCPM population-projection panel that should not be shown unless directly justified by the run script
+- The figure should prominently show the intervention set: antihypertensives, sodium reduction, TFA elimination, statins
+
+Please make the revised figure cleaner, more minimal, and more faithful to the actual runned model.
