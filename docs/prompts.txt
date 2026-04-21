@@ -1115,3 +1115,174 @@ Use these as hard constraints:
 - The figure should prominently show the intervention set: antihypertensives, sodium reduction, TFA elimination, statins
 
 Please make the revised figure cleaner, more minimal, and more faithful to the actual runned model.
+
+#################################################################################
+
+Refactor `08_economic_value_calculation.R` to compute a Value of Statistical Life (VSL) analysis for this project.
+
+Goal
+- Modify **only** `08_economic_value_calculation.R`.
+- Convert the workflow to a clean, idiomatic **data.table** implementation.
+- Remove figures, plotting code, and any logic not directly needed for the VSL analysis.
+- The script should compare **intervention scenarios vs baseline** using outputs produced by `06_run_scenarios_multiple`.
+- The script should save an **`.rds` output with one row per country-year-scenario comparison** containing deaths averted, population, VSL calculation columns under multiple income elasticities, GNI, and WHO region.
+
+Method reference
+- Follow the VSL approach from the Nature Medicine paper cited in the file comments and here:
+  `https://www.nature.com/articles/s41591-024-03248-4?fromPaywallRec=false#code-availability`
+- Use the paper/code logic for income-adjusted VSL with alternative elasticities. The paper discusses sensitivity analyses using lower and higher income elasticities (for example 1.0 and 1.5), and the current script also already defines baseline/sensitivity elasticities. Preserve that general framework unless adaptation is needed for this project. :contentReference[oaicite:0]{index=0}
+
+Project-specific inputs
+- Scenario outputs come from: `06_run_scenarios_multiple`
+- GNI file: `Data/raw/API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv`
+- You may inspect the existing `08_economic_value_calculation.R` for useful constants or formulas, but the refactor should be tailored to this repository’s scenario outputs, not the original avoidable-mortality example.
+
+Required behavior
+1. Read baseline and intervention outputs from the existing scenario pipeline.
+2. Compute **deaths averted** as intervention deaths relative to baseline, at minimum by:
+   - country
+   - year
+   - scenario
+   - and any other dimensions required before collapsing to country-year if needed
+3. Produce a final country-year level dataset with at least these columns:
+   - `location` or `country`
+   - `iso3` if available
+   - `year`
+   - `scenario`
+   - `deaths_baseline`
+   - `deaths_intervention`
+   - `deaths_averted`
+   - `population`
+   - `gni_pc_ppp`
+   - `who_region`
+   - VSL columns for each elasticity assumption, clearly named, e.g.:
+     - `vsl_e1_0`
+     - `vsl_e1_2`
+     - `vsl_e1_5`
+     - `economic_value_e1_0`
+     - `economic_value_e1_2`
+     - `economic_value_e1_5`
+4. Save the result as an `.rds` file in the project output folder.
+5. Keep the output ready for later table/figure production; do not generate tables or figures in this script.
+
+Implementation requirements
+- Use **data.table only** for data manipulation. Avoid dplyr/tidyr pipelines in the refactor.
+- Keep the script self-contained and readable.
+- Add brief comments explaining:
+  - which scenario files are loaded
+  - how baseline vs intervention are matched
+  - how deaths averted are calculated
+  - how GNI is merged
+  - how WHO regions are assigned
+  - how VSL is calculated under each elasticity
+- Make the code robust to missing GNI values:
+  - if a target year is missing, impute from the nearest available year for that country
+  - document the rule in comments
+- Do not change any other file.
+- Do not add plotting libraries or figure export logic.
+- Do not preserve legacy code unless it is directly useful for the VSL workflow.
+
+Important adaptation guidance
+- This is **not** the original avoidable mortality application from the paper. Adapt the VSL calculation to the model outputs from `06_run_scenarios_multiple`.
+- Assume the core economic quantity for this script is the monetary value of **deaths averted** under each intervention scenario relative to baseline.
+- If the scenario outputs are age-sex specific, do the comparison at the most granular level needed and then aggregate consistently to country-year-scenario.
+- Use clear object names and avoid hard-coded file names when possible, except for the provided GNI file.
+
+Deliverables
+1. The fully refactored `08_economic_value_calculation.R`
+2. A short summary in your final response covering:
+   - what inputs the script expects
+   - what output `.rds` file it writes
+   - the final schema of the saved dataset
+   - any assumptions you had to make about the structure of `06_run_scenarios_multiple` outputs
+
+Before editing
+- First inspect the current `08_economic_value_calculation.R` and the outputs/read paths used by `06_run_scenarios_multiple`.
+- Infer the existing repository conventions rather than inventing a new structure.
+- Keep the refactor minimal in scope: only this file, only VSL-related work.
+
+
+##################################################################################
+
+Refactor `08_economic_value_calculation.R` to compute a Value of Statistical Life (VSL) analysis for this project.
+
+Goal
+- Modify **only** `08_economic_value_calculation.R`.
+- Convert the workflow to a clean, idiomatic **data.table** implementation.
+- Remove figures, plotting code, and any logic not directly needed for the VSL analysis.
+- The script should compare **intervention scenarios vs baseline** using outputs produced by `06_run_scenarios_multiple`.
+- The script should save an **`.rds` output with one row per country-year-scenario comparison** containing deaths averted, population, VSL calculation columns under multiple income elasticities, GNI, and WHO region.
+
+Method reference
+- Follow the VSL approach from the Nature Medicine paper cited in the file comments and here:
+  `https://www.nature.com/articles/s41591-024-03248-4?fromPaywallRec=false#code-availability`
+- Use the paper/code logic for income-adjusted VSL with alternative elasticities. The paper discusses sensitivity analyses using lower and higher income elasticities (for example 1.0 and 1.5), and the current script also already defines baseline/sensitivity elasticities. Preserve that general framework unless adaptation is needed for this project. :contentReference[oaicite:0]{index=0}
+
+Project-specific inputs
+- Scenario outputs come from: `06_run_scenarios_multiple`
+- GNI file: `Data/raw/API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv`
+- You may inspect the existing `08_economic_value_calculation.R` for useful constants or formulas, but the refactor should be tailored to this repository’s scenario outputs, not the original avoidable-mortality example.
+
+Required behavior
+1. Read baseline and intervention outputs from the existing scenario pipeline.
+2. Compute **deaths averted** as intervention deaths relative to baseline, at minimum by:
+   - country
+   - year
+   - scenario
+   - and any other dimensions required before collapsing to country-year if needed
+3. Produce a final country-year level dataset with at least these columns:
+   - `location` or `country`
+   - `iso3` if available
+   - `year`
+   - `scenario`
+   - `deaths_baseline`
+   - `deaths_intervention`
+   - `deaths_averted`
+   - `population`
+   - `gni_pc_ppp`
+   - `who_region`
+   - VSL columns for each elasticity assumption, clearly named, e.g.:
+     - `vsl_e1_0`
+     - `vsl_e1_2`
+     - `vsl_e1_5`
+     - `economic_value_e1_0`
+     - `economic_value_e1_2`
+     - `economic_value_e1_5`
+4. Save the result as an `.rds` file in the project output folder.
+5. Keep the output ready for later table/figure production; do not generate tables or figures in this script.
+
+Implementation requirements
+- Use **data.table only** for data manipulation. Avoid dplyr/tidyr pipelines in the refactor.
+- Keep the script self-contained and readable.
+- Add brief comments explaining:
+  - which scenario files are loaded
+  - how baseline vs intervention are matched
+  - how deaths averted are calculated
+  - how GNI is merged
+  - how WHO regions are assigned
+  - how VSL is calculated under each elasticity
+- Make the code robust to missing GNI values:
+  - if a target year is missing, impute from the nearest available year for that country
+  - document the rule in comments
+- Do not change any other file.
+- Do not add plotting libraries or figure export logic.
+- Do not preserve legacy code unless it is directly useful for the VSL workflow.
+
+Important adaptation guidance
+- This is **not** the original avoidable mortality application from the paper. Adapt the VSL calculation to the model outputs from `06_run_scenarios_multiple`.
+- Assume the core economic quantity for this script is the monetary value of **deaths averted** under each intervention scenario relative to baseline.
+- If the scenario outputs are age-sex specific, do the comparison at the most granular level needed and then aggregate consistently to country-year-scenario.
+- Use clear object names and avoid hard-coded file names when possible, except for the provided GNI file.
+
+Deliverables
+1. The fully refactored `08_economic_value_calculation.R`
+2. A short summary in your final response covering:
+   - what inputs the script expects
+   - what output `.rds` file it writes
+   - the final schema of the saved dataset
+   - any assumptions you had to make about the structure of `06_run_scenarios_multiple` outputs
+
+Before editing
+- First inspect the current `08_economic_value_calculation.R` and the outputs/read paths used by `06_run_scenarios_multiple`.
+- Infer the existing repository conventions rather than inventing a new structure.
+- Keep the refactor minimal in scope: only this file, only VSL-related work.
