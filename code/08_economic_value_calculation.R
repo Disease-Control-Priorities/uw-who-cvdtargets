@@ -15,23 +15,14 @@
 # Output:
 #   output/08_vsl_results.rds  — one row per country × year × scenario
 
-rm(list = ls())
-
-library(data.table)
-library(countrycode)
-
 # ── 0) Paths ──────────────────────────────────────────────────────────────
 
 # Resolve project root from this script's location
-PROJ_ROOT <- normalizePath(file.path(dirname(sys.frame(1)$ofile), ".."),
-                           mustWork = FALSE)
-if (!dir.exists(PROJ_ROOT)) PROJ_ROOT <- getwd()
-
-DIR_MODEL    <- file.path(PROJ_ROOT, "output", "out_model")
-DIR_OUT      <- file.path(PROJ_ROOT, "output")
-GNI_FILE     <- file.path(PROJ_ROOT, "data", "raw",
+DIR_MODEL    <- file.path(wd, "output", "out_model")
+DIR_OUT      <- file.path(wd, "output")
+GNI_FILE     <- file.path(wd, "data", "raw",
                            "API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv")
-COUNTRY_FILE <- file.path(PROJ_ROOT, "data", "processed",
+COUNTRY_FILE <- file.path(wd, "data", "processed",
                            "Country_groupings_extended.csv")
 OUT_FILE     <- file.path(DIR_OUT, "08_vsl_results.rds")
 
@@ -55,6 +46,58 @@ VSL_ELAST_LMIC  <- 1.2   # elasticity for countries below USA income
 VSL_ELAST_LOW   <- 1.0   # sensitivity-low (uniform)
 VSL_ELAST_HIGH  <- 1.5   # sensitivity-high (uniform)
 VSL_RATIO_FLOOR <- 20    # minimum VSL-to-GNI ratio (floors very-low-income VSL)
+
+
+## Remaining LIFE EXPECTANCy to compute VSLY
+
+
+lt <- as.data.table(read_excel(paste0(wd_raw,"WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx"), 
+                               sheet = "Medium variant", range = "A17:DH22967"))
+
+setnames(lt,c("Region, subregion, country or area *","Notes","Location code","ISO3 Alpha-code","ISO2 Alpha-code","SDMX code**","Type","Parent code","Year"),
+         c("location","Notes","Locationcode","ISO3","ISO2","SDMX","Type","Parencode","year"))
+
+lt_interp <- melt(lt,id.vars = colnames(lt)[1:11],value.name = "le",variable.name = "age")
+
+# Filter the data.table
+lt_interp <- lt_interp[year >= 2025,c("location","age","year","le"),with = F]
+
+lt_interp[,age := as.numeric(as.character(str_extract_all(age, "\\d+")))]
+
+lt_interp[,le:=as.numeric(le)]
+
+loc_fix_lt <- c(
+  "Bolivia (Plurinational State of)" = "Bolivia",
+  "Côte d'Ivoire"                   = "Ivory Coast",
+  "China, Taiwan Province of China" = "Taiwan (Province of China)",
+  "United Republic of Tanzania"     = "Tanzania",
+  "Türkiye"                         = "Turkey",
+  "United States of America"        = "United States",
+  "Dem. People's Republic of Korea" = "Democratic People's Republic of Korea",
+  "Micronesia (Fed. States of)"     = "Micronesia (Federated States of)",
+  "State of Palestine"              = "Palestine"
+)
+
+lt_interp[
+  location %in% names(loc_fix_lt),
+  location := loc_fix_lt[location]
+]
+
+# Cleaning
+rm(lt)
+
+## GNI Growth
+
+# For extrapolating GNI growth rates, we can use World Bank data on GNI per capita.
+# and for future (after last observation), implicit growth rates Socioeconomic Projections of the Shared Socioeconomic Pathways (SSPs), hosted by IIASA
+# Release 3.1, July 2024
+
+ssp_gdp <- as.data.table(read_excel(paste0(wd_raw,"1721734326790-ssp_basic_drivers_release_3.1_full.xlsx"), 
+                                          sheet = "data"))
+
+# Filter scenario SSPs to SSP2 (middle-of-the-road) and years 2010–2050.
+# and variable "GDP per capita, PPP (constant 2017 international $)"
+ssp_gdp <- ssp_gdp[Scenario=="SSP2" & Variable=="GDP|PPP [per capita]",]
 
 # ── 2) Load model outputs ──────────────────────────────────────────────────
 #
@@ -282,3 +325,7 @@ cat("Rows:", nrow(dt_final), "| Columns:", ncol(dt_final), "\n")
 cat("Scenarios:", paste(unique(dt_final$scenario), collapse = ", "), "\n")
 cat("Years:", min(dt_final$year), "–", max(dt_final$year), "\n")
 cat("Countries:", length(unique(dt_final$location)), "\n")
+
+# Fwrite to check in excel if needed
+fwrite(dt_final, file.path(DIR_OUT, "08_vsl_results.csv"))
+
