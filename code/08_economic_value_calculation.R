@@ -1,18 +1,26 @@
-# 08_economic_value_calculation_v3.R
+# 08_economic_value_calculation_v4.R
 # VSL / VSLY analysis: monetary value of deaths averted under each intervention
 # versus baseline.
 #
 # Method:
-#   - Value of Statistical Life (VSL) transferred from a U.S. reference using
-#     income-adjustment (Robinson & Hammitt 2011; Robinson et al. 2019)
-#   - Constant Value of a Statistical Life Year (VSLY) derived as:
+#   - Value of Statistical Life (VSL) is transferred from a U.S. reference
+#     using income adjustment (Robinson & Hammitt 2011; Robinson et al. 2019).
+#   - Constant Value of a Statistical Life Year (VSLY) is derived as:
 #       VSLY = VSL / LE_avg_adult
-#     where LE_avg_adult is undiscounted remaining life expectancy at the
-#     average age of the adult population. This follows the Robinson et al.
-#     (2019) reference-case proxy for VSLY.
+#     where LE_avg_adult is the UNDISCOUNTED remaining life expectancy at the
+#     average age of the adult population in each country-year-scenario.
+#   - Monetary VSLY value is computed as:
+#       VSLY_value = VSLY × Σ_a [ deaths_averted(a) × LE(a) ]
+#     i.e. each averted death is credited with UNDISCOUNTED remaining life
+#     expectancy at the age of death, aggregated using the age distribution of
+#     deaths averted.
+#   - Because the VSLY denominator uses remaining life expectancy at the
+#     average adult age, while the VSLY numerator uses remaining life
+#     expectancy at the age of death, VSLY totals are not mechanically equal
+#     to VSL totals.
 #   - GNI per capita is kept as observed from World Bank data and projected
 #     forward beyond the last observed year using SSP2 annual GDP growth rates
-#     (IIASA SSP 3.1), following v1 of this script.
+#     (IIASA SSP 3.1).
 #
 # ── Methodological notes / departures from Robinson et al. (2019) ────────────
 #
@@ -62,7 +70,7 @@ suppressPackageStartupMessages({
   library(stringr)
 })
 
-# ── 0) Paths ──────────────────────────────────────────────────────────────
+# 0) Paths ----
 DIR_MODEL    <- file.path(wd, "output", "out_model")
 DIR_OUT      <- file.path(wd, "output")
 GNI_FILE     <- file.path(wd, "data", "raw",
@@ -80,7 +88,7 @@ OUT_SUMM_VSL  <- file.path(DIR_OUT, "08_vsl_summary_table.rds")
 OUT_SUMM_VSLY <- file.path(DIR_OUT, "08_vsly_summary_table.rds")
 OUT_SUMM_APP  <- file.path(DIR_OUT, "08_vsl_vsly_summary_table_appended.rds")
 
-# ── 1) Parameters ─────────────────────────────────────────────────────────
+# 1) Parameters ----
 #
 # VSL reference (Robinson & Hammitt 2011):
 #   VSL_USA = US_VSL_RATIO × GNI_pc_USA
@@ -92,13 +100,21 @@ OUT_SUMM_APP  <- file.path(DIR_OUT, "08_vsl_vsly_summary_table_appended.rds")
 #   e1_5  — SENSITIVITY HIGH: uniform 1.5
 #
 # VSLY (Robinson et al. 2019 reference case):
-#   VSLY = VSL / LE_avg_adult  (undiscounted, constant value)
+# VSLY:
+#   VSLY = VSL / LE_avg_adult
+#   where LE_avg_adult is undiscounted remaining life expectancy at the
+#   average adult age.
+#
+# VSLY monetary value (per country-year-scenario):
+#   VSLY_value = VSLY × Σ_a [ deaths_averted(a) × LE(a) ]
+#   where LE(a) is undiscounted remaining life expectancy at the age of death.
 #
 # Discounting:
-#   Time-series discount factor brings annual benefit streams to BASE_YEAR
-#   present value: disc_rX = 1 / (1 + rX)^(year - BASE_YEAR)
-#   BASE_YEAR = 2026 (first full intervention year)
-#
+#   Time-series (calendar-year) discount factors bring annual benefit streams
+#   to BASE_YEAR present value:
+#      disc_rX = 1 / (1 + rX)^(year - BASE_YEAR)
+#   These calendar-year discount factors are then applied to VSL, VSLY, and
+#   GNI-based outputs in section 10.
 # Minimum VSL floor: VSL / GNI_pc >= VSL_RATIO_FLOOR
 
 US_VSL_RATIO    <- 160   # VSL / GNI_pc reference ratio for USA
@@ -114,7 +130,26 @@ DISC_RATES <- c(r1 = 0.01, r3 = 0.03, r5 = 0.05)
 BASE_YEAR  <- 2026L
 SUMMARY_YEARS <- c(2026L, 2030L, 2040L, 2050L)
 
-# ── 2) Load model outputs ─────────────────────────────────────────────────
+# Within-lifetime discount rate used to annuitise remaining life expectancy.
+# Set equal to r3 (3%) per Robinson et al. (2019) convention. This is distinct
+# from the calendar-year discount factors disc_rX defined later.
+R_VSLY <- unname(DISC_RATES["r3"])
+
+# Closed-form annuity: present value of 1 unit per year for `le` years,
+# discounted at within-lifetime rate `r`.
+#   disc_life_years(LE, r) = (1 - (1 + r)^(-LE)) / r
+# Returns NA for non-positive or missing LE. Gracefully handles r == 0 by
+# returning LE itself (undiscounted case).
+disc_life_years <- function(le, r) {
+  le <- as.numeric(le)
+  if (r == 0) {
+    fifelse(is.na(le) | le <= 0, NA_real_, le)
+  } else {
+    fifelse(is.na(le) | le <= 0, NA_real_, (1 - (1 + r)^(-le)) / r)
+  }
+}
+
+# 2) Load model outputs ----
 model_files <- list.files(
   DIR_MODEL,
   pattern = "^model_output_.*\\.rds$",
@@ -137,9 +172,15 @@ if (length(miss_cols) > 0) {
   stop("Model output is missing required columns: ", paste(miss_cols, collapse = ", "))
 }
 
-# ── 3) Aggregate deaths and scenario-specific population ──────────────────
-# Population is scenario-specific because intervention scenarios can change
-# total population counts over time.
+# 3) Aggregate deaths and define population for income denominators ----
+# Deaths are aggregated from the model by country-year-scenario.
+#
+# The model also provides scenario-specific population counts, but for this
+# economic valuation script the `population` variable used in downstream income
+# denominators is replaced with UN WPP 2024 population counts by country-year.
+# This provides a common, externally sourced population base for calculating
+# average adult age, life expectancy summaries, and total national income
+# denominators across scenarios.
 
 dt_deaths <- dt_model[
   , .(deaths = sum(dead, na.rm = TRUE)),
@@ -160,7 +201,37 @@ dt_deaths <- dt_pop_total[
   on = .(location, year, scenario, htn_target_scenario)
 ]
 
-# ── 4) Deaths averted relative to baseline ────────────────────────────────
+
+# Despite interventions potentially afecting population size,
+# we will use to compute national total income an average LE and VSLY 
+# based on the population counts from the UN WPP 2024 revision,
+#which are not scenario-specific. This is because the WPP 
+# population counts are more robust and consistent for this purpose,
+# while the model's scenario-specific population counts may be subject to greater 
+#uncertainty and variability due to intervention effects. Using WPP population 
+#allows us to compute a stable average LE and VSLY for each country-year, 
+#which can then be applied across scenarios for a more consistent economic 
+# valuation of deaths averted.
+
+dt_pop_unwpp <- as.data.table(readRDS(paste0(wd_data,"PopulationsSingleAge0050.rds")))
+
+dt_pop_unwpp[age>=95, age:= 95]
+
+setnames(dt_pop_unwpp, c("year_id"), c("year"))
+
+dt_pop_unwpp <- dt_pop_unwpp[, .(Nx = sum(Nx)), by = .(location, year)]
+
+# merge to deaths data
+dt_deaths <- dt_pop_unwpp[
+  dt_deaths,
+  on = .(location, year)] 
+
+# replace poulation = Nx and drop population
+
+dt_deaths[, population := Nx]
+dt_deaths[, Nx := NULL]
+
+# 4) Deaths averted relative to baseline ----
 dt_baseline <- dt_deaths[
   scenario == "baseline",
   .(location, year, htn_target_scenario, deaths_baseline = deaths)
@@ -174,7 +245,7 @@ dt_compare <- dt_baseline[
 setnames(dt_compare, "deaths", "deaths_intervention")
 dt_compare[, deaths_averted := deaths_baseline - deaths_intervention]
 
-# ── 5) Country mapping ────────────────────────────────────────────────────
+# 5) Country mapping ----
 country_grp <- fread(COUNTRY_FILE)
 
 required_country_cols <- c("iso3", "location", "region")
@@ -195,7 +266,7 @@ if (any(missing_iso3)) {
 }
 setnames(dt_compare, "region", "who_region")
 
-# ── 6) GNI per capita with SSP2 forward projection ────────────────────────
+# 6) GNI per capita with SSP2 forward projection ----
 #
 # Strategy:
 #   - Keep observed World Bank GNI per capita PPP values unchanged.
@@ -356,16 +427,27 @@ if (nrow(us_gni) == 0) {
 }
 dt_compare <- us_gni[dt_compare, on = .(year)]
 
-# ── 7) Life expectancy at average adult age ────────────────────────────────
+# 7) Life expectancy at average adult age ----
 #
 # Robinson et al. (2019) reference case: derive a constant VSLY from the
 # population-average VSL divided by remaining life expectancy at the average
 # age of the adult population. LE is undiscounted (no annuity formula).
+
+# We compute remaining life expectancy at the average age of the adult
+# population for each country-year-scenario. This quantity, `le_avg_adult`,
+# is used as the denominator for the constant VSLY:
+#
+#   VSLY = VSL / LE_avg_adult
 #
 # Steps:
-#   1. Compute avg_adult_age = Σ(pop × age) / Σ(pop)  for adult ages only.
-#   2. Map to the WPP 5-year lower-bound age group.
-#   3. Rolling nearest-year join to lt_interp to get le_avg_adult.
+#   1. Compute avg_adult_age = Σ(pop × age) / Σ(pop) for adult ages only.
+#   2. Map avg_adult_age to the WPP 5-year lower-bound age group.
+#   3. Join to WPP life tables to obtain le_avg_adult.
+#
+# We also compute `le_avg_adult_disc` as an auxiliary discounted version of
+# remaining life expectancy, but it is not used in the active VSLY formula in
+# this version of the script.
+
 
 if (!file.exists(LT_FILE) && !exists("lt_interp")) {
   stop("Life expectancy input not found. Expected file: ", LT_FILE,
@@ -456,7 +538,96 @@ dt_compare <- dt_le_lookup[
   on = .(location, year, scenario, htn_target_scenario)
 ]
 
-# ── 8) VSL transfer ───────────────────────────────────────────────────────
+# Discounted LE at the AVERAGE ADULT AGE (denominator for VSLY).
+# Annuity at R_VSLY. See disc_life_years() helper defined in section 1.
+dt_compare[, le_avg_adult_disc := disc_life_years(le_avg_adult, R_VSLY)]
+
+# 7b) Age-specific life-years gained at age of death (Robinson et al. 2019) ----
+
+#
+# To estimate VSLY-based monetary values, we calculate life-years gained using
+# the age distribution of deaths averted and remaining life expectancy at the
+# age of death.
+#
+# Pipeline:
+#   1. Aggregate baseline and intervention deaths by location, year, scenario,
+#      htn_target_scenario, and age.
+#   2. Compute age-specific deaths averted = baseline - intervention.
+#   3. Merge age-specific remaining life expectancy from WPP life tables.
+#   4. Aggregate to country-year-scenario:
+#         life_years_gained_undisc = Σ_a deaths_averted(a) × LE(a)
+#         life_years_gained_disc   = Σ_a deaths_averted(a) × LE_disc(a)
+#
+# In the active implementation of this script, VSLY monetary values use
+# `life_years_gained_undisc`. The discounted version is retained as an
+# auxiliary diagnostic quantity.
+
+# Age-specific deaths (all scenarios)
+dt_deaths_age <- dt_model[
+  , .(deaths = sum(dead, na.rm = TRUE)),
+  by = .(location, year, scenario, htn_target_scenario, age)
+]
+
+# Baseline deaths by age
+dt_baseline_age <- dt_deaths_age[
+  scenario == "baseline",
+  .(location, year, age, htn_target_scenario, deaths_baseline = deaths)
+]
+
+# Intervention scenarios only; compute age-specific deaths averted
+dt_deaths_age <- dt_deaths_age[scenario != "baseline"]
+dt_deaths_age <- dt_baseline_age[
+  dt_deaths_age,
+  on = .(location, year, age, htn_target_scenario)
+]
+setnames(dt_deaths_age, "deaths", "deaths_intervention_age")
+dt_deaths_age[, deaths_averted_age := deaths_baseline - deaths_intervention_age]
+
+# Map single-year age to WPP 5-year lower-bound age group (same scheme as
+# section 7 for internal consistency).
+dt_deaths_age[, age_ref_5y := pmin(MAX_MODEL_AGE,
+                                   (as.integer(floor(age)) %/% 5L) * 5L)]
+
+# Age-specific LE from WPP lt_interp (rolling nearest-year join).
+# Use a renamed copy so the `age` column in lt_interp can match age_ref_5y
+# without colliding with the single-year `age` already in dt_deaths_age.
+lt_age <- lt_interp[, .(location, year, age_ref_5y = age, le_age = le)]
+setkey(lt_age,        location, age_ref_5y, year)
+setkey(dt_deaths_age, location, age_ref_5y, year)
+dt_deaths_age <- lt_age[
+  dt_deaths_age,
+  on = .(location, age_ref_5y, year),
+  roll = "nearest"
+]
+
+n_miss_le_age <- sum(is.na(dt_deaths_age$le_age))
+if (n_miss_le_age > 0) {
+  warning(n_miss_le_age,
+          " age-specific rows missing remaining life expectancy after ",
+          "lt_interp join. Check location-name alignment.")
+}
+
+# Discounted LE at age of death (annuity at R_VSLY)
+dt_deaths_age[, le_age_disc := disc_life_years(le_age, R_VSLY)]
+
+# Aggregate life-years gained to country-year-scenario grain
+dt_ly_gained <- dt_deaths_age[
+  , .(
+    life_years_gained_undisc = sum(deaths_averted_age * le_age,      na.rm = TRUE),
+    life_years_gained_disc   = sum(deaths_averted_age * le_age_disc, na.rm = TRUE),
+    # Population-weighted average age-of-death (informational only)
+    avg_age_of_death_averted = sum(age * deaths_averted_age, na.rm = TRUE) /
+      sum(deaths_averted_age,        na.rm = TRUE)
+  ),
+  by = .(location, year, scenario, htn_target_scenario)
+]
+
+dt_compare <- dt_ly_gained[
+  dt_compare,
+  on = .(location, year, scenario, htn_target_scenario)
+]
+
+# 8) VSL transfer ─----
 # VSL_country = US_VSL_RATIO × GNI_pc_USA × (GNI_pc_country / GNI_pc_USA)^elasticity
 # Floor: VSL >= VSL_RATIO_FLOOR × GNI_pc_country
 
@@ -476,38 +647,69 @@ dt_compare[, vsl_e1_0 := pmax(vsl_e1_0, VSL_RATIO_FLOOR * gni_pc_ppp, na.rm = TR
 dt_compare[, vsl_e1_2 := pmax(vsl_e1_2, VSL_RATIO_FLOOR * gni_pc_ppp, na.rm = TRUE)]
 dt_compare[, vsl_e1_5 := pmax(vsl_e1_5, VSL_RATIO_FLOOR * gni_pc_ppp, na.rm = TRUE)]
 
-# ── 9) Constant VSLY (Robinson et al. 2019 reference case) ────────────────
-# VSLY = VSL / LE_avg_adult  (undiscounted, constant across all remaining life-years)
-dt_compare[le_avg_adult > 0, `:=`(
+# 9) VSLY (Robinson et al. 2019 reference case) ----
+#
+# (constant VSLY approach)
+#
+# In this implementation, constant VSLY is derived from VSL using
+# UNDISCOUNTED remaining life expectancy at the average adult age:
+#
+#   VSLY = VSL / LE_avg_adult
+#
+# VSLY monetary values are then calculated using UNDISCOUNTED age-specific
+# life-years gained:
+#
+#   VSLY_value = VSLY × life_years_gained_undisc
+#              = VSLY × Σ_a [ deaths_averted(a) × LE(a) ]
+#
+# This means the denominator is based on remaining life expectancy at the
+# average adult age, while the numerator is based on remaining life expectancy
+# at the ages of deaths averted. As a result, VSLY totals differ from VSL
+# totals whenever the age pattern of deaths averted differs from the average
+# adult age profile.
+
+dt_compare[le_avg_adult_disc > 0, `:=`(
   vsly_e1_0 = vsl_e1_0 / le_avg_adult,
   vsly_e1_2 = vsl_e1_2 / le_avg_adult,
   vsly_e1_5 = vsl_e1_5 / le_avg_adult
 )]
 
-# Proxy life-years gained (for reporting only — does not change monetary totals):
-#   life_years_gained_proxy = deaths_averted × LE_avg_adult
-# Note: VSLY × life_years_gained_proxy = VSL × deaths_averted by construction.
-dt_compare[, life_years_gained_proxy := deaths_averted * le_avg_adult]
 
-# Monetary values of deaths averted
+# Monetary values of deaths averted — VSL (unchanged)
 dt_compare[, `:=`(
   economic_value_e1_0 = vsl_e1_0 * deaths_averted,
   economic_value_e1_2 = vsl_e1_2 * deaths_averted,
   economic_value_e1_5 = vsl_e1_5 * deaths_averted
 )]
 
-# VSLY monetary values (numerically identical to VSL values by construction,
-# retained as explicit columns for clarity in downstream reporting)
+# Monetary values of deaths averted — VSLY.
+# life_years_gained_disc is ALREADY within-lifetime-discounted at R_VSLY,
+# so do NOT apply calendar-year disc_r3 yet — that happens in section 10.
+# dt_compare[, `:=`(
+#   vsly_value_e1_0 = vsly_e1_0 * life_years_gained_disc,
+#   vsly_value_e1_2 = vsly_e1_2 * life_years_gained_disc,
+#   vsly_value_e1_5 = vsly_e1_5 * life_years_gained_disc
+# )]
+
 dt_compare[, `:=`(
-  vsly_value_e1_0 = vsly_e1_0 * life_years_gained_proxy,
-  vsly_value_e1_2 = vsly_e1_2 * life_years_gained_proxy,
-  vsly_value_e1_5 = vsly_e1_5 * life_years_gained_proxy
+  vsly_value_e1_0 = vsly_e1_0 * life_years_gained_undisc,
+  vsly_value_e1_2 = vsly_e1_2 * life_years_gained_undisc,
+  vsly_value_e1_5 = vsly_e1_5 * life_years_gained_undisc
 )]
 
-# ── 10) Time-series discount factors ──────────────────────────────────────
+# 10) Time-series (calendar-year) discount factors ----
+
 #
-# Brings the annual stream of benefits to BASE_YEAR present value:
+# These bring annual streams of GNI and monetary benefits from calendar year
+# `year` to BASE_YEAR present value:
+#
 #   disc_rX = 1 / (1 + rX)^(year - BASE_YEAR)
+#
+# These discount factors are applied to VSL-based values, VSLY-based values,
+# and GNI-based denominators. Although discounted life-expectancy quantities
+# are also computed earlier in the script, the active VSLY implementation in
+# this version uses undiscounted life-years gained and then applies only the
+# calendar-year discounting at this stage.
 #
 # Applied to GNI (for income-share denominators) and to economic values.
 
@@ -527,7 +729,7 @@ dt_compare[, `:=`(
   vsly_value_e1_5_disc_r3     = vsly_value_e1_5       * disc_r3
 )]
 
-# ── 11) Final dataset ──────────────────────────────────────────────────────
+# 11) Final dataset ----
 dt_final <- dt_compare[, .(
   location,
   iso3,
@@ -538,12 +740,15 @@ dt_final <- dt_compare[, .(
   deaths_baseline,
   deaths_intervention,
   deaths_averted,
+  avg_age_of_death_averted,
   population,
   adult_population,
   avg_adult_age,
   age_ref_5y,
   le_avg_adult,
-  life_years_gained_proxy,
+  le_avg_adult_disc,
+  life_years_gained_undisc,
+  life_years_gained_disc,
   gni_pc_ppp,
   gni_pc_usa,
   vsl_e1_0,
@@ -575,7 +780,7 @@ setorder(dt_final, location, year, scenario)
 # Update WHO region
 # ISO3 codes and WHO region ──────────────────────────────────────────────
 country_grp <- fread(file.path(wd, "data", "raw",
-                           "who-regions.csv"))
+                               "who-regions.csv"))
 
 setnames(
   country_grp,
@@ -587,18 +792,18 @@ country_grp[, region_who := gsub("\\s*\\(WHO\\)", "", region_who)]
 country_grp[, Year := NULL]
 
 # main merge
-dt_final <- country_grp[dt_compare, on = .(location)]
+dt_final <- country_grp[dt_final, on = .(location)]
 
 # fill missing iso3 using countrycode
 missing_iso3 <- is.na(dt_final$iso3)
 if (any(missing_iso3)) {
   dt_final[missing_iso3,
-             iso3 := countrycode(
-               location,
-               origin = "country.name",
-               destination = "iso3c",
-               warn = FALSE
-             )
+           iso3 := countrycode(
+             location,
+             origin = "country.name",
+             destination = "iso3c",
+             warn = FALSE
+           )
   ]
 }
 
@@ -636,10 +841,10 @@ fix_country_grp <- data.table(
 
 # patch missing values from manual table
 dt_final[fix_country_grp, on = .(location),
-           `:=`(
-             iso3       = fcoalesce(iso3, i.iso3),
-             region_who = fcoalesce(region_who, i.who_region)
-           )
+         `:=`(
+           iso3       = fcoalesce(iso3, i.iso3),
+           region_who = fcoalesce(region_who, i.who_region)
+         )
 ]
 
 dt_final[, region_who := fcase(
@@ -656,7 +861,7 @@ dt_final[, region_who := fcase(
 dt_final[, who_region := region_who]
 
 dt_final[, region_who := NULL]
-# ── 12) Save main results ──────────────────────────────────────────────────
+# 12) Save main results ----
 if (!dir.exists(DIR_OUT)) dir.create(DIR_OUT, recursive = TRUE)
 saveRDS(dt_final, OUT_FILE)
 fwrite(dt_final, OUT_CSV)
@@ -668,7 +873,26 @@ cat("Scenarios:", paste(unique(dt_final$scenario), collapse = ", "), "\n")
 cat("Years:", min(dt_final$year), "–", max(dt_final$year), "\n")
 cat("Countries:", length(unique(dt_final$location)), "\n")
 
-# ── 13) Summary reporting tables ──────────────────────────────────────────
+# --- Sanity check: VSLY vs VSL totals (primary, discounted, 2026–2050) -------
+# Diagnostic check:
+# Under this implementation, VSLY totals should differ from VSL totals because
+# VSLY is based on age-specific life-years gained, not simply deaths averted.
+# A ratio of exactly 1.00 would suggest that the same life expectancy measure
+# is being used in both the VSLY denominator and numerator, recreating the
+# algebraic identity VSLY × LY = VSL × deaths.
+
+diag_vsl  <- sum(dt_final$economic_value_e1_2_disc_r3, na.rm = TRUE)
+diag_vsly <- sum(dt_final$vsly_value_e1_2_disc_r3,     na.rm = TRUE)
+cat(sprintf(
+  "Sanity check (primary, e1_2, r=3%%, cumulative): VSL = %.3e | VSLY = %.3e | VSLY/VSL = %.3f\n",
+  diag_vsl, diag_vsly, diag_vsly / diag_vsl
+))
+if (abs(diag_vsly / diag_vsl - 1) < 1e-4) {
+  warning("VSLY/VSL ratio is ~1.000 — check that age-specific LE is being used in ",
+          "life_years_gained_disc and that disc_life_years() is applied correctly.")
+}
+
+# 13) Summary reporting tables -----
 #
 # Rows    : intervention scenario × WHO region  (+ "World" totals)
 # Columns : 2026 | 2030 | 2040 | 2050 | cumulative 2026–2050
@@ -805,7 +1029,7 @@ dt_summary_vsly_e1_5 <- make_summary_table(
   value_prefix = "vsly"
 )
 
-# ── 14) Standardise column names and stack ─────────────────────────────────
+# 14) Standardise column names and stack ----
 # Rename value columns to generic "metric_*" / "share_*" so all four tables
 # share the same schema and can be rbind-ed cleanly.
 # An `elasticity_case` column records the source elasticity for each block.
@@ -839,7 +1063,7 @@ setcolorder(dt_summary_appended,
 )
 setorder(dt_summary_appended, valuation_type, elasticity_case, scenario, who_region)
 
-# ── 15) Save summary tables ────────────────────────────────────────────────
+# 15) Save summary tables ----
 saveRDS(dt_summary_vsl_e1_2,  OUT_SUMM_VSL)
 saveRDS(dt_summary_vsly_e1_2, OUT_SUMM_VSLY)
 saveRDS(dt_summary_appended,  OUT_SUMM_APP)
@@ -869,3 +1093,94 @@ cat("Rows primary VSL:", nrow(dt_summary_vsl_e1_2),
     "| Rows primary VSLY:", nrow(dt_summary_vsly_e1_2),
     "| Rows appended:", nrow(dt_summary_appended), "\n")
 cat("Regions:", paste(sort(unique(dt_summary_vsly_e1_2$who_region)), collapse = ", "), "\n")
+
+
+# ── visualizing summary data ──────────────────────────────────────────────────────────────
+# Gather the four share_YEAR columns into long format for faceting by year.
+# Keep only the cumulative total share (share_total) and annual snapshots.
+
+share_cols <- grep("^share_", names(dt_summary_appended), value = TRUE)
+
+dt_plot <- melt(
+  dt_summary_appended,
+  id.vars       = c("valuation_type", "elasticity_case", "who_region", "scenario"),
+  measure.vars  = share_cols,
+  variable.name = "period",
+  value.name    = "share_income"
+)
+
+# Clean up period labels
+dt_plot[, period := fcase(
+  period == "share_2026",  "2026",
+  period == "share_2030",  "2030",
+  period == "share_2040",  "2040",
+  period == "share_2050",  "2050",
+  period == "share_total", "2026–2050\n(cumulative)",
+  default = as.character(period)
+)]
+
+# Order periods sensibly
+dt_plot[, period := factor(period,
+                           levels = c("2026", "2030", "2040", "2050", "2026–2050\n(cumulative)")
+)]
+
+# Friendly labels for elasticity case
+dt_plot[, elasticity_label := fcase(
+  elasticity_case == "e1_2_primary",      "Primary (e = 0.8/1.2)",
+  elasticity_case == "e1_5_sensitivity",  "Sensitivity (e = 1.5)",
+  default = elasticity_case
+)]
+
+
+# ── Plot ──────────────────────────────────────────────────────────────────────
+ggplot(
+  dt_plot,
+  aes(
+    x     = share_income,
+    y     = scenario,
+    colour = elasticity_label,
+    shape  = valuation_type
+  )
+) +
+  geom_point(size = 2.8, alpha = 0.85, position = position_dodge(width = 0.5)) +
+  facet_grid(who_region ~ period, scales = "free_x") +
+  scale_x_continuous(
+    labels = scales::percent_format(accuracy = 0.1),
+    expand = expansion(mult = c(0.05, 0.15))
+  ) +
+  scale_colour_manual(
+    name   = "Elasticity case",
+    values = c(
+      "Primary (e = 0.8/1.2)" = "#2166ac",
+      "Sensitivity (e = 1.5)" = "#d6604d"
+    )
+  ) +
+  scale_shape_manual(
+    name   = "Valuation",
+    values = c("VSL" = 16, "VSLY" = 17)
+  ) +
+  labs(
+    title    = "Economic value of deaths averted as a share of regional income",
+    subtitle = "Discounted at r = 3% | Primary estimate: differential elasticity (Robinson et al. 2019)",
+    x        = "Share of discounted GNI",
+    y        = NULL,
+    caption  = paste0(
+      "Note: Share computed as Σ(economic value) / Σ(population × discounted GNI per capita).\n",
+      "Primary estimate uses differential income elasticity (e = 0.8 for HIC, e = 1.2 for LMIC).\n",
+      "Sensitivity uses uniform elasticity e = 1.5. Both discounted to ", BASE_YEAR, " at r = 3%."
+    )
+  ) +
+  theme_bw(base_size = 11) +
+  theme(
+    strip.text.y      = element_text(angle = 0, hjust = 0, face = "bold"),
+    strip.text.x      = element_text(face = "bold"),
+    strip.background  = element_rect(fill = "#f0f0f0", colour = "grey70"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    legend.position    = "bottom",
+    legend.box         = "horizontal",
+    plot.caption       = element_text(size = 8, colour = "grey40", hjust = 0),
+    plot.title         = element_text(face = "bold"),
+    axis.text.y        = element_text(size = 9)
+  )
+

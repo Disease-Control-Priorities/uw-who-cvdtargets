@@ -1286,3 +1286,93 @@ Before editing
 - First inspect the current `08_economic_value_calculation.R` and the outputs/read paths used by `06_run_scenarios_multiple`.
 - Infer the existing repository conventions rather than inventing a new structure.
 - Keep the refactor minimal in scope: only this file, only VSL-related work.
+
+###############################################################################33
+###############################################################################33
+Task: Update the Aim 1 executive slides to incorporate the economic value results, with emphasis on the Value of Statistical Life Years (VSLY) expressed as a share of annual income.
+
+You may modify only these three files:
+1. scenarios/scenarios_aim1/aim1_executive_slides.RMD
+2. scenarios/scenarios_aim1/aim1_report.RMD
+3. 08_economic_value_calculation.R
+
+Do not modify any other files.
+
+Overall objective
+Update the executive presentation for Aim 1 so it includes a concise but compelling economics section. The executive slides should highlight the economic value of avoidable mortality, especially VSLY as a share of annual income, and present this in a way appropriate for an executive audience.
+
+Key implementation rule
+The file scenarios/scenarios_aim1/aim1_executive_slides.RMD must not perform calculations. It should only consume tables/figures/objects that are prepared upstream.
+All calculations and plot creation needed by the executive slides must be moved into or produced through:
+- scenarios/scenarios_aim1/aim1_report.RMD
+- 08_economic_value_calculation.R
+
+Required tasks
+
+1) Add a methods slide to aim1_executive_slides.RMD
+Create one slide that briefly explains the economic valuation methods used in 08_economic_value_calculation.R. Keep it executive-level and concise, but accurate.
+This methods slide should:
+- describe the VSL/VSLY approach used in the code
+- mention that VSLY results are presented as share of annual income
+- cite Robinson et al. guidance as the methodological basis
+- briefly mention alignment with prior published work, specifically:
+  - https://www.nature.com/articles/s41591-024-03248-4
+  - https://www.nature.com/articles/s41591-024-03253-7?fromPaywallRec=false
+
+2) Add a regional economic value results slide
+Add a slide in aim1_executive_slides.RMD showing a table with the regional economic value results.
+Use the table/object corresponding to:
+- 08_vsl_summary_table_e1_2_primary
+from 08_economic_value_calculation.R
+
+This should be prepared upstream and then consumed by the slides. Do not calculate the table inside aim1_executive_slides.RMD.
+
+3) Add a results slide with the main dot plot
+Add a slide showing a dot plot of:
+- the main VSLY results
+- VSL results
+- sensitivity results
+
+This plot should not be produced in 08_economic_value_calculation.R anymore.
+Instead:
+- remove the dot plot creation from 08_economic_value_calculation.R
+- create the dot plot in scenarios/scenarios_aim1/aim1_report.RMD
+- make it available so aim1_executive_slides.RMD can consume it
+
+This slide should also include a strong headline highlighting the world result.
+
+4) Modify the summary slide
+Update the executive summary/conclusion slide so that the headline takeaway explicitly highlights:
+- the world economic value of avoidable mortality
+- especially as a share of annual income
+- with emphasis on the main VSLY result
+
+5) Refactor file responsibilities cleanly
+Ensure the workflow is clean and modular:
+- 08_economic_value_calculation.R should compute/export the economic results objects needed downstream, but should no longer produce the dot plot
+- scenarios/scenarios_aim1/aim1_report.RMD should generate the dot plot and any slide-consumable derived display objects
+- scenarios/scenarios_aim1/aim1_executive_slides.RMD should only load/use prepared outputs and render the presentation
+
+What I want from you
+Please:
+1. inspect the existing structure of these three files
+2. implement the requested changes
+3. preserve the existing style and conventions of the project
+4. keep naming consistent with the current codebase
+5. avoid introducing unnecessary new files or duplicated logic
+
+Important content priorities
+- Executive audience: concise, visually clear, policy-relevant
+- Highlight VSLY as share of annual income
+- Include world headline result prominently
+- Keep methodological language accurate but not overly technical
+- Maintain consistency with the existing economic valuation workflow
+
+Output format
+Please provide:
+1. a short summary of what you changed in each of the three files
+2. the exact code edits
+3. any assumptions you had to make
+4. any objects/tables/plots that the executive slides now expect from upstream
+
+Do not modify files beyond the three listed above.
