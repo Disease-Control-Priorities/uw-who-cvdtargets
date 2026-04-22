@@ -1,92 +1,405 @@
-
-# 08_economic_value_calculation.R
-# VSLY analysis: monetary value of deaths averted under each intervention vs baseline.
+# 08_economic_value_calculation_v3.R
+# VSL / VSLY analysis: monetary value of deaths averted under each intervention
+# versus baseline.
 #
-# Method: income-adjusted Value of Statistical Life (VSL) following
-#   Robinson & Hammitt (2011) and Bolongaita et al. (2024)
-#   https://www.nature.com/articles/s41591-024-03248-4
-#   Converted to VSLY using population-weighted remaining life expectancy (WPP 2024).
+# Method:
+#   - Value of Statistical Life (VSL) transferred from a U.S. reference using
+#     income-adjustment (Robinson & Hammitt 2011; Robinson et al. 2019)
+#   - Constant Value of a Statistical Life Year (VSLY) derived as:
+#       VSLY = VSL / LE_avg_adult
+#     where LE_avg_adult is undiscounted remaining life expectancy at the
+#     average age of the adult population. This follows the Robinson et al.
+#     (2019) reference-case proxy for VSLY.
+#   - GNI per capita is kept as observed from World Bank data and projected
+#     forward beyond the last observed year using SSP2 annual GDP growth rates
+#     (IIASA SSP 3.1), following v1 of this script.
+#
+# ── Methodological notes / departures from Robinson et al. (2019) ────────────
+#
+# [1] INCOME ELASTICITY — PRIMARY ESTIMATE:
+#     Robinson et al. (2019) recommend the DIFFERENTIAL elasticity (0.8 for
+#     countries at or above US income; 1.2 for countries below) as the primary
+#     reference-case estimate. This is coded as `e1_2` throughout. Uniform
+#     elasticities of 1.0 (`e1_0`) and 1.5 (`e1_5`) are treated as sensitivity
+#     bounds, not primary estimates. Summary tables therefore use `e1_2` as the
+#     headline figure, with `e1_0` and `e1_5` columns retained in dt_final for
+#     sensitivity reporting.
+#
+# [2] GNI vs GDP FOR FORWARD PROJECTION (known limitation):
+#     The VSL transfer uses World Bank GNI per capita (PPP) as the income
+#     measure, consistent with Robinson et al. (2019). However, SSP scenario
+#     projections (IIASA SSP 3.1) provide GDP per capita, not GNI per capita.
+#     Forward projection therefore applies SSP2 GDP growth rates to a GNI base.
+#     For most countries these series track closely, but the approach can
+#     introduce error in remittance-dependent economies or countries with large
+#     net foreign income flows (e.g. Philippines, Mexico, India). This
+#     limitation should be acknowledged in any published methods section.
+#     A future improvement would be to use SSP GNI projections if they become
+#     available, or to apply a country-specific GNI/GDP ratio adjustment.
 #
 # Inputs:
-#   output/out_model/model_output_<country>_<target_col>.rds
-#   data/raw/API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv   (World Bank GNI per capita PPP)
-#   data/raw/1721734326790-ssp_basic_drivers_release_3.1_full.xlsx (IIASA SSP 3.1)
-#   data/raw/WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx
-#   data/processed/Country_groupings_extended.csv
+#   - output/out_model/model_output_<country>_<target_col>.rds
+#       (from 06_run_scenarios_multiple.R)
+#   - data/raw/API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv
+#       (World Bank GNI per capita, PPP)
+#   - data/raw/1721734326790-ssp_basic_drivers_release_3.1_full.xlsx
+#       (IIASA SSP 3.1 — used for forward GNI projection)
+#   - data/raw/WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx
+#       (remaining life expectancy by age)
+#   - data/processed/Country_groupings_extended.csv
+#       (iso3, location, region)
 #
 # Outputs:
-#   output/08_vsly_results.rds / .csv          — one row per country × year × scenario
-#   output/08_vsly_summary_table.rds / .csv    — region × intervention summary
+#   - output/08_vsl_results.rds / .csv       — one row per country × year × scenario
+#   - output/08_vsl_summary_table.rds / .csv — region × intervention summary (VSL)
+#   - output/08_vsly_summary_table.rds / .csv — region × intervention summary (VSLY)
+#   - output/08_vsl_vsly_summary_table_appended.rds / .csv — both stacked
 
-# ── 0) Paths ──────────────────────────────────────────────────────────────────
+suppressPackageStartupMessages({
+  library(data.table)
+  library(readxl)
+  library(countrycode)
+  library(stringr)
+})
 
+# ── 0) Paths ──────────────────────────────────────────────────────────────
 DIR_MODEL    <- file.path(wd, "output", "out_model")
 DIR_OUT      <- file.path(wd, "output")
 GNI_FILE     <- file.path(wd, "data", "raw",
-                           "API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv")
+                          "API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv")
 SSP_FILE     <- file.path(wd, "data", "raw",
-                           "1721734326790-ssp_basic_drivers_release_3.1_full.xlsx")
+                          "1721734326790-ssp_basic_drivers_release_3.1_full.xlsx")
+LT_FILE      <- file.path(wd, "data", "raw",
+                          "WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx")
 COUNTRY_FILE <- file.path(wd, "data", "processed",
-                           "Country_groupings_extended.csv")
-OUT_FILE     <- file.path(DIR_OUT, "08_vsly_results.rds")
-OUT_SUMM     <- file.path(DIR_OUT, "08_vsly_summary_table.rds")
+                          "Country_groupings_extended.csv")
 
-# ── 1) Parameters ──────────────────────────────────────────────────────────────
+OUT_FILE     <- file.path(DIR_OUT, "08_vsl_results.rds")
+OUT_CSV      <- file.path(DIR_OUT, "08_vsl_results.csv")
+OUT_SUMM_VSL  <- file.path(DIR_OUT, "08_vsl_summary_table.rds")
+OUT_SUMM_VSLY <- file.path(DIR_OUT, "08_vsly_summary_table.rds")
+OUT_SUMM_APP  <- file.path(DIR_OUT, "08_vsl_vsly_summary_table_appended.rds")
+
+# ── 1) Parameters ─────────────────────────────────────────────────────────
 #
 # VSL reference (Robinson & Hammitt 2011):
 #   VSL_USA = US_VSL_RATIO × GNI_pc_USA
 #
-# Income elasticity cases:
-#   e1_2  — differential baseline: 0.8 for countries at/above USA income,
-#            1.2 for countries below USA income
-#   e1_0  — sensitivity: uniform 1.0
-#   e1_5  — sensitivity: uniform 1.5  ← used in summary table per task specification
+# Income elasticity cases (see methodological note [1] above):
+#   e1_2  — PRIMARY: differential 0.8 for countries at/above USA income,
+#            1.2 for countries below (Robinson et al. 2019 reference case)
+#   e1_0  — SENSITIVITY LOW:  uniform 1.0
+#   e1_5  — SENSITIVITY HIGH: uniform 1.5
 #
-# Minimum VSL floor: VSL / GNI_pc >= VSL_RATIO_FLOOR (prevents implausibly low values)
+# VSLY (Robinson et al. 2019 reference case):
+#   VSLY = VSL / LE_avg_adult  (undiscounted, constant value)
 #
 # Discounting:
-#   discount_factor = 1 / (1 + r)^(year − BASE_YEAR)
+#   Time-series discount factor brings annual benefit streams to BASE_YEAR
+#   present value: disc_rX = 1 / (1 + rX)^(year - BASE_YEAR)
 #   BASE_YEAR = 2026 (first full intervention year)
-#   VSLY annuity factor (discounts remaining life-years within a single death event):
-#     a(LE, r) = (1 − (1+r)^(−LE)) / r
-#     When r → 0: a(LE, 0) = LE  (matches undiscounted VSLY = VSL / LE)
-
-US_VSL_RATIO    <- 160    # VSL / GNI_pc reference ratio for the USA
-VSL_ELAST_HIC   <- 0.8   # income elasticity for countries at or above USA income
-VSL_ELAST_LMIC  <- 1.2   # income elasticity for countries below USA income
-VSL_ELAST_LOW   <- 1.0   # sensitivity low: uniform elasticity
-VSL_ELAST_HIGH  <- 1.5   # sensitivity high: uniform elasticity (used in summary)
-VSL_RATIO_FLOOR <- 20    # minimum VSL-to-GNI_pc ratio
-
-DISC_RATES <- c(r1 = 0.01, r3 = 0.03, r5 = 0.05)  # annual discount rates
-BASE_YEAR  <- 2026L                                   # first intervention year
-
-# ── 1b) Life expectancy data (lt_interp) ──────────────────────────────────────
 #
-# lt_interp contains remaining life expectancy (LE) by location, age, and year
-# from WPP 2024 (Medium variant).  If 07_output_dalys.R ran first, the object
-# is already in the environment; otherwise it is recomputed here.
+# Minimum VSL floor: VSL / GNI_pc >= VSL_RATIO_FLOOR
+
+US_VSL_RATIO    <- 160   # VSL / GNI_pc reference ratio for USA
+VSL_ELAST_HIC   <- 0.8   # elasticity for countries at or above USA income
+VSL_ELAST_LMIC  <- 1.2   # elasticity for countries below USA income
+VSL_ELAST_LOW   <- 1.0   # sensitivity-low (uniform)
+VSL_ELAST_HIGH  <- 1.5   # sensitivity-high (uniform)
+VSL_RATIO_FLOOR <- 20    # minimum VSL-to-GNI ratio
+ADULT_MIN_AGE   <- 20L
+MAX_MODEL_AGE   <- 95L
+
+DISC_RATES <- c(r1 = 0.01, r3 = 0.03, r5 = 0.05)
+BASE_YEAR  <- 2026L
+SUMMARY_YEARS <- c(2026L, 2030L, 2040L, 2050L)
+
+# ── 2) Load model outputs ─────────────────────────────────────────────────
+model_files <- list.files(
+  DIR_MODEL,
+  pattern = "^model_output_.*\\.rds$",
+  full.names = TRUE
+)
+
+if (length(model_files) == 0) {
+  stop("No model output files found in: ", DIR_MODEL,
+       "\nRun 06_run_scenarios_multiple.R first.")
+}
+
+cat("Loading", length(model_files), "model output files...\n")
+dt_model <- rbindlist(lapply(model_files, readRDS), fill = TRUE)
+cat("Rows loaded:", nrow(dt_model), "\n")
+
+req_cols <- c("location", "year", "scenario", "htn_target_scenario",
+              "age", "sex", "dead", "pop")
+miss_cols <- setdiff(req_cols, names(dt_model))
+if (length(miss_cols) > 0) {
+  stop("Model output is missing required columns: ", paste(miss_cols, collapse = ", "))
+}
+
+# ── 3) Aggregate deaths and scenario-specific population ──────────────────
+# Population is scenario-specific because intervention scenarios can change
+# total population counts over time.
+
+dt_deaths <- dt_model[
+  , .(deaths = sum(dead, na.rm = TRUE)),
+  by = .(location, year, scenario, htn_target_scenario)
+]
+
+dt_pop_unique <- unique(
+  dt_model[, .(location, year, scenario, htn_target_scenario, age, sex, pop)]
+)
+
+dt_pop_total <- dt_pop_unique[
+  , .(population = sum(pop, na.rm = TRUE)),
+  by = .(location, year, scenario, htn_target_scenario)
+]
+
+dt_deaths <- dt_pop_total[
+  dt_deaths,
+  on = .(location, year, scenario, htn_target_scenario)
+]
+
+# ── 4) Deaths averted relative to baseline ────────────────────────────────
+dt_baseline <- dt_deaths[
+  scenario == "baseline",
+  .(location, year, htn_target_scenario, deaths_baseline = deaths)
+]
+
+dt_compare <- dt_deaths[scenario != "baseline"]
+dt_compare <- dt_baseline[
+  dt_compare,
+  on = .(location, year, htn_target_scenario)
+]
+setnames(dt_compare, "deaths", "deaths_intervention")
+dt_compare[, deaths_averted := deaths_baseline - deaths_intervention]
+
+# ── 5) Country mapping ────────────────────────────────────────────────────
+country_grp <- fread(COUNTRY_FILE)
+
+required_country_cols <- c("iso3", "location", "region")
+missing_country_cols <- setdiff(required_country_cols, names(country_grp))
+if (length(missing_country_cols) > 0) {
+  stop("Country mapping file is missing required columns: ",
+       paste(missing_country_cols, collapse = ", "))
+}
+
+dt_compare <- country_grp[dt_compare, on = .(location)]
+
+missing_iso3 <- is.na(dt_compare$iso3)
+if (any(missing_iso3)) {
+  dt_compare[missing_iso3,
+             iso3 := countrycode(location, origin = "country.name", destination = "iso3c",
+                                 warn = FALSE)
+  ]
+}
+setnames(dt_compare, "region", "who_region")
+
+# ── 6) GNI per capita with SSP2 forward projection ────────────────────────
 #
-# lt_interp structure after processing:
-#   location (character), age (numeric, WPP 5-year lower bound: 0,1,5,10,...,100),
-#   year (integer, 5-year intervals: 2025, 2030, ...), le (numeric, remaining years)
+# Strategy:
+#   - Keep observed World Bank GNI per capita PPP values unchanged.
+#   - For years beyond the last observed GNI year per country, project forward
+#     using SSP2 annual GDP per capita growth rates (IIASA SSP 3.1).
+#
+# Key idea: growth_t = ssp_interp(t) / ssp_interp(t-1) - 1
+#   gni(y0 + k) = gni(y0) * prod_{j=1}^{k} (1 + growth_{y0+j})
+#
+# This preserves the last observed GNI level and applies only SSP-implied
+# growth, without incorrectly using ratios of GNI levels to GDP levels.
+#
+# NOTE: SSP projections provide GDP, not GNI. See methodological note [2]
+# in the file header for a discussion of this known limitation.
+
+gni_raw   <- fread(GNI_FILE, skip = 4, header = TRUE)
+year_cols <- grep("^[0-9]{4}$", names(gni_raw), value = TRUE)
+
+gni <- melt(
+  gni_raw,
+  id.vars      = "Country Code",
+  measure.vars = year_cols,
+  variable.name = "year",
+  value.name    = "gni_pc_ppp"
+)
+setnames(gni, "Country Code", "iso3")
+gni[, year := as.integer(as.character(year))]
+gni <- gni[!is.na(gni_pc_ppp) & year >= 2000 & year <= 2050]
+
+# --- SSP2 GDP per capita for growth rates ---
+if (!exists("ssp_gdp")) {
+  ssp_gdp <- as.data.table(read_excel(SSP_FILE, sheet = "data"))
+}
+
+ssp_pc <- ssp_gdp[
+  Scenario == "SSP2" & Variable == "GDP|PPP [per capita]"
+]
+
+if (nrow(ssp_pc) == 0) {
+  stop(
+    "SSP data filtered to 0 rows. Check that Scenario='SSP2' and ",
+    "Variable='GDP|PPP [per capita]' exist in the SSP file."
+  )
+}
+
+ssp_yr_cols <- grep("^[0-9]{4}$", names(ssp_pc), value = TRUE)
+
+ssp_pc_long <- melt(
+  ssp_pc,
+  id.vars      = "Region",
+  measure.vars = ssp_yr_cols,
+  variable.name = "year",
+  value.name    = "ssp_gdp_pc"
+)
+setnames(ssp_pc_long, "Region", "location")
+ssp_pc_long[, year := as.integer(as.character(year))]
+
+ssp_pc_long[
+  ,
+  iso3 := countrycode(location, origin = "country.name", destination = "iso3c")
+]
+ssp_pc_long <- ssp_pc_long[!is.na(iso3) & !is.na(ssp_gdp_pc) & ssp_gdp_pc > 0]
+
+model_years <- sort(unique(dt_compare$year))
+iso3_list   <- sort(unique(dt_compare[!is.na(iso3), iso3]))
+
+# Interpolate SSP GDP pc to annual series (log-linear between 5-year nodes)
+ssp_annual <- ssp_pc_long[iso3 %in% iso3_list, {
+  ord  <- order(year)
+  yrs  <- year[ord]
+  vals <- ssp_gdp_pc[ord]
+  
+  log_interp <- approx(
+    x    = yrs,
+    y    = log(vals),
+    xout = model_years,
+    rule = 2
+  )$y
+  
+  data.table(
+    year       = model_years,
+    ssp_interp = exp(log_interp)
+  )
+}, by = iso3]
+
+# Fix SSP interpolation: hold 2025 value flat for years < 2025 to avoid
+# back-projecting income levels that contradict observed GNI data.
+ssp_25 <- ssp_annual[year == 2025, .(iso3, ssp_interp_2025 = ssp_interp)]
+ssp_annual <- merge(ssp_annual, ssp_25, by = "iso3", all.x = TRUE)
+ssp_annual[year < 2025, ssp_interp := ssp_interp_2025]
+ssp_annual[, ssp_interp_2025 := NULL]
+
+setorder(ssp_annual, iso3, year)
+ssp_annual[, ssp_growth := ssp_interp / shift(ssp_interp) - 1, by = iso3]
+
+n_ssp_countries <- uniqueN(ssp_annual$iso3)
+cat("SSP2 annual growth rates available for", n_ssp_countries,
+    "of", length(iso3_list), "countries.\n")
+
+# Last observed GNI year and value per country
+gni_last <- gni[iso3 %in% iso3_list, {
+  idx <- which.max(year)
+  .(last_year = year[idx], gni_last = gni_pc_ppp[idx])
+}, by = iso3]
+
+# Full iso3-year grid
+gni_grid <- CJ(iso3 = iso3_list, year = model_years)
+gni_grid <- gni[gni_grid, on = .(iso3, year)]
+gni_grid <- ssp_annual[gni_grid, on = .(iso3, year)]
+gni_grid <- gni_last[gni_grid, on = .(iso3)]
+setorder(gni_grid, iso3, year)
+
+# Project GNI forward recursively after last observed year only
+gni_grid[
+  ,
+  gni_pc_proj := {
+    out <- gni_pc_ppp
+    
+    if (!is.na(last_year[1]) && !is.na(gni_last[1])) {
+      future_idx <- which(year > last_year[1])
+      
+      if (length(future_idx) > 0) {
+        for (j in future_idx) {
+          if (year[j] == last_year[1] + 1) {
+            if (!is.na(ssp_growth[j]))
+              out[j] <- gni_last[1] * (1 + ssp_growth[j])
+          } else {
+            if (!is.na(out[j - 1]) && !is.na(ssp_growth[j]))
+              out[j] <- out[j - 1] * (1 + ssp_growth[j])
+          }
+        }
+      }
+    }
+    out
+  },
+  by = iso3
+]
+
+gni_grid[, gni_pc_ppp_final := fifelse(!is.na(gni_pc_ppp), gni_pc_ppp, gni_pc_proj)]
+
+n_miss_gni <- sum(is.na(gni_grid$gni_pc_ppp_final))
+if (n_miss_gni > 0) {
+  warning(
+    n_miss_gni,
+    " (iso3, year) rows still missing GNI after SSP projection. ",
+    "These will produce NA VSL/VSLY values."
+  )
+}
+
+gni_grid <- gni_grid[, .(iso3, year, gni_pc_ppp = gni_pc_ppp_final)]
+
+dt_compare <- gni_grid[dt_compare, on = .(iso3, year)]
+
+# US GNI per year (VSL transfer reference income)
+us_gni <- gni_grid[iso3 == "USA", .(year, gni_pc_usa = gni_pc_ppp)]
+if (nrow(us_gni) == 0) {
+  stop("No USA GNI values found. Check iso3='USA' is present in the GNI file.")
+}
+dt_compare <- us_gni[dt_compare, on = .(year)]
+
+# ── 7) Life expectancy at average adult age ────────────────────────────────
+#
+# Robinson et al. (2019) reference case: derive a constant VSLY from the
+# population-average VSL divided by remaining life expectancy at the average
+# age of the adult population. LE is undiscounted (no annuity formula).
+#
+# Steps:
+#   1. Compute avg_adult_age = Σ(pop × age) / Σ(pop)  for adult ages only.
+#   2. Map to the WPP 5-year lower-bound age group.
+#   3. Rolling nearest-year join to lt_interp to get le_avg_adult.
+
+if (!file.exists(LT_FILE) && !exists("lt_interp")) {
+  stop("Life expectancy input not found. Expected file: ", LT_FILE,
+       "\nOr provide object `lt_interp` in the environment.")
+}
 
 if (!exists("lt_interp")) {
+  cat("Loading WPP life expectancy data...\n")
   lt <- as.data.table(read_excel(
-    paste0(wd_raw, "WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx"),
-    sheet = "Medium variant", range = "A17:DH22967"))
-
-  setnames(lt,
+    LT_FILE,
+    sheet = "Medium variant",
+    range = "A17:DH22967"
+  ))
+  
+  setnames(
+    lt,
     c("Region, subregion, country or area *", "Notes", "Location code",
-      "ISO3 Alpha-code", "ISO2 Alpha-code", "SDMX code**", "Type", "Parent code", "Year"),
-    c("location", "Notes", "Locationcode", "ISO3", "ISO2", "SDMX", "Type", "Parencode", "year"))
-
-  lt_interp <- melt(lt, id.vars = colnames(lt)[1:11],
-                    value.name = "le", variable.name = "age")
-  lt_interp <- lt_interp[year >= 2025, c("location", "age", "year", "le"), with = FALSE]
-  lt_interp[, age := as.numeric(as.character(str_extract_all(age, "\\d+")))]
+      "ISO3 Alpha-code", "ISO2 Alpha-code", "SDMX code**", "Type",
+      "Parent code", "Year"),
+    c("location", "Notes", "Locationcode", "ISO3", "ISO2", "SDMX",
+      "Type", "Parencode", "year"),
+    skip_absent = TRUE
+  )
+  
+  lt_interp <- melt(
+    lt,
+    id.vars      = colnames(lt)[1:11],
+    variable.name = "age",
+    value.name    = "le"
+  )
+  lt_interp <- lt_interp[year >= 2025, .(location, age, year, le)]
+  lt_interp[, age := as.numeric(str_extract(age, "\\d+"))]
   lt_interp[, le  := as.numeric(le)]
-
+  
   loc_fix_lt <- c(
     "Bolivia (Plurinational State of)" = "Bolivia",
     "Côte d'Ivoire"                   = "Ivory Coast",
@@ -102,249 +415,50 @@ if (!exists("lt_interp")) {
   rm(lt)
 }
 
-# ── 2) Load model outputs ──────────────────────────────────────────────────────
-#
-# 06_run_scenarios_multiple.R saves one file per (country, htn_target_scenario).
-# Columns: scenario, age, cause, sex, year, well, sick, newcases, dead, pop,
-#          all.mx, intervention, location, eff_ir, eff_cf, htn_target_scenario
-
-model_files <- list.files(DIR_MODEL, pattern = "^model_output_.*\\.rds$",
-                          full.names = TRUE)
-if (length(model_files) == 0)
-  stop("No model output files found in: ", DIR_MODEL,
-       "\nRun 06_run_scenarios_multiple.R first.")
-
-cat("Loading", length(model_files), "model output files...\n")
-dt_model <- rbindlist(lapply(model_files, readRDS), fill = TRUE)
-cat("Rows loaded:", nrow(dt_model), "\n")
-
-# ── 3) Deaths and scenario-specific population ─────────────────────────────────
-#
-# Intervention scenarios change total population counts over the model horizon,
-# so we use the scenario-specific population rather than the baseline only.
-#
-# `pop` in dt_model is replicated across causes for the same (location, year, age, sex).
-# We deduplicate on (location, year, scenario, htn_target_scenario, age, sex)
-# before summing to avoid over-counting.
-
-dt_deaths <- dt_model[,
-  .(deaths = sum(dead, na.rm = TRUE)),
-  by = .(location, year, scenario, htn_target_scenario)
-]
-
-dt_pop_unique <- unique(
-  dt_model[, .(location, year, scenario, htn_target_scenario, age, sex, pop)]
-)
-
-dt_pop_total <- dt_pop_unique[,
-  .(population = sum(pop, na.rm = TRUE)),
-  by = .(location, year, scenario, htn_target_scenario)
-]
-
-dt_deaths <- dt_pop_total[dt_deaths, on = .(location, year, scenario, htn_target_scenario)]
-
-# ── 3b) Population-weighted remaining life expectancy ──────────────────────────
-#
-# For each (location, year, scenario, htn_target_scenario):
-#   LE_pw = Σ_a [ pop_a × le_a ] / Σ_a [ pop_a ]
-#
-# where pop_a sums over sex first, and le_a comes from lt_interp.
-#
-# The model uses single-year ages (20–95); lt_interp provides LE at the lower
-# bound of WPP 5-year groups (20, 25, 30, ..., 95).  We map each single-year
-# model age to its 5-year group lower bound: age_lt5 = floor(age / 5) × 5.
-#
-# lt_interp covers 5-year calendar intervals (2025, 2030, ...).  We use a
-# rolling nearest-year join to assign LE to each annual model year.
-
-# Aggregate pop over sex, then bin to 5-year WPP age groups
-dt_pop_age <- dt_pop_unique[,
-  .(pop = sum(pop, na.rm = TRUE)),
+# Average adult age weighted by scenario-specific population
+dt_pop_age <- dt_pop_unique[
+  , .(pop = sum(pop, na.rm = TRUE)),
   by = .(location, year, scenario, htn_target_scenario, age)
 ]
-dt_pop_age[, age_lt5 := (as.integer(age) %/% 5L) * 5L]
 
-dt_pop_lt5 <- dt_pop_age[,
-  .(pop = sum(pop, na.rm = TRUE)),
-  by = .(location, year, scenario, htn_target_scenario, age_lt5)
-]
-setnames(dt_pop_lt5, "age_lt5", "age")
-
-# Rolling nearest-year join: for each (location, age, model_year), find the
-# closest lt_interp year.  This handles annual model years vs 5-yr WPP intervals.
-setkey(lt_interp, location, age, year)
-setkey(dt_pop_lt5, location, age, year)
-dt_pop_lt5 <- lt_interp[dt_pop_lt5, on = .(location, age, year), roll = "nearest"]
-
-n_miss_le <- sum(is.na(dt_pop_lt5$le))
-if (n_miss_le > 0)
-  warning(n_miss_le, " (location, age, year) rows missing LE after lt_interp join.",
-          " Check that location names align between model output and lt_interp.")
-
-# Population-weighted LE aggregated to country × year × scenario
-dt_le_pw <- dt_pop_lt5[!is.na(le),
-  .(le_pop_weighted = sum(pop * le, na.rm = TRUE) / sum(pop, na.rm = TRUE)),
-  by = .(location, year, scenario, htn_target_scenario)
+dt_avg_adult <- dt_pop_age[age >= ADULT_MIN_AGE,
+                           .(
+                             adult_population = sum(pop, na.rm = TRUE),
+                             avg_adult_age    = sum(pop * age, na.rm = TRUE) / sum(pop, na.rm = TRUE)
+                           ),
+                           by = .(location, year, scenario, htn_target_scenario)
 ]
 
-# ── 4) Deaths averted vs baseline ─────────────────────────────────────────────
-#
-# deaths_averted = deaths_baseline − deaths_intervention
-# Positive value = deaths prevented by the intervention relative to no-intervention.
+# Map average adult age to WPP 5-year lower-bound age group
+dt_avg_adult[, age_ref_5y := pmin(MAX_MODEL_AGE,
+                                  (as.integer(floor(avg_adult_age)) %/% 5L) * 5L)]
 
-dt_baseline <- dt_deaths[
-  scenario == "baseline",
-  .(location, year, htn_target_scenario, deaths_baseline = deaths)
-]
+dt_le_lookup <- copy(dt_avg_adult)[, .(
+  location, year, scenario, htn_target_scenario,
+  age = age_ref_5y, adult_population, avg_adult_age
+)]
 
-dt_compare <- dt_deaths[scenario != "baseline"]
-dt_compare  <- dt_baseline[dt_compare, on = .(location, year, htn_target_scenario)]
-setnames(dt_compare, "deaths", "deaths_intervention")
-dt_compare[, deaths_averted := deaths_baseline - deaths_intervention]
+setkey(lt_interp,    location, age, year)
+setkey(dt_le_lookup, location, age, year)
+dt_le_lookup <- lt_interp[dt_le_lookup, on = .(location, age, year), roll = "nearest"]
 
-# Merge population-weighted LE into comparison table
-dt_compare <- dt_le_pw[dt_compare, on = .(location, year, scenario, htn_target_scenario)]
-
-n_miss_lepw <- sum(is.na(dt_compare$le_pop_weighted))
-if (n_miss_lepw > 0)
-  warning(n_miss_lepw, " rows missing population-weighted LE in dt_compare.")
-
-# ── 5) ISO3 codes and WHO region ──────────────────────────────────────────────
-
-country_grp <- fread(COUNTRY_FILE)
-
-dt_compare <- country_grp[dt_compare, on = .(location), nomatch = NA]
-
-missing_iso3 <- is.na(dt_compare$iso3)
-if (any(missing_iso3)) {
-  dt_compare[missing_iso3,
-    iso3 := countrycode(location, origin = "country.name",
-                        destination = "iso3c", warn = FALSE)
-  ]
+n_miss_le <- sum(is.na(dt_le_lookup$le))
+if (n_miss_le > 0) {
+  warning(n_miss_le, " rows missing remaining life expectancy after lt_interp join.",
+          " Check location-name alignment between model output and WPP.")
 }
 
-setnames(dt_compare, "region", "who_region")
+setnames(dt_le_lookup, "age", "age_ref_5y")
+setnames(dt_le_lookup, "le",  "le_avg_adult")
 
-# ── 6) GNI per capita with SSP forward projection ─────────────────────────────
-#
-# Observed values: World Bank GNI per capita, PPP (constant 2017 international USD).
-# The World Bank file typically ends 1–3 years before the present.  For model years
-# beyond the last observed year we extend using SSP2 GDP|PPP per capita growth rates
-# from IIASA SSP Release 3.1 (Scenario "SSP2", Variable "GDP|PPP [per capita]").
-#
-# Projection formula for year y > y0  (y0 = last observed GNI year per country):
-#   gni(y) = gni(y0) × [ ssp_interp(y) / ssp_interp(y0) ]
-#
-# ssp_interp(y) is derived by log-linear interpolation between the 5-year SSP
-# anchor points.  Using the ratio ssp(y)/ssp(y0) preserves the observed GNI level
-# while applying SSP-implied annual growth rates.  The ratio is unit-free, so the
-# currency difference between World Bank (2017 PPP USD) and SSP (2005 PPP USD)
-# does not affect the projection — only the growth rates carry over.
-#
-# Observed GNI values are kept unchanged where available.
-
-gni_raw  <- fread(GNI_FILE, skip = 4, header = TRUE)
-year_cols <- grep("^[0-9]{4}$", names(gni_raw), value = TRUE)
-
-gni <- melt(gni_raw,
-  id.vars      = "Country Code",
-  measure.vars = year_cols,
-  variable.name = "year",
-  value.name    = "gni_pc_ppp"
-)
-setnames(gni, "Country Code", "iso3")
-gni[, year := as.integer(as.character(year))]
-gni <- gni[!is.na(gni_pc_ppp) & year >= 2000 & year <= 2050]
-
-# --- SSP2 GDP per capita for growth rates ---
-if (!exists("ssp_gdp")) {
-  ssp_gdp <- as.data.table(
-    read_excel(SSP_FILE, sheet = "data"))
-}
-
-ssp_pc      <- ssp_gdp[Scenario == "SSP2" & Variable == "GDP|PPP [per capita]"]
-ssp_yr_cols <- grep("^[0-9]{4}$", names(ssp_pc), value = TRUE)
-
-ssp_pc_long <- melt(ssp_pc,
-  id.vars      = "Region",
-  measure.vars = ssp_yr_cols,
-  variable.name = "ssp_year",
-  value.name    = "ssp_gdp_pc"
-)
-setnames(ssp_pc_long, "Region", "iso3")
-ssp_pc_long[, ssp_year := as.integer(as.character(ssp_year))]
-ssp_pc_long <- ssp_pc_long[!is.na(ssp_gdp_pc) & ssp_gdp_pc > 0]
-
-if (nrow(ssp_pc_long) == 0)
-  stop("SSP data filtered to 0 rows. Check that Scenario='SSP2' and ",
-       "Variable='GDP|PPP [per capita]' exist in the SSP file.")
-
-model_years <- sort(unique(dt_compare$year))
-iso3_list   <- unique(dt_compare[!is.na(iso3), iso3])
-
-# Interpolate SSP to annual: log-linear between 5-year anchor points.
-# rule=2 in approx() holds constant beyond the SSP range (flat extrapolation).
-ssp_annual <- ssp_pc_long[iso3 %in% iso3_list, {
-  ord       <- order(ssp_year)
-  ssp_yrs_s <- ssp_year[ord]
-  ssp_val_s <- ssp_gdp_pc[ord]
-  log_i     <- approx(ssp_yrs_s, log(ssp_val_s), xout = model_years, rule = 2)$y
-  data.table(year = model_years, ssp_interp = exp(log_i))
-}, by = iso3]
-
-n_ssp_countries <- uniqueN(ssp_annual$iso3)
-cat("SSP2 growth rates available for", n_ssp_countries,
-    "of", length(iso3_list), "countries.\n")
-
-# Last observed GNI year and value per country
-gni_last <- gni[iso3 %in% iso3_list, {
-  idx <- which.max(year)
-  .(last_year = year[idx], gni_last = gni_pc_ppp[idx])
-}, by = iso3]
-
-# SSP value at each country's last observed year (denominator for growth ratio)
-ssp_at_last <- ssp_annual[gni_last, on = .(iso3, year = last_year)]
-setnames(ssp_at_last, c("year", "ssp_interp"), c("last_year", "ssp_at_last"))
-
-# Build full (iso3 × model_year) grid; start with exact observed GNI
-gni_grid <- CJ(iso3 = iso3_list, year = model_years)
-gni_grid <- gni[year %in% model_years][gni_grid, on = .(iso3, year)]  # exact match
-
-# Merge SSP interpolated values and last-obs reference
-gni_grid <- ssp_annual[gni_grid,     on = .(iso3, year)]
-gni_grid <- ssp_at_last[gni_grid,    on = .(iso3)]
-
-# For years where observed GNI is missing: project forward using SSP ratio
-# gni(y) = gni(y0) × ssp_interp(y) / ssp_interp(y0)
-gni_grid[is.na(gni_pc_ppp) & !is.na(ssp_at_last) & ssp_at_last > 0,
-  gni_pc_ppp := gni_last * (ssp_interp / ssp_at_last)
+dt_compare <- dt_le_lookup[
+  dt_compare,
+  on = .(location, year, scenario, htn_target_scenario)
 ]
 
-n_miss_gni <- sum(is.na(gni_grid$gni_pc_ppp))
-if (n_miss_gni > 0)
-  warning(n_miss_gni, " (iso3, year) rows still missing GNI after SSP projection. ",
-          "These will produce NA VSL/VSLY values.")
-
-gni_grid <- gni_grid[, .(iso3, year, gni_pc_ppp)]
-
-dt_compare <- gni_grid[dt_compare, on = .(iso3, year)]
-
-# US GNI per year (VSL transfer reference income)
-us_gni <- gni_grid[iso3 == "USA", .(year, gni_pc_usa = gni_pc_ppp)]
-if (nrow(us_gni) == 0)
-  stop("No USA GNI values found. Check iso3='USA' is present in the GNI file.")
-dt_compare <- us_gni[dt_compare, on = .(year)]
-
-# ── 7) VSL calculation ─────────────────────────────────────────────────────────
-#
-# Income-transfer method:
-#   VSL_country = US_VSL_RATIO × GNI_pc_USA × (GNI_pc_country / GNI_pc_USA)^elasticity
-#
-# Simplified (factoring out GNI_pc_USA):
-#   VSL_country = US_VSL_RATIO × GNI_pc_country × (GNI_pc_country / GNI_pc_USA)^(e−1)
-#
-# Floor: VSL_country ≥ VSL_RATIO_FLOOR × GNI_pc_country
-#   → prevents implausibly low VSL in very low-income countries.
+# ── 8) VSL transfer ───────────────────────────────────────────────────────
+# VSL_country = US_VSL_RATIO × GNI_pc_USA × (GNI_pc_country / GNI_pc_USA)^elasticity
+# Floor: VSL >= VSL_RATIO_FLOOR × GNI_pc_country
 
 dt_compare[, vsl_e1_0 := US_VSL_RATIO * gni_pc_usa *
              (gni_pc_ppp / gni_pc_usa)^VSL_ELAST_LOW]
@@ -352,7 +466,7 @@ dt_compare[, vsl_e1_0 := US_VSL_RATIO * gni_pc_usa *
 dt_compare[, vsl_e1_5 := US_VSL_RATIO * gni_pc_usa *
              (gni_pc_ppp / gni_pc_usa)^VSL_ELAST_HIGH]
 
-dt_compare[, vsl_e1_2 := ifelse(
+dt_compare[, vsl_e1_2 := fifelse(
   gni_pc_ppp >= gni_pc_usa,
   US_VSL_RATIO * gni_pc_usa * (gni_pc_ppp / gni_pc_usa)^VSL_ELAST_HIC,
   US_VSL_RATIO * gni_pc_usa * (gni_pc_ppp / gni_pc_usa)^VSL_ELAST_LMIC
@@ -362,66 +476,40 @@ dt_compare[, vsl_e1_0 := pmax(vsl_e1_0, VSL_RATIO_FLOOR * gni_pc_ppp, na.rm = TR
 dt_compare[, vsl_e1_2 := pmax(vsl_e1_2, VSL_RATIO_FLOOR * gni_pc_ppp, na.rm = TRUE)]
 dt_compare[, vsl_e1_5 := pmax(vsl_e1_5, VSL_RATIO_FLOOR * gni_pc_ppp, na.rm = TRUE)]
 
-# VSL economic value of deaths averted (retained for backward compatibility)
-dt_compare[, economic_value_e1_0 := vsl_e1_0 * deaths_averted]
-dt_compare[, economic_value_e1_2 := vsl_e1_2 * deaths_averted]
-dt_compare[, economic_value_e1_5 := vsl_e1_5 * deaths_averted]
-
-# ── 7b) VSLY calculation ───────────────────────────────────────────────────────
-#
-# VSLY = Value of a Statistical Life-Year, derived from VSL and remaining LE.
-#
-# Undiscounted VSLY (uniform value across all remaining life-years):
-#   vsly_undiscounted = VSL / LE_pop_weighted
-#
-# Discounted VSLY at rate r (annuity formula — each future life-year is
-# discounted relative to the present):
-#   annuity_factor(LE, r) = [ 1 − (1+r)^(−LE) ] / r
-#   vsly_r = VSL / annuity_factor(LE, r)
-#   When r → 0: annuity_factor → LE, so vsly_r → vsly_undiscounted.
-#
-# Economic value of deaths averted:
-#   vsly_value         = deaths_averted × vsly_undiscounted
-#   vsly_value_r3      = deaths_averted × vsly_r3   (annuity at 3%)
-#
-# The time-series discount factor (Section 8) brings these annual values to
-# 2026 present value and is applied separately.
-
-# Undiscounted VSLY (all three elasticity cases)
-dt_compare[le_pop_weighted > 0, `:=`(
-  vsly_e1_0 = vsl_e1_0 / le_pop_weighted,
-  vsly_e1_2 = vsl_e1_2 / le_pop_weighted,
-  vsly_e1_5 = vsl_e1_5 / le_pop_weighted
+# ── 9) Constant VSLY (Robinson et al. 2019 reference case) ────────────────
+# VSLY = VSL / LE_avg_adult  (undiscounted, constant across all remaining life-years)
+dt_compare[le_avg_adult > 0, `:=`(
+  vsly_e1_0 = vsl_e1_0 / le_avg_adult,
+  vsly_e1_2 = vsl_e1_2 / le_avg_adult,
+  vsly_e1_5 = vsl_e1_5 / le_avg_adult
 )]
 
-# Discounted VSLY at 3% (annuity equivalent)
-r3 <- DISC_RATES["r3"]
-dt_compare[le_pop_weighted > 0,
-  annuity_r3 := (1 - (1 + r3)^(-le_pop_weighted)) / r3
-]
-dt_compare[le_pop_weighted > 0, `:=`(
-  vsly_r3_e1_0 = vsl_e1_0 / annuity_r3,
-  vsly_r3_e1_2 = vsl_e1_2 / annuity_r3,
-  vsly_r3_e1_5 = vsl_e1_5 / annuity_r3
-)]
+# Proxy life-years gained (for reporting only — does not change monetary totals):
+#   life_years_gained_proxy = deaths_averted × LE_avg_adult
+# Note: VSLY × life_years_gained_proxy = VSL × deaths_averted by construction.
+dt_compare[, life_years_gained_proxy := deaths_averted * le_avg_adult]
 
-# VSLY economic value of deaths averted
+# Monetary values of deaths averted
 dt_compare[, `:=`(
-  vsly_value_e1_0    = deaths_averted * vsly_e1_0,
-  vsly_value_e1_2    = deaths_averted * vsly_e1_2,
-  vsly_value_e1_5    = deaths_averted * vsly_e1_5,
-  vsly_value_r3_e1_0 = deaths_averted * vsly_r3_e1_0,
-  vsly_value_r3_e1_2 = deaths_averted * vsly_r3_e1_2,
-  vsly_value_r3_e1_5 = deaths_averted * vsly_r3_e1_5
+  economic_value_e1_0 = vsl_e1_0 * deaths_averted,
+  economic_value_e1_2 = vsl_e1_2 * deaths_averted,
+  economic_value_e1_5 = vsl_e1_5 * deaths_averted
 )]
 
-# ── 8) Discount factors ────────────────────────────────────────────────────────
+# VSLY monetary values (numerically identical to VSL values by construction,
+# retained as explicit columns for clarity in downstream reporting)
+dt_compare[, `:=`(
+  vsly_value_e1_0 = vsly_e1_0 * life_years_gained_proxy,
+  vsly_value_e1_2 = vsly_e1_2 * life_years_gained_proxy,
+  vsly_value_e1_5 = vsly_e1_5 * life_years_gained_proxy
+)]
+
+# ── 10) Time-series discount factors ──────────────────────────────────────
 #
-# Time-series discounting brings the annual stream of benefits back to BASE_YEAR.
-#   disc_rX = 1 / (1 + rX)^(year − BASE_YEAR)
+# Brings the annual stream of benefits to BASE_YEAR present value:
+#   disc_rX = 1 / (1 + rX)^(year - BASE_YEAR)
 #
-# Discounted GNI and VSL columns express values in BASE_YEAR constant PPP terms
-# for comparability across the 2026–2050 horizon.
+# Applied to GNI (for income-share denominators) and to economic values.
 
 dt_compare[, `:=`(
   disc_r1 = 1 / (1 + DISC_RATES["r1"])^(year - BASE_YEAR),
@@ -430,141 +518,354 @@ dt_compare[, `:=`(
 )]
 
 dt_compare[, `:=`(
-  gni_pc_disc_r3           = gni_pc_ppp         * disc_r3,
-  vsl_e1_5_disc_r3         = vsl_e1_5           * disc_r3,
-  # Undiscounted VSLY × time-discount (life-years valued equally within each death)
-  vsly_value_e1_5_disc_r3  = vsly_value_e1_5    * disc_r3,
-  # Annuity VSLY × time-discount (life-years discounted within + across time)
-  vsly_value_r3_e1_5_disc  = vsly_value_r3_e1_5 * disc_r3
+  gni_pc_disc_r3              = gni_pc_ppp            * disc_r3,
+  # PRIMARY estimate columns (e1_2: Robinson et al. 2019 reference-case elasticity)
+  economic_value_e1_2_disc_r3 = economic_value_e1_2   * disc_r3,
+  vsly_value_e1_2_disc_r3     = vsly_value_e1_2       * disc_r3,
+  # SENSITIVITY HIGH columns (e1_5: uniform elasticity, retained for reporting)
+  economic_value_e1_5_disc_r3 = economic_value_e1_5   * disc_r3,
+  vsly_value_e1_5_disc_r3     = vsly_value_e1_5       * disc_r3
 )]
 
-# ── 9) Final dataset ───────────────────────────────────────────────────────────
-
+# ── 11) Final dataset ──────────────────────────────────────────────────────
 dt_final <- dt_compare[, .(
-  location, iso3, year, scenario, htn_target_scenario, who_region,
-  deaths_baseline, deaths_intervention, deaths_averted,
-  population, le_pop_weighted,
-  gni_pc_ppp, gni_pc_usa,
-  vsl_e1_0, vsl_e1_2, vsl_e1_5,
-  vsly_e1_0,    vsly_e1_2,    vsly_e1_5,
-  vsly_r3_e1_0, vsly_r3_e1_2, vsly_r3_e1_5,
-  disc_r1, disc_r3, disc_r5,
+  location,
+  iso3,
+  year,
+  scenario,
+  htn_target_scenario,
+  who_region,
+  deaths_baseline,
+  deaths_intervention,
+  deaths_averted,
+  population,
+  adult_population,
+  avg_adult_age,
+  age_ref_5y,
+  le_avg_adult,
+  life_years_gained_proxy,
+  gni_pc_ppp,
+  gni_pc_usa,
+  vsl_e1_0,
+  vsl_e1_2,
+  vsl_e1_5,
+  vsly_e1_0,
+  vsly_e1_2,
+  vsly_e1_5,
+  economic_value_e1_0,
+  economic_value_e1_2,
+  economic_value_e1_5,
+  vsly_value_e1_0,
+  vsly_value_e1_2,
+  vsly_value_e1_5,
+  disc_r1,
+  disc_r3,
+  disc_r5,
   gni_pc_disc_r3,
-  vsl_e1_5_disc_r3,
-  economic_value_e1_0, economic_value_e1_2, economic_value_e1_5,
-  vsly_value_e1_0,    vsly_value_e1_2,    vsly_value_e1_5,
-  vsly_value_r3_e1_0, vsly_value_r3_e1_2, vsly_value_r3_e1_5,
-  vsly_value_e1_5_disc_r3,
-  vsly_value_r3_e1_5_disc
+  # Primary discounted values (e1_2 — Robinson et al. 2019 reference case)
+  economic_value_e1_2_disc_r3,
+  vsly_value_e1_2_disc_r3,
+  # Sensitivity discounted values (e1_5 — high sensitivity bound)
+  economic_value_e1_5_disc_r3,
+  vsly_value_e1_5_disc_r3
 )]
 
 setorder(dt_final, location, year, scenario)
 
+# Update WHO region
+# ISO3 codes and WHO region ──────────────────────────────────────────────
+country_grp <- fread(file.path(wd, "data", "raw",
+                           "who-regions.csv"))
+
+setnames(
+  country_grp,
+  old = c("Entity", "Code", "World regions according to WHO"),
+  new = c("location", "iso3", "region_who")
+)
+
+country_grp[, region_who := gsub("\\s*\\(WHO\\)", "", region_who)]
+country_grp[, Year := NULL]
+
+# main merge
+dt_final <- country_grp[dt_compare, on = .(location)]
+
+# fill missing iso3 using countrycode
+missing_iso3 <- is.na(dt_final$iso3)
+if (any(missing_iso3)) {
+  dt_final[missing_iso3,
+             iso3 := countrycode(
+               location,
+               origin = "country.name",
+               destination = "iso3c",
+               warn = FALSE
+             )
+  ]
+}
+
+# manual fixes
+fix_country_grp <- data.table(
+  location = c(
+    "Brunei Darussalam",
+    "Cabo Verde",
+    "Democratic People's Republic of Korea",
+    "Democratic Republic of the Congo",
+    "Iran (Islamic Republic of)",
+    "Ivory Coast",
+    "Lao People's Democratic Republic",
+    "Micronesia (Federated States of)",
+    "Palestine",
+    "Republic of Korea",
+    "Republic of Moldova",
+    "Russian Federation",
+    "Saint Vincent and the Grenadines",
+    "Syrian Arab Republic",
+    "Taiwan (Province of China)",
+    "Timor-Leste",
+    "Venezuela (Bolivarian Republic of)",
+    "Viet Nam"
+  ),
+  iso3 = c(
+    "BRN","CPV","PRK","COD","IRN","CIV","LAO","FSM","PSE",
+    "KOR","MDA","RUS","VCT","SYR","TWN","TLS","VEN","VNM"
+  ),
+  who_region = c(
+    "WPR","AFR","SEAR","AFR","EMR","AFR","WPR","WPR","EMR",
+    "WPR","EUR","EUR","AMR","EMR","WPR","SEAR","AMR","WPR"
+  )
+)
+
+# patch missing values from manual table
+dt_final[fix_country_grp, on = .(location),
+           `:=`(
+             iso3       = fcoalesce(iso3, i.iso3),
+             region_who = fcoalesce(region_who, i.who_region)
+           )
+]
+
+dt_final[, region_who := fcase(
+  region_who == "AFR",  "Africa",
+  region_who == "EMR",  "Eastern Mediterranean",
+  region_who == "EUR",  "Europe",
+  region_who == "AMR",  "Americas",
+  region_who == "SEAR", "South-East Asia",
+  region_who == "WPR",  "Western Pacific",
+  default = region_who
+)]
+
+## Keep only encoded region who
+dt_final[, who_region := region_who]
+
+dt_final[, region_who := NULL]
+# ── 12) Save main results ──────────────────────────────────────────────────
 if (!dir.exists(DIR_OUT)) dir.create(DIR_OUT, recursive = TRUE)
 saveRDS(dt_final, OUT_FILE)
-fwrite(dt_final, file.path(DIR_OUT, "08_vsly_results.csv"))
+fwrite(dt_final, OUT_CSV)
 
 cat("Saved:", OUT_FILE, "\n")
-cat("Rows:", nrow(dt_final),
-    "| Columns:", ncol(dt_final),
-    "| Countries:", length(unique(dt_final$location)), "\n")
+cat("Saved:", OUT_CSV, "\n")
+cat("Rows:", nrow(dt_final), "| Columns:", ncol(dt_final), "\n")
 cat("Scenarios:", paste(unique(dt_final$scenario), collapse = ", "), "\n")
 cat("Years:", min(dt_final$year), "–", max(dt_final$year), "\n")
+cat("Countries:", length(unique(dt_final$location)), "\n")
 
-# ── 10) Summary reporting table ────────────────────────────────────────────────
+# ── 13) Summary reporting tables ──────────────────────────────────────────
 #
 # Rows    : intervention scenario × WHO region  (+ "World" totals)
-# Columns : 2026 | 2030 | 2040 | 2050 | total 2026–2050
-# Metric  : discounted VSLY under r = 3%, elasticity = 1.5
-#           vsly_value_r3_e1_5_disc = deaths_averted × vsly_r3_e1_5 × disc_r3
+# Columns : 2026 | 2030 | 2040 | 2050 | cumulative 2026–2050
+# Values  : discounted at r = 3%, presented as absolute (USD PPP) and as share
+#           of discounted GNI (for cross-country comparability).
 #
-# "Share of income" for year t:
-#   share_t = Σ(vsly_value_r3_e1_5_disc_t) / Σ(population_t × gni_pc_disc_r3_t)
-#   Both numerator and denominator are discounted to BASE_YEAR.
-#   The disc_r3 factors cancel for a single year slice, so the ratio equals
-#   Σ(VSLY value_t) / Σ(GDP_t) regardless of discount rate — useful for
-#   annual comparability.  For the cumulative column, discounting affects the
-#   time-weighting of each year's contribution.
+# PRIMARY metric: e1_2 (differential elasticity — Robinson et al. 2019
+#   reference case). This is the headline figure for publication.
+# SENSITIVITY metric: e1_5 (uniform elasticity = 1.5 — high bound).
+#   Included as a separate set of summary tables for sensitivity reporting.
+#
+# Outputs:
+#   1) VSL summary  (primary):   economic_value_e1_2_disc_r3
+#   2) VSLY summary (primary):   vsly_value_e1_2_disc_r3
+#   3) VSL summary  (sensitivity e1_5): economic_value_e1_5_disc_r3
+#   4) VSLY summary (sensitivity e1_5): vsly_value_e1_5_disc_r3
+#   5) Appended: all four stacked with valuation_type and elasticity_case cols
 
-SUMMARY_YEARS <- c(2026L, 2030L, 2040L, 2050L)
-
-# Helper: aggregate one year slice to (who_region, scenario) level
-make_slice <- function(dt, yr) {
-  sub <- dt[year == yr, .(
-    vsly_value   = sum(vsly_value_r3_e1_5_disc, na.rm = TRUE),
-    total_income = sum(population * gni_pc_disc_r3,  na.rm = TRUE)
-  ), by = .(who_region, scenario)]
-  sub[, share_income := vsly_value / total_income]
-  sub[, total_income := NULL]
-  setnames(sub,
-    c("vsly_value",   "share_income"),
-    c(paste0("vsly_",   yr), paste0("share_", yr))
-  )
-  sub
+make_summary_table <- function(dt, value_col, value_prefix) {
+  
+  # Verify column exists before proceeding
+  if (!value_col %in% names(dt)) {
+    stop("Column '", value_col, "' not found in dt_final. ",
+         "Check that the discount step created it correctly.")
+  }
+  if (!"gni_pc_disc_r3" %in% names(dt)) {
+    stop("Column 'gni_pc_disc_r3' not found in dt_final. ",
+         "Check that the discount step created it correctly.")
+  }
+  if (!"who_region" %in% names(dt)) {
+    stop("Column 'who_region' not found in dt_final.")
+  }
+  
+  # Single-year slice: region level
+  make_slice_region <- function(yr) {
+    sub <- dt[year == yr, .(
+      metric_value = sum(get(value_col), na.rm = TRUE),
+      total_income = sum(population * gni_pc_disc_r3, na.rm = TRUE)
+    ), by = .(who_region, scenario)]
+    sub[, share_income := metric_value / total_income]
+    sub[, total_income := NULL]
+    setnames(sub,
+             c("metric_value", "share_income"),
+             c(paste0(value_prefix, "_", yr), paste0("share_", yr))
+    )
+    sub
+  }
+  
+  # Single-year slice: world total
+  make_slice_world <- function(yr) {
+    sub <- dt[year == yr, .(
+      metric_value = sum(get(value_col), na.rm = TRUE),
+      total_income = sum(population * gni_pc_disc_r3, na.rm = TRUE)
+    ), by = .(scenario)]
+    sub[, `:=`(who_region = "World", share_income = metric_value / total_income)]
+    sub[, total_income := NULL]
+    setnames(sub,
+             c("metric_value", "share_income"),
+             c(paste0(value_prefix, "_", yr), paste0("share_", yr))
+    )
+    sub
+  }
+  
+  # Merge multiple year-slices side by side
+  merge_slices <- function(lst) {
+    Reduce(
+      function(a, b) merge(a, b, by = c("who_region", "scenario"), all = TRUE),
+      lst
+    )
+  }
+  
+  # Cumulative totals over BASE_YEAR:2050 — region level
+  make_total_region <- function() {
+    sub <- dt[year >= BASE_YEAR & year <= 2050, .(
+      metric_total = sum(get(value_col), na.rm = TRUE),
+      income_total = sum(population * gni_pc_disc_r3, na.rm = TRUE)
+    ), by = .(who_region, scenario)]
+    sub[, share_total := metric_total / income_total]
+    sub[, income_total := NULL]
+    setnames(sub, "metric_total", paste0(value_prefix, "_total"))
+    sub
+  }
+  
+  # Cumulative totals over BASE_YEAR:2050 — world total
+  make_total_world <- function() {
+    sub <- dt[year >= BASE_YEAR & year <= 2050, .(
+      metric_total = sum(get(value_col), na.rm = TRUE),
+      income_total = sum(population * gni_pc_disc_r3, na.rm = TRUE)
+    ), by = .(scenario)]
+    sub[, `:=`(who_region = "World", share_total = metric_total / income_total)]
+    sub[, income_total := NULL]
+    setnames(sub, "metric_total", paste0(value_prefix, "_total"))
+    sub
+  }
+  
+  dt_reg_ann   <- merge_slices(lapply(SUMMARY_YEARS, make_slice_region))
+  dt_world_ann <- merge_slices(lapply(SUMMARY_YEARS, make_slice_world))
+  dt_reg_tot   <- make_total_region()
+  dt_world_tot <- make_total_world()
+  
+  dt_summary_region <- merge(dt_reg_ann, dt_reg_tot,
+                             by = c("who_region", "scenario"), all = TRUE)
+  dt_summary_world  <- merge(dt_world_ann, dt_world_tot,
+                             by = c("who_region", "scenario"), all = TRUE)
+  
+  dt_summary <- rbind(dt_summary_region, dt_summary_world, fill = TRUE)
+  setorder(dt_summary, scenario, who_region)
+  dt_summary
 }
 
-# Helper: aggregate one year slice to World level (no region grouping)
-make_slice_world <- function(dt, yr) {
-  sub <- dt[year == yr, .(
-    vsly_value   = sum(vsly_value_r3_e1_5_disc, na.rm = TRUE),
-    total_income = sum(population * gni_pc_disc_r3,  na.rm = TRUE)
-  ), by = .(scenario)]
-  sub[, `:=`(who_region = "World", share_income = vsly_value / total_income)]
-  sub[, total_income := NULL]
-  setnames(sub,
-    c("vsly_value",   "share_income"),
-    c(paste0("vsly_",   yr), paste0("share_", yr))
-  )
-  sub
+# PRIMARY summary tables (e1_2 — Robinson et al. 2019 reference-case elasticity)
+dt_summary_vsl_e1_2 <- make_summary_table(
+  dt           = dt_final,
+  value_col    = "economic_value_e1_2_disc_r3",
+  value_prefix = "vsl"
+)
+
+dt_summary_vsly_e1_2 <- make_summary_table(
+  dt           = dt_final,
+  value_col    = "vsly_value_e1_2_disc_r3",
+  value_prefix = "vsly"
+)
+
+# SENSITIVITY summary tables (e1_5 — uniform elasticity high bound)
+dt_summary_vsl_e1_5 <- make_summary_table(
+  dt           = dt_final,
+  value_col    = "economic_value_e1_5_disc_r3",
+  value_prefix = "vsl"
+)
+
+dt_summary_vsly_e1_5 <- make_summary_table(
+  dt           = dt_final,
+  value_col    = "vsly_value_e1_5_disc_r3",
+  value_prefix = "vsly"
+)
+
+# ── 14) Standardise column names and stack ─────────────────────────────────
+# Rename value columns to generic "metric_*" / "share_*" so all four tables
+# share the same schema and can be rbind-ed cleanly.
+# An `elasticity_case` column records the source elasticity for each block.
+
+rename_to_metric <- function(dt, old_prefix) {
+  old_val <- grep(paste0("^", old_prefix, "_"), names(dt), value = TRUE)
+  new_val <- sub(paste0("^", old_prefix, "_"), "metric_", old_val)
+  setnames(dt, old_val, new_val)
+  dt
 }
 
-# Annual slices for regions and World
-slices_region <- lapply(SUMMARY_YEARS, make_slice,       dt = dt_final)
-slices_world  <- lapply(SUMMARY_YEARS, make_slice_world, dt = dt_final)
+dt_summary_vsl_e1_2  <- rename_to_metric(dt_summary_vsl_e1_2,  "vsl")
+dt_summary_vsly_e1_2 <- rename_to_metric(dt_summary_vsly_e1_2, "vsly")
+dt_summary_vsl_e1_5  <- rename_to_metric(dt_summary_vsl_e1_5,  "vsl")
+dt_summary_vsly_e1_5 <- rename_to_metric(dt_summary_vsly_e1_5, "vsly")
 
-# Merge annual slices across years
-merge_slices <- function(lst) {
-  Reduce(function(a, b) merge(a, b, by = c("who_region", "scenario"), all = TRUE), lst)
-}
+dt_summary_appended <- rbindlist(
+  list(
+    copy(dt_summary_vsl_e1_2) [, `:=`(valuation_type = "VSL",  elasticity_case = "e1_2_primary")],
+    copy(dt_summary_vsly_e1_2)[, `:=`(valuation_type = "VSLY", elasticity_case = "e1_2_primary")],
+    copy(dt_summary_vsl_e1_5) [, `:=`(valuation_type = "VSL",  elasticity_case = "e1_5_sensitivity")],
+    copy(dt_summary_vsly_e1_5)[, `:=`(valuation_type = "VSLY", elasticity_case = "e1_5_sensitivity")]
+  ),
+  fill = TRUE, use.names = TRUE
+)
 
-dt_reg_ann   <- merge_slices(slices_region)
-dt_world_ann <- merge_slices(slices_world)
+setcolorder(dt_summary_appended,
+            c("valuation_type", "elasticity_case", "who_region", "scenario",
+              setdiff(names(dt_summary_appended),
+                      c("valuation_type", "elasticity_case", "who_region", "scenario")))
+)
+setorder(dt_summary_appended, valuation_type, elasticity_case, scenario, who_region)
 
-# Cumulative totals 2026–2050
-make_total <- function(dt) {
-  sub <- dt[year >= BASE_YEAR & year <= 2050, .(
-    vsly_total   = sum(vsly_value_r3_e1_5_disc, na.rm = TRUE),
-    income_total = sum(population * gni_pc_disc_r3,  na.rm = TRUE)
-  ), by = .(who_region, scenario)]
-  sub[, share_total := vsly_total / income_total]
-  sub[, income_total := NULL]
-  sub
-}
-make_total_world <- function(dt) {
-  sub <- dt[year >= BASE_YEAR & year <= 2050, .(
-    vsly_total   = sum(vsly_value_r3_e1_5_disc, na.rm = TRUE),
-    income_total = sum(population * gni_pc_disc_r3,  na.rm = TRUE)
-  ), by = .(scenario)]
-  sub[, `:=`(who_region = "World", share_total = vsly_total / income_total)]
-  sub[, income_total := NULL]
-  sub
-}
+# ── 15) Save summary tables ────────────────────────────────────────────────
+saveRDS(dt_summary_vsl_e1_2,  OUT_SUMM_VSL)
+saveRDS(dt_summary_vsly_e1_2, OUT_SUMM_VSLY)
+saveRDS(dt_summary_appended,  OUT_SUMM_APP)
 
-dt_reg_tot   <- make_total(dt_final)
-dt_world_tot <- make_total_world(dt_final)
+# Primary tables (e1_2)
+fwrite(dt_summary_vsl_e1_2,  file.path(DIR_OUT, "08_vsl_summary_table_e1_2_primary.csv"))
+fwrite(dt_summary_vsly_e1_2, file.path(DIR_OUT, "08_vsly_summary_table_e1_2_primary.csv"))
 
-# Combine annual + cumulative columns
-dt_summary_region <- merge(dt_reg_ann, dt_reg_tot,
-                           by = c("who_region", "scenario"), all = TRUE)
-dt_summary_world  <- merge(dt_world_ann, dt_world_tot,
-                           by = c("who_region", "scenario"), all = TRUE)
+# Sensitivity tables (e1_5)
+fwrite(dt_summary_vsl_e1_5,  file.path(DIR_OUT, "08_vsl_summary_table_e1_5_sensitivity.csv"))
+fwrite(dt_summary_vsly_e1_5, file.path(DIR_OUT, "08_vsly_summary_table_e1_5_sensitivity.csv"))
 
-dt_summary <- rbind(dt_summary_region, dt_summary_world, fill = TRUE)
-setorder(dt_summary, scenario, who_region)
+# Full appended table (all four blocks)
+fwrite(dt_summary_appended, file.path(DIR_OUT, "08_vsl_vsly_summary_table_appended.csv"))
 
-saveRDS(dt_summary, OUT_SUMM)
-fwrite(dt_summary, file.path(DIR_OUT, "08_vsly_summary_table.csv"))
-
-cat("Saved summary table:", OUT_SUMM, "\n")
-cat("Rows:", nrow(dt_summary),
-    "| Regions:", paste(unique(dt_summary$who_region), collapse = ", "), "\n")
+cat("Saved primary VSL summary (e1_2): ",
+    "08_vsl_summary_table_e1_2_primary.csv\n")
+cat("Saved primary VSLY summary (e1_2):",
+    "08_vsly_summary_table_e1_2_primary.csv\n")
+cat("Saved sensitivity VSL summary (e1_5): ",
+    "08_vsl_summary_table_e1_5_sensitivity.csv\n")
+cat("Saved sensitivity VSLY summary (e1_5):",
+    "08_vsly_summary_table_e1_5_sensitivity.csv\n")
+cat("Saved appended summary table:     ",
+    "08_vsl_vsly_summary_table_appended.csv\n")
+cat("Rows primary VSL:", nrow(dt_summary_vsl_e1_2),
+    "| Rows primary VSLY:", nrow(dt_summary_vsly_e1_2),
+    "| Rows appended:", nrow(dt_summary_appended), "\n")
+cat("Regions:", paste(sort(unique(dt_summary_vsly_e1_2$who_region)), collapse = ", "), "\n")
