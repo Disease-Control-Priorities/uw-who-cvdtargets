@@ -67,6 +67,40 @@ png_cause       <- paste0(slides_dir, "sl_fig_by_cause.png")
 png_age         <- paste0(slides_dir, "sl_fig_by_age.png")
 png_top15       <- paste0(slides_dir, "sl_fig_top15_countries.png")
 
+# ---- SL-ECON: economic-valuation artefacts (built in aim1_report.Rmd) -------
+econ_files <- c(
+  vsl_prim  = paste0(slides_dir, "sl_econ_vsl_primary.rds"),
+  vsly_prim = paste0(slides_dir, "sl_econ_vsly_primary.rds"),
+  scalars   = paste0(slides_dir, "sl_econ_scalars.rds"),
+  dot_png   = paste0(slides_dir, "sl_econ_dotplot.png")
+)
+have_econ <- all(file.exists(econ_files))
+
+if (have_econ) {
+  sl_econ_vsl_primary  <- readRDS(econ_files[["vsl_prim"]])
+  sl_econ_vsly_primary <- readRDS(econ_files[["vsly_prim"]])
+  sl_econ_scalars      <- readRDS(econ_files[["scalars"]])
+  png_econ_dot         <- econ_files[["dot_png"]]
+} else {
+  sl_econ_vsl_primary  <- NULL
+  sl_econ_vsly_primary <- NULL
+  sl_econ_scalars      <- list(world_vsly_share_total = NA_real_,
+                               world_vsl_share_total  = NA_real_,
+                               world_vsly_value_total = NA_real_,
+                               world_vsl_value_total  = NA_real_)
+  png_econ_dot         <- NA_character_
+}
+
+fmt_pct <- function(x, digits = 1) {
+  if (is.null(x) || length(x) == 0 || is.na(x)) return("[X.X\\%]")
+  paste0(formatC(round(x * 100, digits), format = "f", digits = digits), "\\%")
+}
+fmt_trillions <- function(x, digits = 1) {
+  if (is.null(x) || length(x) == 0 || is.na(x)) return("[\\$X.X T]")
+  paste0("\\$", formatC(round(x / 1e12, digits), format = "f",
+                        digits = digits, big.mark = ","), " T")
+}
+
 # ---- Display helpers (no raw data needed) ------------------------------------
 fmt_M <- function(x, digits = 1)
   formatC(round(x / 1e6, digits), format = "f", digits = digits, big.mark = ",")
@@ -723,6 +757,102 @@ Absolute gains largest in high-burden regions; proportional gains reflect curren
 \end{block}
 
 <!-- ======================================================================
+     ECONOMIC VALUE
+     ====================================================================== -->
+
+# Economic Value of Avoidable Mortality
+
+## Economic Valuation: Methods at a Glance
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Two complementary metrics}
+\begin{itemize}\footnotesize
+  \item \textbf{Value of Statistical Life (VSL)} --- monetary value the population places on small reductions in mortality risk; transferred from a U.S.\ reference using country GNI per capita (PPP) and an income elasticity.
+  \item \textbf{Value of Statistical Life Year (VSLY)} --- VSL annuitised by remaining life expectancy at the average adult age, then applied to age-specific life-years gained from deaths averted.
+\end{itemize}
+
+\medskip
+\textbf{Headline framing}: VSLY is reported as a \textbf{share of annual income} (discounted GNI) so results are directly comparable across regions and over time.
+\end{column}
+
+\begin{column}{0.43\textwidth}
+\begin{exampleblock}{Reference-case parameters}
+\footnotesize
+\textbf{Income elasticity (primary):} differential 0.8 (HIC) / 1.2 (LMIC), per Robinson et al.~(2019)\\
+\textbf{Sensitivity:} uniform $e = 1.5$\\
+\textbf{Discount rate:} 3\% (calendar-year)\\
+\textbf{Income projection:} World Bank GNI (PPP), forward-projected with SSP2 GDP growth\\
+\textbf{Horizon:} 2026--2050
+\end{exampleblock}
+
+\begin{block}{Methodological alignment}
+\footnotesize
+Approach follows \textbf{Robinson et al.\ (2019)} guidance and is consistent with recent published modelling of CVD policy benefits in \textit{Nature Medicine} (Pickersgill et al.\ 2024; Watkins et al.\ 2024).
+\end{block}
+\end{column}
+\end{columns}
+
+## Economic Value by WHO Region (Primary, Cumulative 2026--2050)
+
+```{r tab-econ-region, results='asis'}
+if (!is.null(sl_econ_vsl_primary)) {
+
+  # Primary VSL (cumulative) per region, headline All-Interventions row first.
+  region_order <- c("Africa", "Americas", "Eastern Mediterranean", "Europe",
+                    "South-East Asia", "Western Pacific", "World")
+
+  vsl_all  <- sl_econ_vsl_primary [intervention == "All Interventions"]
+  vsly_all <- sl_econ_vsly_primary[intervention == "All Interventions"]
+
+  econ_tab <- merge(
+    vsl_all [, .(who_region, vsl_total  = metric_total, vsl_share  = share_total)],
+    vsly_all[, .(who_region, vsly_total = metric_total, vsly_share = share_total)],
+    by = "who_region", all = TRUE
+  )
+  econ_tab[, who_region := factor(who_region, levels = region_order)]
+  setorder(econ_tab, who_region)
+
+  econ_tab_disp <- econ_tab[, .(
+    Region            = as.character(who_region),
+    `VSL (USD T)`     = paste0("\\$", formatC(vsl_total  / 1e12,
+                                              format = "f", digits = 1, big.mark = ",")),
+    `VSL \\% GNI`     = paste0(formatC(vsl_share  * 100, format = "f", digits = 1), "\\%"),
+    `VSLY (USD T)`    = paste0("\\$", formatC(vsly_total / 1e12,
+                                              format = "f", digits = 1, big.mark = ",")),
+    `VSLY \\% GNI`    = paste0(formatC(vsly_share * 100, format = "f", digits = 1), "\\%")
+  )]
+
+  kable(econ_tab_disp, format = "latex", booktabs = TRUE, escape = FALSE,
+        align = "lrrrr",
+        caption = NULL) |>
+    kable_styling(latex_options = c("hold_position", "scale_down"),
+                  font_size = 8) |>
+    row_spec(0, bold = TRUE) |>
+    row_spec(which(econ_tab_disp$Region == "World"),
+             bold = TRUE, color = "white", background = "#2166ac")
+} else {
+  cat("\\textit{Economic-valuation artefacts not found; knit aim1\\_report.Rmd first.}")
+}
+```
+
+\footnotesize Cumulative present value, 2026--2050, primary elasticity (Robinson et al.\ 2019), discounted at 3\%. \textbf{All Interventions} scenario. Source: \texttt{08\_vsl\_summary\_table\_e1\_2\_primary} and \texttt{08\_vsly\_summary\_table\_e1\_2\_primary}.
+
+## Headline: Value of Avoidable Mortality as a Share of Income
+
+\begin{exampleblock}{World: All Interventions, 2026--2050 (primary, discounted at 3\%)}
+\textbf{VSLY} = \textbf{`r fmt_pct(sl_econ_scalars$world_vsly_share_total)`} of annual income (cumulative \textbf{`r fmt_trillions(sl_econ_scalars$world_vsly_value_total)`}). VSL = `r fmt_pct(sl_econ_scalars$world_vsl_share_total)` of income (`r fmt_trillions(sl_econ_scalars$world_vsl_value_total)`).
+\end{exampleblock}
+
+```{r fig-econ-dotplot, fig.height=4.0}
+if (!is.na(png_econ_dot) && file.exists(png_econ_dot)) {
+  knitr::include_graphics(png_econ_dot)
+}
+```
+
+\footnotesize Dot plot: VSL (\textbullet) and VSLY (\(\blacktriangle\)) values as a share of discounted GNI, by WHO region $\times$ snapshot year and cumulative 2026--2050. Blue = primary elasticity (e = 0.8 HIC / 1.2 LMIC); red = sensitivity (uniform e = 1.5).
+
+<!-- ======================================================================
      DISCUSSION
      ====================================================================== -->
 
@@ -814,21 +944,25 @@ Sensitivity analysis to diabetes targeting assumptions and secular trends pendin
 
 ## Summary
 
-\begin{exampleblock}{\textbf{1. The gains are large and achievable}}
-All-interventions: \textbf{`r if(!is.na(total_all)) paste0(fmt_M(total_all)," million deaths averted") else "[X.X million]"`} globally, 2026--2050.
+\begin{exampleblock}{\textbf{1. The economic value rivals annual income itself}}
+World, All Interventions, 2026--2050: avoidable CVD mortality is worth \textbf{`r fmt_pct(sl_econ_scalars$world_vsly_share_total)` of annual income} (primary VSLY, cumulative \textbf{`r fmt_trillions(sl_econ_scalars$world_vsly_value_total)`}, discounted at 3\%).
 \end{exampleblock}
 
-\begin{block}{\textbf{2. HTN control + statins compound risk reduction}}
+\begin{block}{\textbf{2. The health gains are large and achievable}}
+All Interventions: \textbf{`r if(!is.na(total_all)) paste0(fmt_M(total_all)," million deaths averted") else "[X.X million]"`} globally, 2026--2050.
+\end{block}
+
+\begin{block}{\textbf{3. HTN control + statins compound risk reduction}}
 HTN control and statins have multiplicative risk reductions, producing larger combined effects.
 \end{block}
 
-\begin{block}{\textbf{3. Regional patterns reflect burden and coverage gaps}}
+\begin{block}{\textbf{4. Regional patterns reflect burden and coverage gaps}}
 Absolute gains largest in high-burden regions; proportional gains reflect current coverage gaps.
 \end{block}
 
 \vspace{6pt}
 \begin{center}
-\textit{Meeting WHO 2030 CVD targets is not just aspirational --- it is quantifiably lifesaving.}
+\textit{Meeting WHO 2030 CVD targets is not just aspirational --- it is quantifiably lifesaving \emph{and} economically transformative.}
 \end{center}
 
 <!-- ======================================================================
@@ -1070,12 +1204,18 @@ $$\varepsilon_{CF,\text{stat}} = \begin{cases} 1 - E^{CF}_{c,\ell}(t), & a\geq40
 
 - \textbf{NCD Countdown 2030 Collaborators.}\ Pathways to achieving SDG target 3.4. \textit{Lancet.} 2022;399:1226--1249.
 
-- **Pickersgill et al.** (2022). Modeling global 80-80-80 blood pressure targets and cardiovascular outcomes. In: Nature Medicine 
+- **Pickersgill et al.** (2022). Modeling global 80-80-80 blood pressure targets and cardiovascular outcomes. In: Nature Medicine
+
+- **Pickersgill SJ et al.** (2024). Health and economic benefits of achieving hypertension control: a modelling study. \textit{Nature Medicine}. \url{https://www.nature.com/articles/s41591-024-03248-4}
+
+- **Robinson LA, Hammitt JK, O'Keeffe L.** (2019). Valuing mortality risk reductions in global benefit-cost analysis. \textit{Journal of Benefit-Cost Analysis} 10(S1):15--50.
 
 - **UNWPP** (2024). World Population Prospects 2024. United Nations.
 
 - **Watkins, D et al.** (2025). Global Impact of Single-Pill Combination Therapies on Cardiovascular Mortality and Events, 2023-2050: A Modeling Study.
 In: JACC.
+
+- **Watkins DA et al.** (2024). Health and economic benefits of cardiovascular risk-factor control: a modelling study. \textit{Nature Medicine}. \url{https://www.nature.com/articles/s41591-024-03253-7}
 
 - **WHO** (2023). Global Hearts Initiative: HEARTS Technical Package. Geneva.
 

@@ -84,9 +84,14 @@ COUNTRY_FILE <- file.path(wd, "data", "processed",
 
 OUT_FILE     <- file.path(DIR_OUT, "08_vsl_results.rds")
 OUT_CSV      <- file.path(DIR_OUT, "08_vsl_results.csv")
-OUT_SUMM_VSL  <- file.path(DIR_OUT, "08_vsl_summary_table.rds")
-OUT_SUMM_VSLY <- file.path(DIR_OUT, "08_vsly_summary_table.rds")
-OUT_SUMM_APP  <- file.path(DIR_OUT, "08_vsl_vsly_summary_table_appended.rds")
+OUT_SUMM_VSL       <- file.path(DIR_OUT, "08_vsl_summary_table.rds")
+OUT_SUMM_VSLY      <- file.path(DIR_OUT, "08_vsly_summary_table.rds")
+OUT_SUMM_APP       <- file.path(DIR_OUT, "08_vsl_vsly_summary_table_appended.rds")
+# Explicit primary-elasticity copies (e1_2 = Robinson et al. 2019 reference case).
+# Consumed downstream by scenarios/scenarios_aim1/aim1_report.Rmd to build the
+# slide-deck artefacts for aim1_executive_slides.Rmd.
+OUT_SUMM_VSL_PRIM  <- file.path(DIR_OUT, "08_vsl_summary_table_e1_2_primary.rds")
+OUT_SUMM_VSLY_PRIM <- file.path(DIR_OUT, "08_vsly_summary_table_e1_2_primary.rds")
 
 # 1) Parameters ----
 #
@@ -1068,6 +1073,10 @@ saveRDS(dt_summary_vsl_e1_2,  OUT_SUMM_VSL)
 saveRDS(dt_summary_vsly_e1_2, OUT_SUMM_VSLY)
 saveRDS(dt_summary_appended,  OUT_SUMM_APP)
 
+# Explicit primary (e1_2) copies for the Aim 1 slide-deck pipeline
+saveRDS(dt_summary_vsl_e1_2,  OUT_SUMM_VSL_PRIM)
+saveRDS(dt_summary_vsly_e1_2, OUT_SUMM_VSLY_PRIM)
+
 # Primary tables (e1_2)
 fwrite(dt_summary_vsl_e1_2,  file.path(DIR_OUT, "08_vsl_summary_table_e1_2_primary.csv"))
 fwrite(dt_summary_vsly_e1_2, file.path(DIR_OUT, "08_vsly_summary_table_e1_2_primary.csv"))
@@ -1095,92 +1104,11 @@ cat("Rows primary VSL:", nrow(dt_summary_vsl_e1_2),
 cat("Regions:", paste(sort(unique(dt_summary_vsly_e1_2$who_region)), collapse = ", "), "\n")
 
 
-# ── visualizing summary data ──────────────────────────────────────────────────────────────
-# Gather the four share_YEAR columns into long format for faceting by year.
-# Keep only the cumulative total share (share_total) and annual snapshots.
-
-share_cols <- grep("^share_", names(dt_summary_appended), value = TRUE)
-
-dt_plot <- melt(
-  dt_summary_appended,
-  id.vars       = c("valuation_type", "elasticity_case", "who_region", "scenario"),
-  measure.vars  = share_cols,
-  variable.name = "period",
-  value.name    = "share_income"
-)
-
-# Clean up period labels
-dt_plot[, period := fcase(
-  period == "share_2026",  "2026",
-  period == "share_2030",  "2030",
-  period == "share_2040",  "2040",
-  period == "share_2050",  "2050",
-  period == "share_total", "2026–2050\n(cumulative)",
-  default = as.character(period)
-)]
-
-# Order periods sensibly
-dt_plot[, period := factor(period,
-                           levels = c("2026", "2030", "2040", "2050", "2026–2050\n(cumulative)")
-)]
-
-# Friendly labels for elasticity case
-dt_plot[, elasticity_label := fcase(
-  elasticity_case == "e1_2_primary",      "Primary (e = 0.8/1.2)",
-  elasticity_case == "e1_5_sensitivity",  "Sensitivity (e = 1.5)",
-  default = elasticity_case
-)]
-
-
-# ── Plot ──────────────────────────────────────────────────────────────────────
-ggplot(
-  dt_plot,
-  aes(
-    x     = share_income,
-    y     = scenario,
-    colour = elasticity_label,
-    shape  = valuation_type
-  )
-) +
-  geom_point(size = 2.8, alpha = 0.85, position = position_dodge(width = 0.5)) +
-  facet_grid(who_region ~ period, scales = "free_x") +
-  scale_x_continuous(
-    labels = scales::percent_format(accuracy = 0.1),
-    expand = expansion(mult = c(0.05, 0.15))
-  ) +
-  scale_colour_manual(
-    name   = "Elasticity case",
-    values = c(
-      "Primary (e = 0.8/1.2)" = "#2166ac",
-      "Sensitivity (e = 1.5)" = "#d6604d"
-    )
-  ) +
-  scale_shape_manual(
-    name   = "Valuation",
-    values = c("VSL" = 16, "VSLY" = 17)
-  ) +
-  labs(
-    title    = "Economic value of deaths averted as a share of regional income",
-    subtitle = "Discounted at r = 3% | Primary estimate: differential elasticity (Robinson et al. 2019)",
-    x        = "Share of discounted GNI",
-    y        = NULL,
-    caption  = paste0(
-      "Note: Share computed as Σ(economic value) / Σ(population × discounted GNI per capita).\n",
-      "Primary estimate uses differential income elasticity (e = 0.8 for HIC, e = 1.2 for LMIC).\n",
-      "Sensitivity uses uniform elasticity e = 1.5. Both discounted to ", BASE_YEAR, " at r = 3%."
-    )
-  ) +
-  theme_bw(base_size = 11) +
-  theme(
-    strip.text.y      = element_text(angle = 0, hjust = 0, face = "bold"),
-    strip.text.x      = element_text(face = "bold"),
-    strip.background  = element_rect(fill = "#f0f0f0", colour = "grey70"),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor   = element_blank(),
-    legend.position    = "bottom",
-    legend.box         = "horizontal",
-    plot.caption       = element_text(size = 8, colour = "grey40", hjust = 0),
-    plot.title         = element_text(face = "bold"),
-    axis.text.y        = element_text(size = 9)
-  )
+# ── Note ─────────────────────────────────────────────────────────────────────
+# The dot plot of economic value as a share of regional income is no longer
+# produced here. It is built downstream in
+#   scenarios/scenarios_aim1/aim1_report.Rmd
+# from `08_vsl_vsly_summary_table_appended.rds`, and saved as a slide
+# artefact for `aim1_executive_slides.Rmd`. This keeps the executive-deck
+# pipeline (scalars, tables, plots) in a single place.
 
