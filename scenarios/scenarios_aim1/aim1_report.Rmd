@@ -1688,48 +1688,44 @@ if (econ_ok) {
 
   saveRDS(sl_econ_dotplot_dt, paste0(slides_dir, "sl_econ_dotplot_dt.rds"))
 
-  g_econ_dot <- ggplot(
-    sl_econ_dotplot_dt,
-    aes(x = share_income, y = intervention,
-        colour = elasticity_label, shape = valuation_type)
+g_econ_dot <- ggplot(
+  sl_econ_dotplot_dt[valuation_type == "VSLY"],  # keep only VSLY
+  aes(x = share_income, y = intervention,
+      colour = elasticity_label)
+) +
+  geom_point(size = 2.5, alpha = 0.85,
+             position = position_dodge(width = 0.55)) +
+  facet_grid(who_region ~ period, scales = "free_x") +
+  scale_x_continuous(
+    labels = percent_format(accuracy = 0.1),
+    expand = expansion(mult = c(0.05, 0.15))
   ) +
-    geom_point(size = 2.5, alpha = 0.85,
-               position = position_dodge(width = 0.55)) +
-    facet_grid(who_region ~ period, scales = "free_x") +
-    scale_x_continuous(
-      labels = percent_format(accuracy = 0.1),
-      expand = expansion(mult = c(0.05, 0.15))
-    ) +
-    scale_colour_manual(
-      name   = "Elasticity case",
-      values = c("Primary (e = 0.8/1.2)" = "#2166ac",
-                 "Sensitivity (e = 1.5)" = "#d6604d")
-    ) +
-    scale_shape_manual(
-      name   = "Valuation",
-      values = c("VSL" = 16, "VSLY" = 17)
-    ) +
-    labs(
-      title    = "Economic value of avoidable CVD mortality, share of regional income",
-      subtitle = "Discounted at r = 3% | Primary: differential elasticity (Robinson et al. 2019)",
-      x        = "Share of discounted GNI",
-      y        = NULL
-    ) +
-    theme_bw(base_size = 9) +
-    theme(
-      strip.text.y       = element_text(angle = 0, hjust = 0, face = "bold"),
-      strip.text.x       = element_text(face = "bold"),
-      strip.background   = element_rect(fill = "#f0f0f0", colour = "grey70"),
-      panel.grid.major.y = element_blank(),
-      panel.grid.minor   = element_blank(),
-      legend.position    = "bottom",
-      legend.box         = "horizontal",
-      plot.title         = element_text(face = "bold"),
-      axis.text.y        = element_text(size = 8)
-    )
+  scale_colour_manual(
+    name   = "Elasticity case",
+    values = c("Primary (e = 0.8/1.2)" = "#2166ac",
+               "Sensitivity (e = 1.5)" = "#d6604d")
+  ) +
+  labs(
+    title    = "Economic value of avoidable CVD mortality, proportion of regional income",
+    subtitle = "VSLY only | Discounted at r = 3% (Robinson et al. 2019)",
+    x        = "Proportion of discounted GNI",
+    y        = NULL
+  ) +
+  theme_bw(base_size = 9) +
+  theme(
+    strip.text.y       = element_text(angle = 0, hjust = 0, face = "bold"),
+    strip.text.x       = element_text(face = "bold"),
+    strip.background   = element_rect(fill = "#f0f0f0", colour = "grey70"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor   = element_blank(),
+    legend.position    = "bottom",
+    legend.box         = "horizontal",
+    plot.title         = element_text(face = "bold"),
+    axis.text.y        = element_text(size = 8)
+  )
 
-  ggsave(paste0(slides_dir, "sl_econ_dotplot.png"),
-         plot = g_econ_dot, width = 11, height = 6.2, dpi = 220)
+ggsave(paste0(slides_dir, "sl_econ_dotplot.png"),
+       plot = g_econ_dot, width = 11, height = 6.2, dpi = 220)
   message("SL-ECON saved: sl_econ_vsl_primary.rds, sl_econ_vsly_primary.rds, ",
           "sl_econ_scalars.rds, sl_econ_dotplot_dt.rds, sl_econ_dotplot.png")
 } else {
@@ -1737,6 +1733,159 @@ if (econ_ok) {
           " — skipping SL-ECON artefacts. Run code/08_economic_value_calculation.R first.")
 }
 ```
+
+<!-- ```{r slides-econ, message=FALSE, warning=FALSE, echo=FALSE} -->
+<!-- # SL-ECON: Economic-valuation artefacts for the executive deck. -->
+<!-- # Consumes outputs of code/08_economic_value_calculation.R: -->
+<!-- #   - 08_vsl_summary_table_e1_2_primary.rds   (region × scenario, primary VSL) -->
+<!-- #   - 08_vsly_summary_table_e1_2_primary.rds  (region × scenario, primary VSLY) -->
+<!-- #   - 08_vsl_vsly_summary_table_appended.rds  (all four VSL/VSLY × elasticity blocks) -->
+<!-- # -->
+<!-- # Builds: -->
+<!-- #   - sl_econ_vsl_primary  — display table of cumulative regional VSL share of GNI -->
+<!-- #   - sl_econ_vsly_primary — same for VSLY (the headline metric) -->
+<!-- #   - sl_econ_dotplot.png  — VSL/VSLY share-of-income dot plot (was in 08_*.R) -->
+<!-- #   - sl_econ_scalars      — World VSLY share of income, primary, cumulative -->
+<!-- # -->
+<!-- # Mapping of model scenario codes → executive labels mirrors int_labels above. -->
+
+<!-- econ_files <- c( -->
+<!--   vsl_prim  = paste0(wd_outp, "08_vsl_summary_table_e1_2_primary.rds"), -->
+<!--   vsly_prim = paste0(wd_outp, "08_vsly_summary_table_e1_2_primary.rds"), -->
+<!--   appended  = paste0(wd_outp, "08_vsl_vsly_summary_table_appended.rds") -->
+<!-- ) -->
+<!-- econ_ok <- all(file.exists(econ_files)) -->
+
+<!-- if (econ_ok) { -->
+
+<!--   econ_scen_lbl <- c( -->
+<!--     bp_only          = "HTN Control (General)", -->
+<!--     bp_diabetes_only = "HTN Control (Diabetes)", -->
+<!--     statins_only     = "Improved Statin Uptake", -->
+<!--     all_interventions = "All Interventions" -->
+<!--   ) -->
+
+<!--   # ---- Region × scenario tables (primary, e1_2) ---------------------------- -->
+<!--   build_econ_tab <- function(path) { -->
+<!--     dt <- as.data.table(readRDS(path)) -->
+<!--     dt <- dt[scenario %in% names(econ_scen_lbl)] -->
+<!--     dt[, intervention := factor(econ_scen_lbl[scenario], -->
+<!--                                 levels = int_order)] -->
+<!--     setorder(dt, intervention, who_region) -->
+<!--     dt -->
+<!--   } -->
+
+<!--   sl_econ_vsl_primary  <- build_econ_tab(econ_files[["vsl_prim"]]) -->
+<!--   sl_econ_vsly_primary <- build_econ_tab(econ_files[["vsly_prim"]]) -->
+
+<!--   saveRDS(sl_econ_vsl_primary,  paste0(slides_dir, "sl_econ_vsl_primary.rds")) -->
+<!--   saveRDS(sl_econ_vsly_primary, paste0(slides_dir, "sl_econ_vsly_primary.rds")) -->
+
+<!--   # ---- Headline scalar: World VSLY share of income (cumulative, all four) -- -->
+<!--   world_vsly_all <- sl_econ_vsly_primary[ -->
+<!--     who_region == "World" & intervention == "All Interventions" -->
+<!--   ] -->
+<!--   world_vsl_all  <- sl_econ_vsl_primary[ -->
+<!--     who_region == "World" & intervention == "All Interventions" -->
+<!--   ] -->
+
+<!--   sl_econ_scalars <- list( -->
+<!--     world_vsly_share_total = if (nrow(world_vsly_all)) world_vsly_all$share_total else NA_real_, -->
+<!--     world_vsl_share_total  = if (nrow(world_vsl_all))  world_vsl_all$share_total  else NA_real_, -->
+<!--     world_vsly_value_total = if (nrow(world_vsly_all)) world_vsly_all$metric_total else NA_real_, -->
+<!--     world_vsl_value_total  = if (nrow(world_vsl_all))  world_vsl_all$metric_total  else NA_real_, -->
+<!--     base_year              = 2026L, -->
+<!--     horizon_end            = 2050L, -->
+<!--     elasticity_primary     = "Differential (e=0.8 HIC / 1.2 LMIC), Robinson et al. 2019", -->
+<!--     discount_rate          = 0.03 -->
+<!--   ) -->
+<!--   saveRDS(sl_econ_scalars, paste0(slides_dir, "sl_econ_scalars.rds")) -->
+
+<!--   # ---- Dot plot: VSL/VSLY share of income, by region × period --------------- -->
+<!--   dt_app <- as.data.table(readRDS(econ_files[["appended"]])) -->
+<!--   dt_app <- dt_app[scenario %in% names(econ_scen_lbl)] -->
+<!--   dt_app[, intervention := factor(econ_scen_lbl[scenario], levels = int_order)] -->
+
+<!--   share_cols <- grep("^share_", names(dt_app), value = TRUE) -->
+
+<!--   sl_econ_dotplot_dt <- melt( -->
+<!--     dt_app, -->
+<!--     id.vars       = c("valuation_type", "elasticity_case", "who_region", -->
+<!--                       "scenario", "intervention"), -->
+<!--     measure.vars  = share_cols, -->
+<!--     variable.name = "period", -->
+<!--     value.name    = "share_income" -->
+<!--   ) -->
+
+<!--   sl_econ_dotplot_dt[, period := fcase( -->
+<!--     period == "share_2026",  "2026", -->
+<!--     period == "share_2030",  "2030", -->
+<!--     period == "share_2040",  "2040", -->
+<!--     period == "share_2050",  "2050", -->
+<!--     period == "share_total", "2026\u20132050\n(cumulative)", -->
+<!--     default = as.character(period) -->
+<!--   )] -->
+<!--   sl_econ_dotplot_dt[, period := factor(period, -->
+<!--     levels = c("2026", "2030", "2040", "2050", "2026\u20132050\n(cumulative)") -->
+<!--   )] -->
+<!--   sl_econ_dotplot_dt[, elasticity_label := fcase( -->
+<!--     elasticity_case == "e1_2_primary",     "Primary (e = 0.8/1.2)", -->
+<!--     elasticity_case == "e1_5_sensitivity", "Sensitivity (e = 1.5)", -->
+<!--     default = elasticity_case -->
+<!--   )] -->
+
+<!--   saveRDS(sl_econ_dotplot_dt, paste0(slides_dir, "sl_econ_dotplot_dt.rds")) -->
+
+<!--   g_econ_dot <- ggplot( -->
+<!--     sl_econ_dotplot_dt, -->
+<!--     aes(x = share_income, y = intervention, -->
+<!--         colour = elasticity_label, shape = valuation_type) -->
+<!--   ) + -->
+<!--     geom_point(size = 2.5, alpha = 0.85, -->
+<!--                position = position_dodge(width = 0.55)) + -->
+<!--     facet_grid(who_region ~ period, scales = "free_x") + -->
+<!--     scale_x_continuous( -->
+<!--       labels = percent_format(accuracy = 0.1), -->
+<!--       expand = expansion(mult = c(0.05, 0.15)) -->
+<!--     ) + -->
+<!--     scale_colour_manual( -->
+<!--       name   = "Elasticity case", -->
+<!--       values = c("Primary (e = 0.8/1.2)" = "#2166ac", -->
+<!--                  "Sensitivity (e = 1.5)" = "#d6604d") -->
+<!--     ) + -->
+<!--     scale_shape_manual( -->
+<!--       name   = "Valuation", -->
+<!--       values = c("VSL" = 16, "VSLY" = 17) -->
+<!--     ) + -->
+<!--     labs( -->
+<!--       title    = "Economic value of avoidable CVD mortality, share of regional income", -->
+<!--       subtitle = "Discounted at r = 3% | Primary: differential elasticity (Robinson et al. 2019)", -->
+<!--       x        = "Share of discounted GNI", -->
+<!--       y        = NULL -->
+<!--     ) + -->
+<!--     theme_bw(base_size = 9) + -->
+<!--     theme( -->
+<!--       strip.text.y       = element_text(angle = 0, hjust = 0, face = "bold"), -->
+<!--       strip.text.x       = element_text(face = "bold"), -->
+<!--       strip.background   = element_rect(fill = "#f0f0f0", colour = "grey70"), -->
+<!--       panel.grid.major.y = element_blank(), -->
+<!--       panel.grid.minor   = element_blank(), -->
+<!--       legend.position    = "bottom", -->
+<!--       legend.box         = "horizontal", -->
+<!--       plot.title         = element_text(face = "bold"), -->
+<!--       axis.text.y        = element_text(size = 8) -->
+<!--     ) -->
+
+<!--   ggsave(paste0(slides_dir, "sl_econ_dotplot.png"), -->
+<!--          plot = g_econ_dot, width = 11, height = 6.2, dpi = 220) -->
+<!--   message("SL-ECON saved: sl_econ_vsl_primary.rds, sl_econ_vsly_primary.rds, ", -->
+<!--           "sl_econ_scalars.rds, sl_econ_dotplot_dt.rds, sl_econ_dotplot.png") -->
+<!-- } else { -->
+<!--   warning("Economic-valuation inputs not found in ", wd_outp, -->
+<!--           " — skipping SL-ECON artefacts. Run code/08_economic_value_calculation.R first.") -->
+<!-- } -->
+<!-- ``` -->
+
 
 ```{r slides-manifest, message=FALSE, warning=FALSE, echo=FALSE}
 # SL-16: Artefact manifest — printed in HTML report for traceability

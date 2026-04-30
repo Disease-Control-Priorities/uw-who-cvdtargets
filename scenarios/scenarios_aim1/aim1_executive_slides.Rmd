@@ -773,7 +773,7 @@ Absolute gains largest in high-burden regions; proportional gains reflect curren
 \end{itemize}
 
 \medskip
-\textbf{Headline framing}: VSLY is reported as a \textbf{share of annual income} (discounted GNI) so results are directly comparable across regions and over time.
+\textbf{Headline framing}: VSLY is reported as a \textbf{proportion of annual income} (discounted GNI) so results are directly comparable across regions and over time.
 \end{column}
 
 \begin{column}{0.43\textwidth}
@@ -788,12 +788,17 @@ Absolute gains largest in high-burden regions; proportional gains reflect curren
 
 \begin{block}{Methodological alignment}
 \footnotesize
-Approach follows \textbf{Robinson et al.\ (2019)} guidance and is consistent with recent published modelling of CVD policy benefits in \textit{Nature Medicine} (Pickersgill et al.\ 2024; Watkins et al.\ 2024).
+Approach follows \textbf{Robinson et al.\ (2019)} guidance and is consistent with recent published modelling of CVD policy benefits in World Bank’s Healthy Longevity Initiative \textit{Nature Medicine} papers (Chang et al.\ 2024; Verguet et al.\ 2024).
+
 \end{block}
 \end{column}
 \end{columns}
 
 ## Economic Value by WHO Region (Primary, Cumulative 2026--2050)
+
+\begin{exampleblock}{World: All Interventions, 2026--2050 (primary, discounted at 3\%)}
+\textbf{VSLY} = \textbf{`r fmt_pct(sl_econ_scalars$world_vsly_share_total)`} of annual income PPP (cumulative \textbf{`r fmt_trillions(sl_econ_scalars$world_vsly_value_total)`}).
+\end{exampleblock}
 
 ```{r tab-econ-region, results='asis'}
 if (!is.null(sl_econ_vsl_primary)) {
@@ -813,44 +818,88 @@ if (!is.null(sl_econ_vsl_primary)) {
   econ_tab[, who_region := factor(who_region, levels = region_order)]
   setorder(econ_tab, who_region)
 
-  econ_tab_disp <- econ_tab[, .(
-    Region            = as.character(who_region),
-    `VSL (USD T)`     = paste0("\\$", formatC(vsl_total  / 1e12,
-                                              format = "f", digits = 1, big.mark = ",")),
-    `VSL \\% GNI`     = paste0(formatC(vsl_share  * 100, format = "f", digits = 1), "\\%"),
-    `VSLY (USD T)`    = paste0("\\$", formatC(vsly_total / 1e12,
-                                              format = "f", digits = 1, big.mark = ",")),
-    `VSLY \\% GNI`    = paste0(formatC(vsly_share * 100, format = "f", digits = 1), "\\%")
-  )]
+econ_tab_disp <- econ_tab[, .(
+  Region         = as.character(who_region),
+  `VSLY (USD T)` = paste0("\\$", formatC(vsly_total / 1e12,
+                                         format = "f", digits = 1, big.mark = ",")),
+  `VSLY \\% GNI` = paste0(formatC(vsly_share * 100, format = "f", digits = 1), "\\%")
+)]
 
-  kable(econ_tab_disp, format = "latex", booktabs = TRUE, escape = FALSE,
-        align = "lrrrr",
-        caption = NULL) |>
-    kable_styling(latex_options = c("hold_position", "scale_down"),
-                  font_size = 8) |>
-    row_spec(0, bold = TRUE) |>
-    row_spec(which(econ_tab_disp$Region == "World"),
-             bold = TRUE, color = "white", background = "#2166ac")
+kable(econ_tab_disp, format = "latex", booktabs = TRUE, escape = FALSE,
+      align = "lrr",
+      caption = NULL) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"),
+                font_size = 8) |>
+  row_spec(0, bold = TRUE) |>
+  row_spec(which(econ_tab_disp$Region == "World"),
+           bold = TRUE, color = "white", background = "#2166ac")
 } else {
   cat("\\textit{Economic-valuation artefacts not found; knit aim1\\_report.Rmd first.}")
 }
 ```
 
-\footnotesize Cumulative present value, 2026--2050, primary elasticity (Robinson et al.\ 2019), discounted at 3\%. \textbf{All Interventions} scenario. Source: \texttt{08\_vsl\_summary\_table\_e1\_2\_primary} and \texttt{08\_vsly\_summary\_table\_e1\_2\_primary}.
+<!-- \footnotesize Cumulative present value, 2026--2050, primary elasticity (Robinson et al.\ 2019), discounted at 3\%. \textbf{All Interventions} scenario.  -->
 
-## Headline: Value of Avoidable Mortality as a Share of Income
 
-\begin{exampleblock}{World: All Interventions, 2026--2050 (primary, discounted at 3\%)}
-\textbf{VSLY} = \textbf{`r fmt_pct(sl_econ_scalars$world_vsly_share_total)`} of annual income (cumulative \textbf{`r fmt_trillions(sl_econ_scalars$world_vsly_value_total)`}). VSL = `r fmt_pct(sl_econ_scalars$world_vsl_share_total)` of income (`r fmt_trillions(sl_econ_scalars$world_vsl_value_total)`).
-\end{exampleblock}
+<!-- ## Economic Value by WHO Region (Primary, Cumulative 2026--2050) -->
 
-```{r fig-econ-dotplot, fig.height=4.0}
+<!-- \begin{exampleblock}{World: All Interventions, 2026--2050 (primary, discounted at 3\%)} -->
+<!-- \textbf{VSLY} = \textbf{`r fmt_pct(sl_econ_scalars$world_vsly_share_total)`} of annual income (cumulative \textbf{`r fmt_trillions(sl_econ_scalars$world_vsly_value_total)`}). VSL = `r fmt_pct(sl_econ_scalars$world_vsl_share_total)` of income (`r fmt_trillions(sl_econ_scalars$world_vsl_value_total)`). -->
+<!-- \end{exampleblock} -->
+
+<!-- ```{r tab-econ-region, results='asis'} -->
+<!-- if (!is.null(sl_econ_vsl_primary)) { -->
+
+<!--   # Primary VSL (cumulative) per region, headline All-Interventions row first. -->
+<!--   region_order <- c("Africa", "Americas", "Eastern Mediterranean", "Europe", -->
+<!--                     "South-East Asia", "Western Pacific", "World") -->
+
+<!--   vsl_all  <- sl_econ_vsl_primary [intervention == "All Interventions"] -->
+<!--   vsly_all <- sl_econ_vsly_primary[intervention == "All Interventions"] -->
+
+<!--   econ_tab <- merge( -->
+<!--     vsl_all [, .(who_region, vsl_total  = metric_total, vsl_share  = share_total)], -->
+<!--     vsly_all[, .(who_region, vsly_total = metric_total, vsly_share = share_total)], -->
+<!--     by = "who_region", all = TRUE -->
+<!--   ) -->
+<!--   econ_tab[, who_region := factor(who_region, levels = region_order)] -->
+<!--   setorder(econ_tab, who_region) -->
+
+<!--   econ_tab_disp <- econ_tab[, .( -->
+<!--     Region            = as.character(who_region), -->
+<!--     `VSL (USD T)`     = paste0("\\$", formatC(vsl_total  / 1e12, -->
+<!--                                               format = "f", digits = 1, big.mark = ",")), -->
+<!--     `VSL \\% GNI`     = paste0(formatC(vsl_share  * 100, format = "f", digits = 1), "\\%"), -->
+<!--     `VSLY (USD T)`    = paste0("\\$", formatC(vsly_total / 1e12, -->
+<!--                                               format = "f", digits = 1, big.mark = ",")), -->
+<!--     `VSLY \\% GNI`    = paste0(formatC(vsly_share * 100, format = "f", digits = 1), "\\%") -->
+<!--   )] -->
+
+<!--   kable(econ_tab_disp, format = "latex", booktabs = TRUE, escape = FALSE, -->
+<!--         align = "lrrrr", -->
+<!--         caption = NULL) |> -->
+<!--     kable_styling(latex_options = c("hold_position", "scale_down"), -->
+<!--                   font_size = 8) |> -->
+<!--     row_spec(0, bold = TRUE) |> -->
+<!--     row_spec(which(econ_tab_disp$Region == "World"), -->
+<!--              bold = TRUE, color = "white", background = "#2166ac") -->
+<!-- } else { -->
+<!--   cat("\\textit{Economic-valuation artefacts not found; knit aim1\\_report.Rmd first.}") -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- \footnotesize Cumulative present value, 2026--2050, primary elasticity (Robinson et al.\ 2019), discounted at 3\%. \textbf{All Interventions} scenario.  -->
+
+## Value of Avoidable Mortality as a Proportion of Income
+
+
+```{r fig-econ-dotplot, fig.height=3.2}
 if (!is.na(png_econ_dot) && file.exists(png_econ_dot)) {
   knitr::include_graphics(png_econ_dot)
 }
 ```
 
-\footnotesize Dot plot: VSL (\textbullet) and VSLY (\(\blacktriangle\)) values as a share of discounted GNI, by WHO region $\times$ snapshot year and cumulative 2026--2050. Blue = primary elasticity (e = 0.8 HIC / 1.2 LMIC); red = sensitivity (uniform e = 1.5).
+\scriptsize Dot plot: VSL (\textbullet) and VSLY (\(\blacktriangle\)) values as a proportion of discounted GNI, by WHO region $\times$ snapshot year and cumulative 2026--2050. Blue = primary elasticity (e = 0.8 HIC / 1.2 LMIC); red = sensitivity (uniform e = 1.5).
 
 <!-- ======================================================================
      DISCUSSION
@@ -944,21 +993,26 @@ Sensitivity analysis to diabetes targeting assumptions and secular trends pendin
 
 ## Summary
 
-\begin{exampleblock}{\textbf{1. The economic value rivals annual income itself}}
-World, All Interventions, 2026--2050: avoidable CVD mortality is worth \textbf{`r fmt_pct(sl_econ_scalars$world_vsly_share_total)` of annual income} (primary VSLY, cumulative \textbf{`r fmt_trillions(sl_econ_scalars$world_vsly_value_total)`}, discounted at 3\%).
-\end{exampleblock}
-
-\begin{block}{\textbf{2. The health gains are large and achievable}}
+\begin{block}{\textbf{1. The health gains are large and achievable}}
 All Interventions: \textbf{`r if(!is.na(total_all)) paste0(fmt_M(total_all)," million deaths averted") else "[X.X million]"`} globally, 2026--2050.
 \end{block}
 
-\begin{block}{\textbf{3. HTN control + statins compound risk reduction}}
+\begin{block}{\textbf{2. HTN control + statins compound risk reduction}}
 HTN control and statins have multiplicative risk reductions, producing larger combined effects.
 \end{block}
 
-\begin{block}{\textbf{4. Regional patterns reflect burden and coverage gaps}}
+\begin{block}{\textbf{3. Regional patterns reflect burden and coverage gaps}}
 Absolute gains largest in high-burden regions; proportional gains reflect current coverage gaps.
 \end{block}
+
+\begin{exampleblock}{\textbf{4. The economic value rivals annual income itself}}
+World, All Interventions, 2026--2050: avoidable CVD mortality is worth \textbf{`r fmt_pct(sl_econ_scalars$world_vsly_share_total)`\ of annual income} (VSLY, cumulative \textbf{`r fmt_trillions(sl_econ_scalars$world_vsly_value_total)`}, discounted at 3\%).
+\end{exampleblock}
+
+<!-- \begin{exampleblock}{\textbf{4. The economic value rivals annual income itself}} -->
+<!-- World, All Interventions, 2026--2050: avoidable CVD mortality is worth \textbf{`r fmt_pct(sl_econ_scalars$world_vsly_share_total)` of annual income} (primary VSLY, cumulative \textbf{`r fmt_trillions(sl_econ_scalars$world_vsly_value_total)`}, discounted at 3\%). -->
+<!-- \end{exampleblock} -->
+
 
 \vspace{6pt}
 \begin{center}
