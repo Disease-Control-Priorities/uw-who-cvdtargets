@@ -1125,7 +1125,7 @@ kable(daly_params, col.names = c("Parameter", "Value or Source", "Year", "Notes"
 
 *Sources: United Nations, Department of Economic and Social Affairs, Population Division (2024). World Population Prospects 2024, Online Edition. Institute for Health Metrics and Evaluation (IHME). Global Burden of Disease Study 2023 (GBD 2023) Results. Seattle, United States: IHME, 2024.*
 
-All DALY, YLL, and YLD results reported in the main manuscript are computed using the above specifications, as implemented in `07_output_dalys.R`.
+<!-- All DALY, YLL, and YLD results reported in the main manuscript are computed using the above specifications, as implemented in `07_output_dalys.R`. -->
 
 ### Economic Valuation Methods {#sec:econ-methods}
 
@@ -1257,4 +1257,4 @@ kable(econ_params,
       align = c("l", "l", "l"))
 ```
 
-All economic valuation results reported in the main manuscript are computed using the above specifications, as implemented in `08_economic_value_calculation.R`.
+<!-- All economic valuation results reported in the main manuscript are computed using the above specifications, as implemented in `08_economic_value_calculation.R`. -->
