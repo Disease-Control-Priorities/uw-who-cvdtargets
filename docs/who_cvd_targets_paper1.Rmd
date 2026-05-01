@@ -1,5 +1,5 @@
 ---
-title: "Projected cardiovascular health gains from achieving WHO targets for hypertension control and lipid-lowering therapy: a global modeling study, 2026-2050"
+title: "Projected cardiovascular health and economic gains from achieving WHO targets for hypertension control and lipid-lowering therapy: a global modelling study in 190 countries, 2026--2050"
 author:
   - "WHO $\\cdot$ University of Washington"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
@@ -49,11 +49,37 @@ bod_income  <- readRDS(paste0(paper_dir, "paper_bod_income.rds"))
 dt_annual   <- readRDS(paste0(paper_dir, "paper_dt_annual.rds"))
 dt_age_sex  <- readRDS(paste0(paper_dir, "paper_dt_age_sex.rds"))
 
+# ---- Economic value artefacts ------------------------------------------------
+econ_scalars_file <- paste0(slides_dir, "sl_econ_scalars.rds")
+econ_vsl_file     <- paste0(slides_dir, "sl_econ_vsl_primary.rds")
+econ_vsly_file    <- paste0(slides_dir, "sl_econ_vsly_primary.rds")
+
+have_econ <- all(file.exists(c(econ_scalars_file, econ_vsl_file, econ_vsly_file)))
+
+if (have_econ) {
+  econ_scalars      <- readRDS(econ_scalars_file)
+  econ_vsl_primary  <- readRDS(econ_vsl_file)
+  econ_vsly_primary <- readRDS(econ_vsly_file)
+} else {
+  econ_scalars <- list(
+    world_vsly_share_total = NA_real_,
+    world_vsl_share_total  = NA_real_,
+    world_vsly_value_total = NA_real_,
+    world_vsl_value_total  = NA_real_
+  )
+  econ_vsl_primary  <- NULL
+  econ_vsly_primary <- NULL
+}
+
 # ---- Formatters --------------------------------------------------------------
 fmt_m <- function(x, digits = 1)
   formatC(round(x / 1e6, digits), format = "f", digits = digits, big.mark = ",")
 fmt_k <- function(x, digits = 0)
   formatC(round(x / 1e3, digits), format = "f", digits = digits, big.mark = ",")
+fmt_t <- function(x, digits = 1)
+  formatC(round(x / 1e12, digits), format = "f", digits = digits, big.mark = ",")
+fmt_pct_income <- function(x, digits = 1)
+  paste0(formatC(round(x * 100, digits), format = "f", digits = digits), "%")
 
 # ---- Intervention display order ----------------------------------------------
 int_order <- c(
@@ -70,23 +96,23 @@ int_order <- c(
 
 Background
 
-Cardiovascular diseases (CVDs) remain the leading cause of death worldwide, yet most of this burden is attributable to modifiable risk factors. The WHO has endorsed ambitious targets for hypertension control and lipid-lowering therapy coverage by 2030, but the long-term health gains achievable across the full spectrum of country income levels have not been quantified.
+High systolic blood pressure and high LDL cholesterol are leading modifiable drivers of cardiovascular disease (CVD) burden worldwide, but the joint impact of achieving WHO targets for hypertension control and lipid-lowering therapy has not been quantified.
 
 Methods
 
-We used a discrete-time multi-state transition model (Well, Sick, Dead) calibrated to Global Burden of Disease 2023 epidemiological data and United Nations World Population Prospects 2024 demographic projections. The model was applied to `r n_countries` countries over the period `r study_years`, projecting mortality from four CVD causes: ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Three intervention scenarios --- hypertension control in the general population (50% control by 2030), hypertension control among people with diabetes (80% control by 2030), and lipid-lowering therapy scale-up (50% coverage by 2030) --- were modelled individually and in combination against a business-as-usual reference scenario.
+We did a comparative risk assessment modelling study using a multi-state transition model for `r n_countries` countries, `r study_years`. The model projected deaths from ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease by age, sex, and country, using WHO Global Health Estimates, GBD 2023, UN World Population Prospects 2024, NCD Risk Factor Collaboration data, and effect estimates. We compared business-as-usual with three intervention scenarios: hypertension control in the general population to reach the WHO target of 150 million people controlled by 2030; 80% blood pressure control among people with diabetes by 2030; 50% statin coverage among eligible adults aged 40 years or older by 2030; and a combined scenario. The primary outcome was cumulative CVD deaths averted during `r study_years`.
 
 Findings
 
-Simultaneous achievement of all three WHO targets was projected to avert `r fmt_m(total_all)` million CVD deaths over `r study_years`, representing `r pct_all`% of business-as-usual CVD mortality. Hypertension control in the general population contributed the largest single-intervention effect (`r fmt_m(total_bp)` million deaths averted; `r pct_bp`%), followed by lipid-lowering therapy (`r fmt_m(total_stat)` million; `r pct_stat`%) and targeted blood pressure control in people with diabetes (`r fmt_m(total_bpd)` million; `r pct_bpd`%). Ischaemic heart disease accounted for the largest share of avertable deaths. Benefits accrued predominantly in adults aged 70 years and older and were concentrated in countries with the highest baseline CVD burden.
+Under business-as-usual, the model projected `r fmt_m(bau_total_deaths)` million CVD deaths during `r study_years`. Compared with business-as-usual, achieving the general-population hypertension target was projected to avert `r fmt_m(total_bp)` million deaths and `r fmt_m(total_dalys_bp)` million DALYs, the diabetes-specific hypertension target `r fmt_m(total_bpd)` million deaths and `r fmt_m(total_dalys_bpd)` million DALYs, and the statin target `r fmt_m(total_stat)` million deaths and `r fmt_m(total_dalys_stat)` million DALYs. Achieving all three targets simultaneously was projected to avert `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs, equivalent to `r pct_all`% of cumulative business-as-usual mortality.
 
 Interpretation
 
-Achieving WHO cardiovascular risk-factor targets by 2030 could avert millions of CVD deaths over the subsequent 25 years across `r n_countries` countries. These findings provide a quantitative foundation for national and global investment in hypertension management and lipid-lowering therapy scale-up as complementary strategies for CVD prevention.
+Achieving WHO targets for blood pressure control and lipid-lowering therapy could yield large and complementary reductions in CVD mortality and disability. The largest absolute gains were projected in middle-income countries and the largest proportional gains in low-income settings. These estimates represent technical potential under assumptions of linear scale-up, full adherence, and no secular change in baseline risk-factor distributions.
 
 Funding
 
-[Write the funding statement here.]
+This work is funded by the World Health Organization.
 
 \newpage
 
@@ -94,38 +120,38 @@ Funding
 
 Evidence before this study
 
-Previous modelling studies have demonstrated the effectiveness of blood pressure lowering and statin therapy for reducing cardiovascular events at the individual and single-country levels. The NCD Countdown collaborations have tracked progress toward SDG target 3.4 and identified efficient intervention packages for low- and middle-income countries [@Bennett2020NCD2030Path; @Watkins2022NCD2030]. However, prior global analyses have typically been limited to single interventions, short projection horizons, or restricted country coverage, making it difficult to quantify the combined, long-term health returns of achieving multiple WHO cardiovascular targets simultaneously across the full range of country settings.
+We searched PubMed and Embase from inception to 31 March 2026 for multi-country modelling studies estimating the mortality impact of hypertension control or lipid-lowering therapy, using search terms combining cardiovascular mortality, blood pressure lowering, statin therapy, global or multi-country modelling, and projection; we supplemented this with reference list review of included studies and of WHO and NCD Countdown 2030 technical reports. The clinical case for both interventions is settled: meta-analyses by Ettehad and colleagues [-@Ettehad2016] and by the Cholesterol Treatment Trialists' Collaboration [@Fulcher2015] provide the trial-based effect sizes on which current WHO treatment guidelines rest. What has remained unquantified is the combined global mortality impact of treating both risk factors simultaneously at scale. Kontis and colleagues [-@Kontis2019] projected that antihypertensive scale-up to 70% coverage could delay up to 39.4 million deaths over 25 years; Pickersgill and colleagues [-@Pickersgill2022] estimated 76--130 million deaths averted under the 80-80-80 hypertension target but did not model statin therapy. The NCD Countdown 2030 analyses identified both interventions as among the most cost-efficient pathways to SDG target 3.4 but did not quantify their joint impact [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. No published study has simultaneously projected the mortality consequences of achieving the 150-million hypertension control target, the Global Diabetes Compact 80% control target for people with diabetes, and the 50% statin coverage target across `r n_countries` countries, evaluated individually and in combination against a common business-as-usual baseline.
 
 Added value of this study
 
-This study provides the first comprehensive global projection of CVD deaths avertable from simultaneous achievement of WHO targets for hypertension control and lipid-lowering therapy across `r n_countries` countries over a 25-year horizon. By modelling country-specific epidemiological and demographic trajectories and applying intervention effects based on meta-analytic evidence, it quantifies the magnitude, timing, and distribution of health gains by cause, age, sex, WHO region, and World Bank income group.
+Using a discrete-time multi-state transition model calibrated to GBD 2023, WHO Global Health Estimates, and UNWPP 2024 data, this study estimates that achieving all three WHO targets could avert `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs across `r n_countries` countries from 2026 to 2050. These projections assume full adherence, linear scale-up to 2030, and no secular change in baseline risk-factor distributions --- assumptions that define a technical ceiling rather than a likely outcome. The model credits only coverage increments above country-specific baselines to avoid double-counting existing treatment benefits and combines intervention effects multiplicatively to reflect the partial independence of blood pressure and lipid-lowering pathways. Disaggregation by cause of death, age, sex, WHO region, and World Bank income group allows direct comparison of where the health gains are largest and for whom they accrue.
 
 Implications of all the available evidence
 
-The evidence supports prioritising concurrent investment in hypertension management and lipid-lowering therapy as complementary, high-impact strategies for reducing global CVD mortality. The benefits are largest in absolute terms in high-burden countries, but proportional gains are substantial across all income groups, reinforcing the case for universal scale-up through primary health care platforms such as the WHO HEARTS technical package.
+Trial evidence, prior global modelling, and the present projections consistently point in the same direction: blood pressure control and statin therapy are complementary, not competing, priorities, and the health gains from pursuing both together exceed what either achieves alone. The largest absolute benefits fall in lower-middle-income and upper-middle-income countries; the largest proportional gains are in low-income countries and the African region, where the distance between current coverage and the WHO targets is greatest --- and where the cost of inaction compounds year by year. How much of this projected ceiling is reachable in practice will depend on health system capacity, drug supply, and whether the political commitments made at the 2025 UN High-level Meeting on NCDs are matched by sustained financing and implementation support.
 
 \newpage
 
 # Introduction
-Cardiovascular diseases (CVDs) remain the world's leading cause of death and disability-adjusted life years (DALYs). CVD deaths increased globally from 13.1 million in 1990 to 19.2 million in 2023, with ischaemic heart disease, intracerebral haemorrhagic stroke, ischaemic stroke, and hypertensive heart disease among the leading causes [@Chong2024]. Age-standardized CVD DALY rates were highest in low and low-middle Socio-demographic Index (SDI) settings, and the number of prevalent CVD cases more than doubled between 1990 and 2023, rising from 311 million to 626 million. In 2023, modifiable risk factors accounted for 79.6% of CVD burden, equivalent to 347 million DALYs --- underscoring that the majority of this burden is preventable.
+Cardiovascular diseases (CVDs) remain the world's leading cause of death and disability-adjusted life years (DALYs) [@Mensah2023GlobalBurdenCVD; @Chong2024]. CVD deaths increased globally from 13.1 million in 1990 to 19.2 million in 2023, with ischaemic heart disease, intracerebral haemorrhagic stroke, ischaemic stroke, and hypertensive heart disease among the leading causes [@GBDCVD2025]. Age-standardized CVD DALY rates were highest in low and low-middle Socio-demographic Index (SDI) settings, and the number of prevalent CVD cases more than doubled between 1990 and 2023, rising from 311 million to 626 million [@GBDCVD2025]. In 2023, modifiable risk factors accounted for 79.6% of CVD burden, equivalent to 347 million DALYs --- underscoring that the majority of this burden is preventable [@Chong2024; @Agboyibor2025CVHWHOAfrica].
 
-Among modifiable exposures, high systolic blood pressure and high low-density lipoprotein (LDL) cholesterol rank as the two leading contributors to attributable CVD burden worldwide, together accounting for a greater share of ischaemic heart disease and stroke mortality than dietary risks, air pollution, or any other single risk factor [@Vollset2024]. The scale of unmet need is striking: 1.4 billion adults live with high blood pressure, yet only 23% have it under control [@Banigbe2025]. The estimated global prevalence of hypercholesterolaemia was 24.1% in 2025, and that of hypertriglyceridaemia 28.8%, with statin therapy coverage remaining far below levels needed for meaningful population-level risk reduction [@Basios2025]. Beyond their magnitude of effect, blood pressure control and lipid-lowering therapy are distinguished by the availability of effective, affordable, and scalable pharmaceutical interventions and established primary health care delivery platforms --- making them implementation priorities of the highest order [@Moran2024].
+Among modifiable exposures, high systolic blood pressure and high low-density lipoprotein (LDL) cholesterol rank as the two leading contributors to attributable CVD burden worldwide, together accounting for a greater share of ischaemic heart disease and stroke mortality than dietary risks, air pollution, or any other single risk factor [@Geldsetzer2019HypertensionCareLMICs; @ConsortiumRisk2023]. The scale of unmet need is striking: 1.4 billion adults live with high blood pressure, yet only 23% have it under control [@WHO2025HypertensionReport]. The estimated global prevalence of hypercholesterolaemia was 24.1% in 2025, and that of hypertriglyceridaemia 28.8%, with statin therapy coverage remaining far below levels needed for meaningful population-level risk reduction [@Marcus2022StatinsLMICs]. Beyond their magnitude of effect, blood pressure control and lipid-lowering therapy are distinguished by the availability of effective, affordable, and scalable pharmaceutical interventions and established primary health care delivery platforms --- making them implementation priorities of the highest order [@Agboyibor2025CVHWHOAfrica].
 
-Multiple multilateral frameworks now reflect convergent political commitment to tackling these two risk factors as a cornerstone of NCD prevention. WHO Member States have endorsed progressively ambitious targets: the 2021 Global Diabetes Compact committed to 80% blood pressure control and systematic statin therapy for all adults aged 40 years and above with diabetes. The WHO NCD Global Monitoring Framework set a target of at least 50% of eligible high-risk individuals receiving effective drug therapies, including statins, by 2025; and the Political Declaration of the Fourth High-level Meeting on NCDs (2025) called for 80% of primary health care facilities to stock WHO-recommended essential medicines by 2030, alongside control of blood pressure in an additional 150 million people. The present study quantifies what achieving these targets would mean in practice --- in health and economic terms, across `r n_countries` countries.
+Multiple multilateral frameworks now reflect convergent political commitment to tackling these two risk factors as a cornerstone of NCD prevention. WHO Member States have endorsed progressively ambitious targets: the 2021 Global Diabetes Compact committed to 80% blood pressure control and systematic statin therapy for all adults aged 40 years and above with diabetes [@Hunt2021GlobalDiabetesCompact; @Gregg2023DiabetesCompactTargets]. The WHO NCD Global Monitoring Framework set a target of at least 50% of eligible high-risk individuals receiving effective drug therapies, including statins, by 2025 [@WHO2011NCDMonitoringFramework]; and the Political Declaration of the Fourth High-level Meeting on NCDs (2025) called for 80% of primary health care facilities to stock WHO-recommended essential medicines by 2030, alongside control of blood pressure in an additional 150 million people. The present study quantifies what achieving these targets would mean in practice --- in health and economic terms, across `r n_countries` countries.
 
-Although the clinical benefits of these interventions are well established, comparable global evidence quantifying the long-term mortality, morbidity, and economic returns of simultaneously achieving both targets across the full spectrum of country income levels remains limited. Existing analyses have typically been restricted to single countries, short time horizons, or individual interventions modelled in isolation [@Kontis2019; @Pickersgill2022], constraining the ability of national governments, international donors, and health institutions to prioritise investment and plan implementation at scale.
+Although the clinical benefits of these interventions are well established, comparable global evidence quantifying the long-term mortality, morbidity, and economic returns of simultaneously achieving both targets across the full spectrum of country income levels remains limited. Existing analyses have typically been restricted to single countries, short time horizons, or individual interventions modelled in isolation, constraining the ability of national governments, international donors, and health institutions to prioritise investment and plan implementation at scale.
 
-This study addresses that gap by estimating the health outcomes associated with achieving WHO targets for hypertension control and lipid-lowering therapy across `r n_countries` countries from 2026 to 2050, using a comparative risk assessment modelling framework applied to country-specific epidemiological and demographic data.
+This study addresses that gap by estimating the health and economic outcomes associated with achieving WHO targets for hypertension control and lipid-lowering therapy across `r n_countries` countries from 2026 to 2050, using a comparative risk assessment modelling framework applied to country-specific epidemiological and demographic data.
 
 # Methods
 
 ## Study design
 
-We conducted a multi-country comparative modelling study using a discrete-time multi-state transition model projecting CVD mortality across `r n_countries` countries from 2026 to 2050. Four causes of CVD death were modelled jointly: ischaemic heart disease (IHD), ischaemic stroke, intracerebral haemorrhage (haemorrhagic stroke), and hypertensive heart disease. Three health states --- Well, Sick, and Dead --- were tracked for each cause, stratified by single year of age (20--95), sex, and country. The model was calibrated to observed epidemiological data from 2019 and projected forward using annual time steps (see Multi-State Transition Model).
+We conducted a multi-country comparative modelling study using a discrete-time multi-state transition model projecting CVD mortality across `r n_countries` countries from 2026 to 2050. Four causes of CVD death were modelled jointly: ischaemic heart disease (IHD), ischaemic stroke, intracerebral haemorrhage (haemorrhagic stroke), and hypertensive heart disease. Three health states --- Well, Sick, and Dead --- were tracked for each cause, stratified by single year of age (20--95), sex, and country. The model was calibrated to observed epidemiological data from 2019 and projected forward using annual time steps (see Multi-State Transition Model). The model structure and intervention framework were informed by prior global modelling and implementation evidence, including the Global 80-80-80 hypertension control targets [@Pickersgill2022], and the budget impact of the WHO HEARTS technical package for cardiovascular disease management [@Garcia2026HEARTS4Countries].
 
 ## Data sources
 
-Death counts and mortality rates were derived from the World Health Organization Global Health Estimates (GHE). Prevalence estimates were obtained from the Global Burden of Disease (GBD) 2023 study. Population denominators were taken from the United Nations World Population Prospects 2024 revision, using single-year age- and sex-specific projections for each country. Blood pressure distributions were sourced from the NCD Risk Factor Collaboration, and baseline hypertension control rates were based on country-level analyses provided by WHO. Relative risks for blood pressure reduction were based on the meta-analysis by Ettehad et al. [-@Ettehad2016], stratified by blood pressure category and cause. COVID-19 excess mortality was applied for 2020--2021 only. Statin coverage estimates were derived from published and imputed country-level data, with intervention effect sizes drawn from established randomised controlled trial evidence [@Fulcher2015].
+Death counts and mortality rates were derived from the World Health Organization Global Health Estimates (GHE). Prevalence estimates were obtained from the Global Burden of Disease (GBD) 2023 study. Population denominators were taken from the United Nations World Population Prospects 2024 revision, using single-year age- and sex-specific projections for each country. Blood pressure distributions were sourced from the NCD Risk Factor Collaboration, and baseline hypertension control rates were based on country-level analyses provided by WHO. Relative risks for blood pressure reduction were based on the meta-analysis by Ettehad et al. [-@Ettehad2016], stratified by blood pressure category and cause. COVID-19 excess mortality was applied only to 2020--2021. Statin coverage estimates were derived from published and imputed country-level data, with intervention effect sizes drawn from established randomised controlled trial evidence [@Fulcher2015].
 
 
 ## Intervention scenarios
@@ -156,7 +182,7 @@ All input data used in this analysis are publicly available from their original 
 
 ## Outcomes
 
-The primary outcome was cumulative CVD deaths averted relative to the BAU scenario over 2026--2050, disaggregated by intervention, cause of death, age group, sex, WHO region, and World Bank income group. Secondary outcomes included years of life lost (YLLs) averted, years lived with disability (YLDs) averted, disability-adjusted life years (DALYs) averted, and age-standardised mortality rates (ASMR) over time.
+The primary outcome was cumulative CVD deaths averted relative to the BAU scenario over 2026--2050, disaggregated by intervention, cause of death, age group, sex, WHO region, and World Bank income group. Secondary outcomes included years of life lost (YLLs) averted, years lived with disability (YLDs) averted, and disability-adjusted life years (DALYs) averted.
 
 Burden of disease was quantified using three complementary metrics: years of life lost (YLL), years lived with disability (YLD), and disability-adjusted life years (DALY), where $DALY = YLL + YLD$. Remaining life expectancy at each age of death was obtained from the United Nations World Population Prospects 2024 revision (medium variant), providing country- and year-specific values. Disability weights were derived from GBD 2023 data as the ratio of cause-specific YLDs to prevalence for each cause and location. No age weighting or time discounting was applied; all estimates are undiscounted (see Supplemental Material: DALY Calculation Methods).
 
@@ -164,91 +190,105 @@ Burden of disease was quantified using three complementary metrics: years of lif
 
 The model was run under the primary set of assumptions described above. Formal probabilistic sensitivity analysis incorporating GBD uncertainty intervals and parameter distributions is planned as a subsequent extension. The present analysis reports central estimates derived from mean input parameters.
 
+## Economic valuation {#sec:econ-methods}
+
+The economic value of averted CVD mortality was estimated using two complementary metrics: the value of a statistical life (VSL) and the value of a statistical life year (VSLY). Both metrics quantify the monetary value that society places on small reductions in mortality risk and are recommended by guidelines for benefit--cost analysis of health interventions [@Robinson2019VSL].
+
+Country-specific VSL values were derived by transferring a United States reference VSL to each country using gross national income (GNI) per capita at purchasing power parity (PPP) and an income elasticity. Following Robinson et al. [-@Robinson2019VSL], the primary estimate used a differential income elasticity of 0.8 for countries at or above US income and 1.2 for countries below. A uniform elasticity of 1.5 was used as a sensitivity bound. GNI per capita was obtained from the World Bank and projected beyond the last observed year using SSP2 GDP growth rates from IIASA SSP 3.1.
+
+The constant VSLY was derived as $\text{VSLY} = \text{VSL} / e_{\bar{a}}$, where $e_{\bar{a}}$ is the undiscounted remaining life expectancy at the population-weighted average adult age. The monetary value of averted mortality in each country-year was then computed as the product of the VSLY and the total undiscounted life-years gained, where life-years gained were calculated as $\sum_a \text{deaths averted}(a) \times e_x(a)$, with $e_x(a)$ being the remaining life expectancy at the age of death from UNWPP 2024.
+
+Annual monetary values were discounted to 2026 present value at a calendar-year discount rate of 3%. Results are presented as cumulative present values and as a proportion of discounted national income (population $\times$ GNI per capita) to facilitate cross-country comparison. Full mathematical details are provided in the Supplemental Material (see Economic Valuation Methods).
+
 # Results
 
 ## Baseline global trajectory, 2026--2050
 
-Under the business-as-usual scenario, in which hypertension control and statin coverage remained at 2024 levels, the model projected `r fmt_m(bau_total_deaths)` million cumulative CVD deaths from all four causes across `r n_countries` countries over 2026--2050 (Supplemental Figure \@ref(fig:fig1-paper)). Ischaemic heart disease was the dominant contributor, followed by ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Global incident and prevalent CVD cases continued to rise over the projection period, driven by population ageing. Age-standardised CVD mortality rates declined modestly even under the BAU scenario, reflecting projected demographic transitions, but absolute death counts increased as population growth outpaced age-specific rate reductions.
+Under the business-as-usual (BAU) scenario, in which hypertension control and statin coverage remained at 2024 levels, the model projected `r fmt_m(bau_total_deaths)` million cumulative CVD deaths from the four modelled causes across `r n_countries` countries during 2026--2050 (Supplemental Figure \@ref(fig:fig1-paper)). Ischaemic heart disease accounted for the largest share of deaths, followed by ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease. Incident and prevalent CVD cases were projected to increase throughout the study period, driven largely by population ageing. Although age-standardised CVD mortality rates declined modestly under BAU, the absolute number of deaths increased because population growth and ageing outpaced reductions in age-specific mortality rates.
 
 ## Global impact of achieving the hypertension control target
 
-Achievement of the WHO target for hypertension control in the general population (50% control by 2030) was projected to avert `r fmt_m(total_bp)` million CVD deaths over `r study_years`, equivalent to `r pct_bp`% of BAU mortality (Table 1; Supplemental Figure \@ref(fig:fig2-paper)). The annual number of deaths averted grew steadily from the onset of scale-up in 2026, reaching `r fmt_k(annual_2030_bp)` thousand per year by 2030 and `r fmt_k(annual_2050_bp)` thousand per year by 2050, as the cumulative exposure to lower blood pressure compounded over time (Supplemental Figure \@ref(fig:fig3-paper)). The benefits of hypertension control spanned all four CVD causes, with ischaemic heart disease and ischaemic stroke accounting for the majority of averted deaths, followed by intracerebral haemorrhage and hypertensive heart disease (Table 2). In terms of disease burden, hypertension control in the general population was projected to avert `r fmt_m(total_dalys_bp)` million DALYs over the study period.
+Achievement of the WHO target for hypertension control in the general population was projected to avert `r fmt_m(total_bp)` million CVD deaths during `r study_years`, equivalent to `r pct_bp`% of cumulative BAU mortality (Table 1; Supplemental Figure \@ref(fig:fig2-paper)). The annual number of deaths averted increased steadily from the start of scale-up in 2026, reaching `r fmt_k(annual_2030_bp)` thousand in 2030 and `r fmt_k(annual_2050_bp)` thousand in 2050, reflecting the cumulative benefit of sustained blood pressure control over time (Supplemental Figure \@ref(fig:fig3-paper)). Benefits were observed across all four CVD causes, with the largest absolute reductions in ischaemic heart disease and ischaemic stroke, followed by intracerebral haemorrhage and hypertensive heart disease (Table 2). Over the full study period, general-population hypertension control was projected to avert `r fmt_m(total_dalys_bp)` million DALYs.
 
-Targeted hypertension control among people with diabetes (80% control by 2030) was projected to avert an additional `r fmt_m(total_bpd)` million deaths (`r pct_bpd`% of BAU) and `r fmt_m(total_dalys_bpd)` million DALYs, reflecting the elevated cardiovascular risk in this subgroup and the higher coverage target.
+Targeted hypertension control among people with diabetes, assuming scale-up to 80% control by 2030, was projected to avert a further `r fmt_m(total_bpd)` million deaths, corresponding to `r pct_bpd`% of cumulative BAU mortality, and `r fmt_m(total_dalys_bpd)` million DALYs during `r study_years`. These gains reflect the higher underlying cardiovascular risk in this subgroup and the greater absolute benefit associated with improved blood pressure control.
 
 ## Global impact of achieving the lipid-lowering therapy target
 
-Scale-up of lipid-lowering therapy to 50% coverage among eligible adults by 2030 was projected to avert `r fmt_m(total_stat)` million deaths over `r study_years` (`r pct_stat`% of BAU; Table 1). Because statin effects were restricted to ischaemic heart disease and ischaemic stroke, the cause-specific profile of averted deaths differed from the hypertension scenarios: ischaemic heart disease accounted for `r fmt_m(averted_ihd_stat)` million averted deaths and ischaemic stroke for `r fmt_m(averted_istroke_stat)` million (Table 2). The annual trajectory of benefit was similar in shape to that of hypertension control, with gains accelerating after 2030 as sustained coverage translated into cumulative risk reduction (Supplemental Figure \@ref(fig:fig3-paper)). Lipid-lowering therapy was projected to avert `r fmt_m(total_dalys_stat)` million DALYs over the study period.
+Scale-up of lipid-lowering therapy to 50% coverage among eligible adults by 2030 was projected to avert `r fmt_m(total_stat)` million deaths during `r study_years`, equivalent to `r pct_stat`% of cumulative BAU mortality (Table 1). Because statin effects were restricted to ischaemic heart disease and ischaemic stroke, the distribution of averted deaths differed from that in the hypertension scenarios: `r fmt_m(averted_ihd_stat)` million deaths averted were attributable to reductions in ischaemic heart disease and `r fmt_m(averted_istroke_stat)` million to reductions in ischaemic stroke (Table 2). The temporal pattern of benefit was similar to that of hypertension control, with gains increasing after 2030 as sustained treatment coverage translated into cumulative reductions in cardiovascular risk (Supplemental Figure \@ref(fig:fig3-paper)). Overall, lipid-lowering therapy was projected to avert `r fmt_m(total_dalys_stat)` million DALYs over the study period.
 
 ## Combined impact of both targets
 
-Simultaneous achievement of all three WHO targets was projected to avert `r fmt_m(total_all)` million CVD deaths over `r study_years`, representing `r pct_all`% of cumulative BAU mortality (Table 1; Supplemental Figure \@ref(fig:fig2-paper)). The combined scenario yielded substantially greater benefits than any single intervention alone, because hypertension control and statin therapy act on partially overlapping but distinct causal pathways and their effects combined multiplicatively. By 2050, the all-interventions scenario was averting approximately `r fmt_k(annual_2050_all)` thousand deaths annually relative to BAU (Figure \@ref(fig:fig4-paper)). The combined scenario was projected to avert `r fmt_m(total_dalys_all)` million DALYs, `r fmt_m(total_ylls_all)` million YLLs, and `r fmt_m(total_ylds_all)` million YLDs over the study period (Table 3).
+Simultaneous achievement of all three WHO targets was projected to avert `r fmt_m(total_all)` million CVD deaths during `r study_years`, representing `r pct_all`% of cumulative BAU mortality (Table 1; Supplemental Figure \@ref(fig:fig2-paper)). The combined scenario yielded greater benefit than any single intervention alone, consistent with the complementary effects of hypertension control and statin therapy acting through partially overlapping but distinct causal pathways. By 2050, the combined scenario was projected to avert approximately `r fmt_k(annual_2050_all)` thousand deaths annually relative to BAU (Figure \@ref(fig:fig4-paper)). Across the full study period, it was projected to avert `r fmt_m(total_dalys_all)` million DALYs, comprising `r fmt_m(total_ylls_all)` million YLLs and `r fmt_m(total_ylds_all)` million YLDs (Table 3).
 
-Ischaemic heart disease was the leading cause of averted deaths under the combined scenario (`r fmt_m(averted_ihd_all)` million), followed by ischaemic stroke (`r fmt_m(averted_istroke_all)` million), intracerebral haemorrhage (`r fmt_m(averted_hstroke_all)` million), and hypertensive heart disease (`r fmt_m(averted_hhd_all)` million; Table 2).
+Under the combined scenario, ischaemic heart disease accounted for the largest number of deaths averted (`r fmt_m(averted_ihd_all)` million), followed by intracerebral haemorrhage (`r fmt_m(averted_hstroke_all)` million), ischaemic stroke (`r fmt_m(averted_istroke_all)` million), and hypertensive heart disease (`r fmt_m(averted_hhd_all)` million; Table 2).
 
-## Heterogeneity across regions and income groups
+## Heterogeneity across countries and regions
 
-The distribution of projected health gains was heterogeneous across WHO regions. Regional totals reflected the combination of population size, baseline CVD burden, and current coverage gaps, with regions characterised by high hypertension prevalence and low baseline treatment rates exhibiting the largest proportional reductions (Table 4).
+Projected health gains varied across WHO regions. These differences reflected the combined influence of population size, baseline CVD burden, and treatment coverage gaps, with the largest proportional reductions in regions characterised by high hypertension prevalence and low baseline treatment coverage (Table 4).
 
-When stratified by World Bank income group, low-income and lower-middle-income countries together accounted for a substantial share of avertable deaths and DALYs, underscoring the equity implications of global target achievement (Table 5). Upper-middle-income countries, which include several of the world's most populous nations, contributed the largest absolute volumes of averted burden. High-income countries showed smaller proportional gains, consistent with their higher baseline treatment coverage.
+When stratified by World Bank income group, low-income and lower-middle-income countries together accounted for a substantial share of avertable deaths and DALYs, underscoring the equity implications of achieving these global targets (Table 5). Upper-middle-income countries, which include several of the world's most populous countries, contributed the largest absolute number of deaths and DALYs averted. High-income countries showed smaller proportional gains, consistent with higher baseline levels of hypertension control and statin coverage.
 
 ## Distribution by age and sex
 
-The projected benefits of all interventions were concentrated among older adults. Under the combined scenario, adults aged 70 years and older accounted for `r fmt_m(averted_70_79 + averted_80_89 + averted_90p)` million of the `r fmt_m(total_all)` million deaths averted, reflecting the exponential increase in CVD mortality with age (Figure \@ref(fig:fig6-paper)). Adults younger than 70 years accounted for `r fmt_m(averted_lt70)` million averted deaths, representing the prevention of premature CVD mortality --- a metric aligned with SDG target 3.4.
+The projected benefits of all interventions were concentrated in older adults. Under the combined scenario, adults aged 70 years and older accounted for `r fmt_m(averted_70_79 + averted_80_89 + averted_90p)` million of the `r fmt_m(total_all)` million deaths averted, reflecting the steep increase in CVD mortality with age (Figure \@ref(fig:fig6-paper)). Adults younger than 70 years accounted for `r fmt_m(averted_lt70)` million deaths averted, indicating a substantial reduction in premature CVD mortality, consistent with SDG target 3.4.
 
-Males accounted for `r fmt_m(averted_male)` million averted deaths and females for `r fmt_m(averted_female)` million, consistent with the higher age-specific CVD mortality rates observed in men. The relative benefit of hypertension control versus lipid-lowering therapy was broadly similar across sex groups, although the absolute number of averted deaths was greater among men for all intervention scenarios (Figure \@ref(fig:fig6-paper)).
+Males accounted for `r fmt_m(averted_male)` million averted deaths and females for `r fmt_m(averted_female)` million, consistent with higher age-specific CVD mortality rates in males. The relative contributions of hypertension control and lipid-lowering therapy were broadly similar in both sexes, although the absolute number of deaths averted was greater among males across all intervention scenarios (Figure \@ref(fig:fig6-paper)).
+
+## Economic outcomes {#sec:econ-results}
+
+Globally, the economic value of avoided CVD mortality from all interventions between 2026 and 2050 is equivalent to `r fmt_pct_income(econ_scalars$world_vsly_share_total)` of annual income, amounting to a cumulative value of US$`r fmt_t(econ_scalars$world_vsly_value_total)` trillion (discounted at 3% using the value of a statistical life year approach; Table 6; Supplemental Figure \@ref(fig:fig-econ-dotplot)).
 
 ## Sensitivity and uncertainty results
 
-The present analysis reports central estimates based on mean input parameters from GBD 2023, meta-analytic effect sizes, and linear scale-up assumptions. Formal probabilistic sensitivity analysis, including propagation of GBD uncertainty intervals and alternative assumptions regarding adherence, secular trends in risk-factor levels, and non-linear scale-up trajectories, is planned as a subsequent extension. The principal findings --- that combined target achievement would avert millions of CVD deaths, that hypertension control contributes the largest single-intervention effect, and that benefits are concentrated in high-burden settings --- are expected to be robust to plausible parameter variation, given the consistent direction and magnitude of evidence from the underlying meta-analyses [@Ettehad2016; @Fulcher2015].
+This analysis reports central estimates based on mean input parameters from GBD 2023, meta-analytic treatment effect estimates, and assumptions of linear intervention scale-up. Formal probabilistic sensitivity analyses incorporating uncertainty in epidemiological inputs and intervention effects are planned in subsequent work. These findings should therefore be interpreted as central scenario estimates under the main model assumptions.
 
 # Discussion
 
 ## Principal findings
 
-This study projected that simultaneous achievement of WHO targets for hypertension control and lipid-lowering therapy across `r n_countries` countries from 2026 to 2050 would avert approximately `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs. Hypertension control in the general population was the single most impactful intervention, averting `r fmt_m(total_bp)` million deaths, while lipid-lowering therapy contributed an additional `r fmt_m(total_stat)` million deaths averted. The multiplicative combination of these interventions yielded greater benefits than any single strategy alone, although less than the sum of individual effects due to overlapping risk pathways, underscoring the complementary nature of blood pressure and lipid management for CVD prevention.
+In this study, simultaneous achievement of the three WHO cardiovascular risk-factor targets across `r n_countries` countries between 2026 and 2050 was projected to avert `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs, equivalent to `r pct_all`% of cumulative business-as-usual mortality. Of the three interventions, hypertension control in the general population produced the largest single effect, averting `r fmt_m(total_bp)` million deaths (`r pct_bp`% of BAU mortality). This finding likely reflects both the broad causal role of elevated blood pressure across all four modelled CVD outcomes and the large unmet need for hypertension treatment and control, particularly in low-income and lower-middle-income countries. Lipid-lowering therapy was projected to avert `r fmt_m(total_stat)` million deaths (`r pct_stat`%), with benefits concentrated mainly in ischaemic heart disease and ischaemic stroke, in keeping with the more specific pathway through which LDL cholesterol lowering reduces cardiovascular risk. Targeted hypertension control among people with diabetes was projected to avert a further `r fmt_m(total_bpd)` million deaths (`r pct_bpd`%), a substantial effect relative to the size of this population, consistent with their high underlying cardiovascular risk. Importantly, the combined scenario produced greater benefit than would be expected from simply adding the individual intervention effects. This pattern is consistent with blood pressure control and statin therapy acting through partly independent pathways, so that each intervention reduces some of the residual risk left after the others are applied. Taken together, these findings suggest that pursuing both intervention types in parallel is likely to yield larger health gains than prioritising either strategy alone.
 
 ## Interpretation of hypertension control findings
 
-The projected impact of hypertension control is consistent with the well-established dose--response relationship between blood pressure reduction and cardiovascular risk described by Ettehad et al. [-@Ettehad2016], in which every 10 mmHg reduction in systolic blood pressure was associated with a 20% reduction in major cardiovascular events, a 17% reduction in coronary heart disease, and a 27% reduction in stroke (see Hypertension Control Intervention Model for the formal specification). Our findings extend this evidence by quantifying the population-level health gains achievable when these effect sizes are applied at scale across diverse country settings, accounting for heterogeneous baseline blood pressure distributions, varying levels of current hypertension control, and country-specific demographic trajectories.
+The primacy of hypertension control in our projections --- `r fmt_m(total_bp)` million deaths averted from the general-population intervention alone, rising to `r fmt_m(total_bp + total_bpd)` million when the diabetes-specific target is added --- reflects a straightforward epidemiological reality: raised systolic blood pressure is the single largest attributable risk factor for CVD mortality globally [@Vollset2024], it acts across four mechanistically distinct disease pathways simultaneously, and the gap between where most countries stand today and where the WHO target requires them to be remains vast. As of 2024, approximately 1.4 billion adults were living with hypertension worldwide, yet fewer than one in four had the condition adequately controlled, and in 99 countries national control rates remain below 20% [@WHO2025HypertensionReport]. The progressive annual trajectory of benefit we project --- `r fmt_k(annual_2030_bp)` thousand deaths averted per year by 2030, growing to `r fmt_k(annual_2050_bp)` thousand by 2050 --- reflects the compounding logic of sustained coverage: every year of treatment prevents incident events and simultaneously builds a population with lower cumulative exposure to elevated pressure, reducing case fatality in those who already live with disease. The finding is consistent with the 80-80-80 modelling by Pickersgill and colleagues [-@Pickersgill2022], who estimated 76--130 million all-cause deaths averted over a comparable projection period under full hypertension cascade achievement --- a broader target than the 150-million-person WHO control goal modelled here.
 
-The concentration of benefits in older age groups reflects the age-dependent increase in both baseline CVD mortality rates and the absolute risk reduction achievable through blood pressure lowering. The consistent benefit across all four modelled CVD causes --- including haemorrhagic stroke and hypertensive heart disease --- underscores the broad pathophysiological relevance of blood pressure control beyond ischaemic outcomes alone.
+The additional `r fmt_m(total_bpd)` million deaths averted from targeted control among people with diabetes reflects the well-established amplification of cardiovascular risk in this subgroup: diabetes exacerbates endothelial dysfunction, accelerates atherosclerosis, and clusters with hypertension and dyslipidaemia in ways that make each risk factor more dangerous than it would be in isolation [@ADAPP2025StandardsDiabetesCVD]. A cross-sectional study of 38 low-income and middle-income countries found that fewer than half of people with diagnosed diabetes had achieved blood pressure targets [@Moran2023GlobalHEARTSImplementation], and fewer than one in ten were using statins [@Li2024DiabetesCVDTargetsLMICs] --- figures that illustrate how far current practice in many settings lies from the 80% control standard demanded by the Global Diabetes Compact [@Gregg2023DiabetesCompactTargets]. Reaching that standard does not require novel technologies; it requires the same primary-care building blocks --- standardised treatment protocols, reliable drug supply, team-based follow-up --- that the HEARTS technical package has already demonstrated are implementable at scale in more than 40 low-income and middle-income countries [@Garcia2026HEARTS4Countries; @Banigbe2025].
 
 ## Interpretation of lipid-lowering therapy findings
 
-Lipid-lowering therapy with statins was projected to avert `r fmt_m(total_stat)` million deaths, with effects concentrated in ischaemic heart disease and ischaemic stroke. This cause-specific profile is consistent with the atherogenic mechanism of LDL cholesterol and the evidence base from major statin trials, which have demonstrated significant reductions in coronary events and ischaemic stroke with minimal effect on haemorrhagic stroke or hypertensive heart disease [@Fulcher2015] (see Statin Therapy Intervention Model). The modelling of statin effects only in adults aged 40 and above, and only for IHD and ischaemic stroke, represents a conservative approach that may underestimate the total benefit if future evidence supports broader indications or earlier initiation.
-
-Adherence to statin therapy remains a critical implementation challenge. Meta-analytic evidence suggests that real-world statin adherence ranges from 40% to 75% depending on the clinical context and follow-up duration [@Basios2025]. Our model assumed full adherence for newly covered individuals under hypertension therapy and adjusted statin adherence for primary and secondary prevention; true population-level effects may be lower if adherence is suboptimal, particularly in settings with limited health system capacity for long-term medication management.
+The projection that statin scale-up to 50% coverage could avert `r fmt_m(total_stat)` million CVD deaths over 2026--2050 deserves to be read alongside one uncomfortable fact: across 41 low-income and middle-income countries, statin use among those eligible for primary prevention was approximately 8%, and for secondary prevention approximately 22% --- and the WHO 50% coverage target was not achieved by a single income group, region, or, with one exception, country [@Marcus2022StatinsLMICs]. The intervention modelled here is therefore not an incremental improvement on a system approaching its target; it is a near-doubling of coverage starting from a very low base in most of the world. The `r fmt_m(averted_ihd_stat)` million deaths averted from ischaemic heart disease --- which accounts for nearly all of the statin effect --- reflects both the high atherosclerotic fraction of IHD burden globally and the size of the absolute risk reduction achievable from LDL cholesterol lowering in populations with currently near-zero treatment rates. The asymmetry between IHD and ischaemic stroke estimates --- `r fmt_m(averted_ihd_stat)` million versus `r fmt_m(averted_istroke_stat)` million --- is mechanistically expected: the atherosclerotic fraction of ischaemic stroke that is sensitive to statin therapy is substantially smaller than for IHD, and we applied this restriction through a 0.60 atherosclerotic proportion for ischaemic stroke case fatality, consistent with established estimates [@Petty1999IschemicStrokeSubtypes]. The fact that statin therapy nonetheless contributes `r pct_stat`% of business-as-usual mortality averted despite this mechanistic constraint strengthens the argument for treating lipid-lowering access as a standalone NCD priority rather than a residual consideration after blood pressure programmes are in place. The barriers are not ones of clinical uncertainty --- the evidence from the Cholesterol Treatment Trialists' Collaboration is among the most robust in preventive medicine [@Reith2026StatinAdverseEffects] --- but structural: irregular drug supply, absence of lipid testing at primary care level, provider unfamiliarity with simplified prescribing protocols, and out-of-pocket costs that make long-term adherence inaccessible for many patients in resource-constrained settings [@Marcus2022StatinsLMICs; @Li2024HyperlipidemiaMedicinesAccess; @Fulcher2015].
 
 ## Combined policy meaning
 
-The combined scenario demonstrates that hypertension control and lipid-lowering therapy are complementary rather than substitutable interventions. Because blood pressure and LDL cholesterol act through partially independent causal pathways, their multiplicative combination generates health gains greater than the sum of their individual effects (see Multi-State Transition Model). This finding has direct policy relevance: programmes that integrate blood pressure measurement and treatment with lipid assessment and statin therapy --- such as the WHO HEARTS technical package --- can capture these synergistic benefits within existing primary health care platforms [@Banigbe2025; @Moran2024].
+The most consequential finding in this study may not be the headline total but the structure beneath it. The combined scenario averted more than the sum of its parts not because the effects happened to overlap neatly, but because blood pressure control and LDL cholesterol lowering act through genuinely different pathways to CVD harm. Raised systolic pressure injures the endothelium, stiffens arterial walls, and drives haemodynamic stress across all vascular beds; elevated LDL drives lipid deposition and atherosclerotic plaque progression, predominantly in coronary and cerebrovascular territories. Each intervention therefore reaches risk that the other leaves largely untouched, and the multiplicative combination we modelled reflects that biological reality (see Multi-State Transition Model). This independence is well established in randomised trial evidence and underpins the integrated antihypertensive-plus-statin protocols that Moran and colleagues have designed specifically for primary care delivery in low-income and middle-income countries --- protocols that allow a non-physician health worker to initiate both treatments in a single clinic visit, without waiting for lipid laboratory results, using age, diabetes status, and blood pressure level as eligibility criteria [@Moran2024; @Watkins2022NCD2030].
 
-The projected `r fmt_m(total_all)` million deaths averted and `r fmt_m(total_dalys_all)` million DALYs averted under the combined scenario represent a substantial return on investment in cardiovascular risk-factor management. Recent costing analyses of the HEARTS programme in low- and middle-income countries have demonstrated favourable cost-effectiveness ratios for integrated hypertension and statin management [@Husain2022HeartsCosting; @Garcia2026HEARTS4Countries], suggesting that the health gains projected here are achievable within realistic resource envelopes.
+The practical implication of multiplicative independence is that concentrating investment in either hypertension control or statin therapy, while treating the other as a future priority, surrenders preventable deaths that only the deferred intervention would have reached. The SECURE trial demonstrated that a polypill combining an antihypertensive with atorvastatin improved adherence and reduced major cardiovascular events by 24% relative to usual care among post-myocardial infarction patients --- direct clinical evidence that co-delivery is not only biologically justified but practically achievable [@Castellano2022PolypillSecondaryPrevention]. The cardiovascular polypill, added to the WHO Model List of Essential Medicines in 2023 as a fixed-dose combination of antihypertensive and statin therapy, extends this delivery logic to primary prevention, with cost-effectiveness analyses from low-income and middle-income country settings reporting incremental cost-effectiveness ratios well below conventional willingness-to-pay thresholds [@KohliLynch2025PolypillCostEffectiveness]. The convergence of the HEARTS operational framework, the integrated protocol evidence, the polypill's inclusion on the essential medicines list, and the multiplicative biology of combined risk-factor reduction collectively make the case that these are not two programmes to be sequenced but one patient-centred encounter, engineered to happen at the same moment, at the same primary care facility, for the same person.
 
 ## Equity and implementation implications
 
-The distribution of projected benefits by income group reveals important equity dimensions. Low-income and lower-middle-income countries, which currently have the lowest levels of hypertension control and statin coverage, stand to gain substantially from global target achievement --- both in absolute numbers and as a proportion of their baseline CVD burden. This finding reinforces the moral and epidemiological case for prioritising cardiovascular risk-factor management in resource-constrained settings, where the return on investment in prevention is highest.
+The global totals in this study risk obscuring the story that matters most. The African region shows the highest proportional benefit under the combined scenario, and low-income countries overall stand to gain disproportionately relative to their share of baseline burden. The gradient runs exactly where you would expect it --- the populations furthest from the WHO targets today are the ones who gain most when those targets are reached. CVD deaths in low-income countries are projected to nearly double by mid-century under business-as-usual trajectories [@Chong2024], driven by population ageing, unchecked hypertension [@Nambiema2025HypertensionAfrica], and statin coverage that remains below 10% for primary prevention in most of sub-Saharan Africa and South Asia [@Marcus2022StatinsLMICs]. The WHO's 2025 global hypertension report found that while 93% of high-income countries report availability of the four core antihypertensive drug classes, only 28% of low-income countries do --- and that is before the additional barriers of procurement delays, out-of-pocket costs, and health worker capacity are considered [@WHO2025HypertensionReport]. Our model, which assumes full adherence and linear scale-up to 2030, cannot capture these realities. Its projections define a ceiling, not a forecast, and the distance between that ceiling and what current health system trajectories will actually deliver is itself a measure of the equity gap.
 
-However, realising these gains requires overcoming well-documented implementation barriers, including limited access to essential medicines, insufficient numbers of trained health workers, weak supply chains, and fragmented health information systems. The WHO HEARTS programme has demonstrated that standardised, protocol-based approaches to hypertension management can achieve large-scale coverage expansion in diverse country settings [@Banigbe2025], and similar models are needed for lipid management. National commitment to pharmaceutical procurement, task sharing, and community-based screening and follow-up will be essential to translate these modelled projections into real-world health outcomes.
+Closing that gap requires strong financing mechanisms, and also the kind of operational infrastructure that HEARTS has shown is achievable in resource-constrained settings: standardised treatment protocols that reduce clinical decision-making to a manageable algorithm, reliable drug supply chains that stock both antihypertensives and generic statins at the primary care level, team-based care models that allow task-sharing to non-physician providers, and information systems that track patients across visits and flag those lost to follow-up. By 2024, more than 22 million people with hypertension were being managed through HEARTS-based programmes in 34 low-income and middle-income countries --- a proof of concept that the model works at scale, and that the primary bottleneck is now coverage rather than design [@Moran2023GlobalHEARTSImplementation; @Banigbe2025]. Expanding HEARTS to include integrated statin prescribing would extend the same infrastructure to lipid-lowering therapy without requiring a parallel programme, a separate supply chain, or additional clinic visits.
+
+The NCD Countdown 2030 estimated that closing the gap would require an additional US$18 billion annually through 2030 --- an amount that would yield a net economic return of US$2.7 trillion and avert 39 million premature deaths across all NCDs [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. Cardiovascular interventions, including hypertension management and statin therapy, sit among the most cost-efficient components of that package [@Agboyibor2025CVHWHOAfrica; @Garcia2026HEARTS4Countries; @Banigbe2025]. Three political declarations since 2011 have come and gone without shifting the trajectory of CVD mortality in the countries that carry the greatest burden [@Lancet2025TurnTideNCDs]. The 2025 declaration carries the same risk. Whether it produces a different outcome will depend not on the language of the text but on whether the resource flows, the supply chain reforms, and the primary care investments it calls for are measurably in place within the next 24 months --- before the window for reaching the 2030 targets closes entirely.
 
 ## Relation to previous literature
 
-Our findings are broadly consistent with, and extend, previous global and regional analyses. Kontis et al. [-@Kontis2019] projected the probability of achieving SDG target 3.4 (a one-third reduction in premature NCD mortality by 2030) and identified inadequate cardiovascular risk-factor control as a major barrier in most countries. The NCD Countdown analyses identified blood pressure management and statin therapy as among the most efficient interventions for reducing premature CVD mortality in low- and middle-income settings [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. Our study complements this work by providing country-specific projections over a 25-year horizon, enabling direct comparison of the relative contribution of each intervention.
+Our findings are broadly consistent with, and extend, previous global and regional analyses. Kontis et al. [-@Kontis2019] projected the probability of achieving SDG target 3.4 (a one-third reduction in premature NCD mortality by 2030) and identified inadequate cardiovascular risk-factor control as a major barrier in most countries. The NCD Countdown analyses identified blood pressure management and statin therapy as among the most efficient interventions for reducing premature CVD mortality in low- and middle-income settings [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. Our study complements this work by providing country-specific projections over a 25-year horizon, enabling direct comparison of the relative contribution of each intervention. The NCD Countdown 2025 benchmarking analysis further documented the widening gap in CVD mortality trends between high-income and low-income countries [@NCDCountdown2025BenchmarkingProgress], lending additional urgency to the scale-up modelled here.
 
 The Ford et al. analysis of the decline in US coronary mortality attributed approximately half of the observed reduction to evidence-based treatments, including statins and antihypertensives, and the remainder to risk-factor improvements [@Ford2007]. Similarly, Critchley et al. [-@Critchley2004] demonstrated that unfavourable risk-factor trends could offset treatment gains in rapidly developing countries. Our projections implicitly capture this tension by holding baseline risk-factor levels constant in the BAU scenario: the modelled health gains represent the incremental benefit of treatment scale-up above current trajectories.
 
 ## Strengths
 
-This study has several notable strengths. First, it provides comprehensive global coverage across `r n_countries` countries, with country-specific epidemiological and demographic inputs rather than reliance on regional averages. Second, the model explicitly accounts for the interaction between hypertension control and statin therapy through multiplicative effect combination, avoiding the overestimation that would result from additive assumptions. Third, the use of GBD 2023 data and UNWPP 2024 population projections ensures that the analysis reflects the most current global health and demographic evidence. Fourth, the model de-duplicates existing treatment effects by crediting only incremental coverage above baseline, avoiding double-counting of current treatment benefits. Fifth, the 25-year projection horizon captures the long-term compounding of sustained risk-factor reduction, which shorter-horizon models may miss.
+This study has several notable strengths. First, it offers truly global coverage, incorporating country-specific epidemiological and demographic inputs for `r n_countries` countries rather than relying on regional aggregates. Second, the model explicitly captures the interaction between hypertension control and statin therapy using a multiplicative framework, thereby avoiding the upward bias inherent in additive effect assumptions. Third, by drawing on GBD 2023 estimates, WHO Global Health Estimates, and UNWPP 2024 population projections, the analysis reflects the latest and most robust sources of global health and demographic data. Fourth, treatment effects are appropriately de-duplicated: only gains attributable to incremental coverage beyond baseline practice are counted, preventing double-counting of existing intervention benefits. Finally, the 25-year projection horizon allows the model to account for the cumulative impact of sustained reductions in key risk factors --- effects that shorter-term analyses would fail to capture.
 
 ## Limitations
 
-Several limitations should be considered when interpreting these results. First, formal probabilistic sensitivity analysis was not conducted; results represent central estimates and do not incorporate uncertainty intervals from GBD inputs, meta-analytic effect sizes, or demographic projections. Second, the model assumes a static blood pressure distribution within countries --- no secular trends in population blood pressure and no endogenous updating as treatment coverage increases --- which may overestimate baseline risk in countries experiencing favourable risk-factor trends. Third, full adherence was assumed for hypertension therapy, and adherence-adjusted estimates for statin therapy may still exceed real-world levels in settings with limited health system capacity. Fourth, the linear scale-up assumption (2026--2030) is a simplification; actual programme expansion may follow non-linear trajectories with initial delays and subsequent acceleration. Fifth, no explicit health-system capacity constraints were modelled, meaning that the scenarios represent technical potential rather than implementation-ready projections. Sixth, COVID-19 excess mortality was modelled only for 2020--2021, and potential long-term cardiovascular sequelae of SARS-CoV-2 infection were not incorporated. Finally, the model does not capture potential interactions between interventions and other concurrent NCD prevention strategies, such as dietary sodium reduction or trans-fat elimination, which may modify the marginal benefit of hypertension control and statin therapy.
+Several limitations should be considered when interpreting these results. First, formal probabilistic sensitivity analysis was not conducted; results represent central estimates and do not incorporate uncertainty intervals from GBD inputs, meta-analytic effect sizes, or demographic projections. Second, the model assumes a static blood pressure distribution within countries --- no secular trends in population blood pressure and no endogenous updating as treatment coverage increases --- which may overestimate baseline risk in countries experiencing favourable risk-factor trends. Third, full adherence was assumed for hypertension therapy, and adherence-adjusted estimates for statin therapy may still exceed real-world levels in settings with limited health system capacity [@Li2024HyperlipidemiaMedicinesAccess; @Reith2026StatinAdverseEffects; @Baigent2010IntensiveLDLLowering]. Fourth, the linear scale-up assumption (2026--2030) is a simplification; actual programme expansion may follow non-linear trajectories with initial delays and subsequent acceleration. Fifth, no explicit health-system capacity constraints were modelled, meaning that the scenarios represent technical potential rather than implementation-ready projections. Sixth, COVID-19 excess mortality was modelled only for 2020--2021, and potential long-term cardiovascular sequelae of SARS-CoV-2 infection were not incorporated. Finally, the model does not capture potential interactions between interventions and other concurrent NCD prevention strategies, such as dietary sodium reduction or trans-fat elimination, which may modify the marginal benefit of hypertension control and statin therapy.
 
 # Conclusion
 
-Achievement of WHO targets for hypertension control and lipid-lowering therapy by 2030, sustained through 2050, could avert approximately `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs across `r n_countries` countries. Hypertension control in the general population and lipid-lowering therapy are complementary strategies whose combined benefit exceeds the sum of their individual effects. The projected health gains are substantial across all world regions and income groups, with the largest proportional benefits accruing to countries with the lowest current treatment coverage. These findings provide a quantitative foundation for accelerated investment in integrated cardiovascular risk-factor management through primary health care, and support the case for sustained political commitment to the WHO NCD targets as a cornerstone of global health policy.
+Simultaneous achievement of WHO targets for hypertension control and lipid-lowering therapy by 2030 was projected to avert `r fmt_m(total_all)` million cardiovascular deaths and `r fmt_m(total_dalys_all)` million DALYs across `r n_countries` countries between 2026 and 2050 --- gains concentrated precisely where they are needed most, in the countries and populations furthest from the targets today. Blood pressure control and statin therapy are not competing claims on a constrained prevention budget; they act on partially independent causal pathways, and pursuing both together produces more than either can deliver alone. The WHO HEARTS technical package provides the operational framework through which this integrated delivery is already happening --- by 2024, more than 22 million people with hypertension were being managed through HEARTS-based protocols in 38 low-income and middle-income countries, and Moran and colleagues have demonstrated that statin prescribing can be incorporated into those same workflows without requiring lipid laboratory capacity [@Moran2024; @Banigbe2025]. Scaling HEARTS to cover the full eligible population in the highest-burden settings and embedding both antihypertensive and lipid-lowering therapy within a single, standardised primary care encounter is the operational translation of what this study's combined scenario describes in aggregate. The projections presented here define a ceiling, not a forecast: they describe what these targets would yield under idealised conditions, and the distance between that ceiling and what current health system trajectories will actually produce is itself a measure of how much the implementation gap costs in human lives.
 
 \newpage
 
@@ -383,6 +423,34 @@ kable(income_display, align = c("l", "r", "r", "r", "r"))
 
 \newpage
 
+**Table 6.** Economic value of averted CVD mortality by WHO region under the combined intervention scenario (VSLY, primary elasticity, cumulative 2026--2050, discounted at 3%).
+
+```{r table6-paper, echo=FALSE}
+if (!is.null(econ_vsly_primary)) {
+  region_order <- c("Africa", "Americas", "Eastern Mediterranean", "Europe",
+                    "South-East Asia", "Western Pacific", "World")
+
+  econ_all <- econ_vsly_primary[intervention == "All Interventions"]
+  econ_all[, who_region := factor(who_region, levels = region_order)]
+  setorder(econ_all, who_region)
+
+  econ_display <- econ_all[, .(
+    Region = as.character(who_region),
+    `VSLY (USD trillions)` = paste0("$", fmt_t(metric_total)),
+    `% of annual income` = paste0(formatC(round(share_total * 100, 1),
+                                          format = "f", digits = 1), "%")
+  )]
+
+  kable(econ_display, align = c("l", "r", "r"))
+} else {
+  cat("*Economic valuation artefacts not available. Run code/08_economic_value_calculation.R and knit aim1_report.Rmd first.*")
+}
+```
+
+*Note: Values represent cumulative present value of avoided CVD mortality, 2026--2050, using the value of a statistical life year (VSLY) approach with the Robinson et al. (2019) reference-case income elasticity (0.8 for high-income, 1.2 for low- and middle-income countries). Calendar-year discount rate: 3%. All Interventions scenario.*
+
+\newpage
+
 # Figures
 
 **Figure 1.** Cumulative CVD deaths averted over time by intervention scenario, `r study_years`.
@@ -514,6 +582,17 @@ knitr::include_graphics(paste0(wd_outp, "aim1_bod_fig1_dalys_ts.png"))
 
 ```{r fig10-paper, echo=FALSE, fig.cap="Note: Choropleth map showing cumulative CVD deaths averted per 100,000 population across all modelled countries under the combined intervention scenario (all three WHO targets achieved by 2030, sustained through 2050). Darker shading indicates larger per-capita health gains. Geographic variation reflects differences in baseline CVD burden, population age structure, and current treatment coverage."}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig6_map.png"))
+```
+
+\newpage
+
+**Supplemental Figure S8.** Economic value of avoidable CVD mortality as a proportion of regional income, by WHO region and period, `r study_years`.
+
+```{r fig-econ-dotplot, echo=FALSE, fig.cap="Note: VSLY values as a proportion of discounted GNI, by WHO region and snapshot year (2026, 2030, 2040, 2050) and cumulative 2026--2050. Primary elasticity (differential 0.8 HIC / 1.2 LMIC per Robinson et al. 2019). Discounted at 3%. All Interventions scenario."}
+econ_dot_file <- paste0(slides_dir, "sl_econ_dotplot.png")
+if (file.exists(econ_dot_file)) {
+  knitr::include_graphics(econ_dot_file)
+}
 ```
 
 \newpage
@@ -1047,3 +1126,135 @@ kable(daly_params, col.names = c("Parameter", "Value or Source", "Year", "Notes"
 *Sources: United Nations, Department of Economic and Social Affairs, Population Division (2024). World Population Prospects 2024, Online Edition. Institute for Health Metrics and Evaluation (IHME). Global Burden of Disease Study 2023 (GBD 2023) Results. Seattle, United States: IHME, 2024.*
 
 All DALY, YLL, and YLD results reported in the main manuscript are computed using the above specifications, as implemented in `07_output_dalys.R`.
+
+### Economic Valuation Methods {#sec:econ-methods}
+
+The economic value of avoided CVD mortality was estimated using the Value of a Statistical Life (VSL) and Value of a Statistical Life Year (VSLY) frameworks, following the benefit-transfer methodology of Robinson et al. [-@Robinson2019VSL].
+
+#### Value of a Statistical Life (VSL) Transfer
+
+Country-specific VSL was derived by transferring from a United States reference value using an income-elasticity adjustment:
+
+$$\text{VSL}_{\ell,t} = \lambda \cdot Y^{\text{US}}_t \cdot \left(\frac{Y_{\ell,t}}{Y^{\text{US}}_t}\right)^{\eta}$$
+
+where $\lambda = 160$ is the VSL-to-income ratio for the United States (such that $\text{VSL}_{\text{US}} = \lambda \cdot Y^{\text{US}}$), $Y_{\ell,t}$ is gross national income (GNI) per capita in purchasing power parity (PPP) terms for location $\ell$ in year $t$, $Y^{\text{US}}_t$ is the corresponding US GNI per capita, and $\eta$ is the income elasticity of VSL.
+
+The primary estimate uses the differential elasticity recommended by Robinson et al. [-@Robinson2019VSL]:
+
+$$\eta = \begin{cases} 0.8 & \text{if } Y_{\ell,t} \ge Y^{\text{US}}_t \\ 1.2 & \text{if } Y_{\ell,t} < Y^{\text{US}}_t \end{cases}$$
+
+Sensitivity analyses used uniform elasticities of 1.0 and 1.5.
+
+A floor constraint ensures that VSL does not fall below a minimum ratio to national income:
+
+$$\text{VSL}_{\ell,t} = \max\!\left(\text{VSL}_{\ell,t},\; \phi \cdot Y_{\ell,t}\right)$$
+
+where $\phi = 20$ is the minimum VSL-to-GNI ratio.
+
+#### GNI Per Capita Projection
+
+Observed GNI per capita (PPP, constant international dollars) was obtained from World Bank data. For years beyond the last observed value, GNI was projected forward using annual GDP per capita growth rates from the SSP2 scenario (IIASA SSP 3.1):
+
+$$Y_{\ell,t} = Y_{\ell,t_0} \cdot \prod_{j=t_0+1}^{t} \left(1 + g_{\ell,j}^{\text{SSP2}}\right)$$
+
+where $t_0$ is the last year with observed GNI and $g_{\ell,j}^{\text{SSP2}}$ is the SSP2 GDP per capita growth rate for year $j$, obtained by log-linear interpolation of five-year SSP nodes. This approach preserves observed GNI levels and applies only SSP-implied growth trajectories. A known limitation is that SSP projections provide GDP, not GNI, per capita; these series track closely for most countries but may diverge in economies with large net foreign income flows.
+
+#### Value of a Statistical Life Year (VSLY)
+
+A constant VSLY was derived by dividing the VSL by remaining life expectancy at the population-weighted average adult age:
+
+$$\text{VSLY}_{\ell,t} = \frac{\text{VSL}_{\ell,t}}{\bar{e}_{\ell,t}}$$
+
+where $\bar{e}_{\ell,t}$ is the undiscounted remaining life expectancy at the average age of the adult population ($\geq 20$ years) in location $\ell$ and year $t$, obtained from the United Nations World Population Prospects 2024 period life tables (both sexes combined). The average adult age was computed as:
+
+$$\bar{a}_{\ell,t} = \frac{\sum_{a \geq 20} N_{a,\ell,t} \cdot a}{\sum_{a \geq 20} N_{a,\ell,t}}$$
+
+where $N_{a,\ell,t}$ is the population at age $a$.
+
+#### Life-Years Gained
+
+The undiscounted life-years gained from avoided deaths were computed as:
+
+$$\text{LYG}_{\ell,t,j} = \sum_{a} \Delta D_{a,\ell,t,j} \cdot e_x(a, t, \ell)$$
+
+where $\Delta D_{a,\ell,t,j}$ is the number of deaths averted at age $a$ under intervention scenario $j$ (baseline minus intervention deaths) and $e_x(a, t, \ell)$ is the remaining life expectancy at exact age $a$ from WPP 2024 period life tables.
+
+The VSLY-based monetary value of avoided mortality was then:
+
+$$V^{\text{VSLY}}_{\ell,t,j} = \text{VSLY}_{\ell,t} \times \text{LYG}_{\ell,t,j}$$
+
+Because the VSLY denominator uses life expectancy at the average adult age while the numerator uses age-specific life expectancy at the age of death, VSLY-based totals are not mechanically equal to VSL-based totals.
+
+The VSL-based monetary value was computed directly as:
+
+$$V^{\text{VSL}}_{\ell,t,j} = \text{VSL}_{\ell,t} \times \Delta D_{\ell,t,j}$$
+
+where $\Delta D_{\ell,t,j} = \sum_a \Delta D_{a,\ell,t,j}$ is the total number of deaths averted.
+
+#### Discounting
+
+Annual monetary values were discounted to 2026 present value using calendar-year discount factors:
+
+$$\delta_t = \frac{1}{(1 + r)^{t - 2026}}$$
+
+where $r = 0.03$ (3%) for the primary analysis, with sensitivity analyses at $r = 0.01$ and $r = 0.05$. Discounted cumulative values were computed as:
+
+$$V^{\text{disc}}_{\ell,j} = \sum_{t=2026}^{2050} \delta_t \cdot V_{\ell,t,j}$$
+
+Results are also expressed as a share of discounted national income to facilitate cross-country comparison:
+
+$$\text{Income share}_{\ell,j} = \frac{V^{\text{disc}}_{\ell,j}}{\sum_{t=2026}^{2050} \delta_t \cdot N_{\ell,t} \cdot Y_{\ell,t}}$$
+
+where $N_{\ell,t}$ is total population and $Y_{\ell,t}$ is GNI per capita.
+
+#### Parameter Summary
+
+```{r econ-param-table, echo=FALSE}
+econ_params <- data.frame(
+  Parameter = c(
+    "US VSL-to-income ratio ($\\lambda$)",
+    "Income elasticity, primary ($\\eta$)",
+    "Income elasticity, sensitivity low",
+    "Income elasticity, sensitivity high",
+    "VSL floor ratio ($\\phi$)",
+    "Income measure",
+    "Income projection",
+    "Life table",
+    "Discount rate, primary ($r$)",
+    "Discount rate, sensitivity",
+    "Base year"
+  ),
+  Value = c(
+    "160",
+    "0.8 (HIC) / 1.2 (LMIC)",
+    "1.0 (uniform)",
+    "1.5 (uniform)",
+    "20",
+    "GNI per capita, PPP (constant international \\$)",
+    "SSP2 GDP growth rates (IIASA 3.1)",
+    "UNWPP 2024, medium variant, both sexes",
+    "3\\%",
+    "1\\%, 5\\%",
+    "2026"
+  ),
+  Source = c(
+    "Robinson \\& Hammitt (2011)",
+    "Robinson et al. (2019)",
+    "Robinson et al. (2019)",
+    "Robinson et al. (2019)",
+    "Robinson et al. (2019)",
+    "World Bank",
+    "IIASA SSP Database v3.1",
+    "United Nations (2024)",
+    "Robinson et al. (2019)",
+    "---",
+    "---"
+  ),
+  stringsAsFactors = FALSE
+)
+kable(econ_params,
+      col.names = c("Parameter", "Value", "Source"),
+      align = c("l", "l", "l"))
+```
+
+All economic valuation results reported in the main manuscript are computed using the above specifications, as implemented in `08_economic_value_calculation.R`.
