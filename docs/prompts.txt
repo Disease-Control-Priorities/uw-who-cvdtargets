@@ -1376,3 +1376,57 @@ Please provide:
 4. any objects/tables/plots that the executive slides now expect from upstream
 
 Do not modify files beyond the three listed above.
+
+###########################################################3
+###########################################################3
+
+Task: Update Aim 1 Manuscript R Markdown File
+I need you to update docs/who_cvd_targets_paper1.RMD, which generates the Aim 1 manuscript as a Word document. Please complete the following tasks carefully and in order.
+Context Files to Read First
+Before making any changes, read and understand these files:
+
+docs/who_cvd_targets_paper1.RMD — the target file to update (current manuscript)
+Paper1_Projected_Health_Impact_WHO_CVD_Targets.docx — the source document with updated text content
+docs/references.bib — bibliography file for citations
+code/08_economic_value_calculation.R — code that produces economic value calculations
+scenarios/scenarios_aim1/aim1_report.RMD — contains economic value results
+scenarios/scenarios_aim1/aim1_executive_slides.RMD — contains economic value descriptions
+
+Start by listing the repo structure and reading these files end-to-end. Do not begin editing until you have a clear mental model of (a) the current manuscript structure, (b) what text in the .docx needs to replace/augment it, and (c) how the economic value pipeline flows from code/08_economic_value_calculation.R → scenarios/scenarios_aim1/aim1_report.RMD → scenarios/scenarios_aim1/aim1_executive_slides.RMD.
+Tasks
+1. Update manuscript body and supplemental material text
+Replace and/or modify the text in docs/who_cvd_targets_paper1.RMD so that the main body and supplemental material sections match the content in Paper1_Projected_Health_Impact_WHO_CVD_Targets.docx. Preserve the existing R code chunks, YAML header, and any inline R expressions (`r ...`) — only the prose, headings, and section structure should be updated to match the .docx. If a code chunk produces a value referenced in the new text, keep the chunk and wire the inline reference correctly.
+2. References
+
+Keep APA citation style.
+All citations must resolve to entries in docs/references.bib.
+Use standard R Markdown citation syntax ([@citekey], @citekey).
+If the .docx cites a source not present in references.bib, list it at the end of your work as an open item — do not invent BibTeX entries.
+
+3. Cross-references
+Update all cross-references for figures, tables, and sections so they render correctly in the Word document output produced by knitting docs/who_cvd_targets_paper1.RMD. Use the bookdown-style syntax that works with word_document / bookdown::word_document2:
+
+Figures: \@ref(fig:chunk-label) with chunks named accordingly and fig.cap set
+Tables: \@ref(tab:chunk-label) with knitr::kable(..., caption = "...") or equivalent
+Sections: \@ref(section-id) with {#section-id} anchors on headings
+
+Verify the YAML output format supports cross-references (e.g., bookdown::word_document2); if it currently uses plain word_document, switch it and note the change.
+4. Add economic value methods and results
+
+Main text: Add a concise methods subsection describing the economic value approach, and a results subsection reporting the key numeric outputs. Pull the narrative framing from scenarios/scenarios_aim1/aim1_executive_slides.RMD and the numeric results from scenarios/scenarios_aim1/aim1_report.RMD / the outputs of code/08_economic_value_calculation.R.
+Supplemental material: Add the detailed mathematical description of the economic value calculation — equations, parameter definitions, assumptions, and data sources. Base the mathematical detail on the logic implemented in code/08_economic_value_calculation.R (read the code carefully and translate it into formal notation).
+Use LaTeX math ($...$, $$...$$) for equations; confirm equations render acceptably in Word output.
+Add new figures/tables for economic value where appropriate, with proper captions and cross-references per task 3.
+
+Working Approach
+
+Plan before editing. After reading the files, summarize back to me: the section-by-section diff between the current .RMD and the .docx, where economic value content will be inserted, and any ambiguities you found. Wait for confirmation before making large changes.
+Edit incrementally and keep changes reviewable — prefer targeted edits over wholesale rewrites of chunks that are already correct.
+Try to knit the document after major changes to confirm it builds. If knitting fails or you can't run it, report the exact errors.
+Do not delete existing code chunks, data-loading logic, or computed objects unless they are clearly obsolete — flag them for my review instead.
+Preserve git history — make logical, separable commits if a git workflow is in use (text update, references, cross-refs, economic value section).
+
+Deliverables
+
+Updated docs/who_cvd_targets_paper1.RMD
+A short summary of: changes made, any citations missing from references.bib, any cross-references that couldn't be resolved, and any assumptions you made about the economic value math when translating code → equations.
