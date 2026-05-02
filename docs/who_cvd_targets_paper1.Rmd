@@ -88,6 +88,9 @@ int_order <- c(
   "Improved Statin Uptake",
   "All Interventions"
 )
+
+## Manual updates
+study_years <- "2026-2050"
 ```
 
 # Abstract
@@ -100,11 +103,11 @@ High systolic blood pressure and high LDL cholesterol are leading modifiable dri
 
 Methods
 
-We did a comparative risk assessment modelling study using a multi-state transition model for `r n_countries` countries, `r study_years`. The model projected deaths from ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease by age, sex, and country, using WHO Global Health Estimates, GBD 2023, UN World Population Prospects 2024, NCD Risk Factor Collaboration data, and effect estimates. We compared business-as-usual with three intervention scenarios: hypertension control in the general population to reach the WHO target of 150 million people controlled by 2030; 80% blood pressure control among people with diabetes by 2030; 50% statin coverage among eligible adults aged 40 years or older by 2030; and a combined scenario. The primary outcome was cumulative CVD deaths averted during `r study_years`.
+We did a comparative risk assessment modelling study using a multi-state transition model for `r n_countries` countries, 2026 - 2050. The model projected deaths from ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease by age, sex, and country, using WHO Global Health Estimates, GBD 2023, UN World Population Prospects 2024, NCD Risk Factor Collaboration data, and effect estimates. We compared business-as-usual with three intervention scenarios: hypertension control in the general population to reach the WHO target of 150 million people controlled by 2030; 80% blood pressure control among people with diabetes by 2030; 50% statin coverage among eligible adults aged 40 years or older by 2030; and a combined scenario. The primary outcome was cumulative CVD deaths averted during 2026 - 2050.
 
 Findings
 
-Under business-as-usual, the model projected `r fmt_m(bau_total_deaths)` million CVD deaths during `r study_years`. Compared with business-as-usual, achieving the general-population hypertension target was projected to avert `r fmt_m(total_bp)` million deaths and `r fmt_m(total_dalys_bp)` million DALYs, the diabetes-specific hypertension target `r fmt_m(total_bpd)` million deaths and `r fmt_m(total_dalys_bpd)` million DALYs, and the statin target `r fmt_m(total_stat)` million deaths and `r fmt_m(total_dalys_stat)` million DALYs. Achieving all three targets simultaneously was projected to avert `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs, equivalent to `r pct_all`% of cumulative business-as-usual mortality.
+Under business-as-usual, the model projected `r fmt_m(bau_total_deaths)` million CVD deaths during 2026 - 2050. Compared with business-as-usual, achieving the general-population hypertension target was projected to avert `r fmt_m(total_bp)` million deaths and `r fmt_m(total_dalys_bp)` million DALYs, the diabetes-specific hypertension target `r fmt_m(total_bpd)` million deaths and `r fmt_m(total_dalys_bpd)` million DALYs, and the statin target `r fmt_m(total_stat)` million deaths and `r fmt_m(total_dalys_stat)` million DALYs. Achieving all three targets simultaneously was projected to avert `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs, equivalent to `r pct_all`% of cumulative business-as-usual mortality.
 
 Interpretation
 
@@ -192,13 +195,15 @@ The model was run under the primary set of assumptions described above. Formal p
 
 ## Economic valuation {#sec:econ-methods}
 
-The economic value of averted CVD mortality was estimated using two complementary metrics: the value of a statistical life (VSL) and the value of a statistical life year (VSLY). Both metrics quantify the monetary value that society places on small reductions in mortality risk and are recommended by guidelines for benefit--cost analysis of health interventions [@Robinson2019VSL].
+<!-- The economic value of averted CVD mortality was estimated using two complementary metrics: the value of a statistical life (VSL) and the value of a statistical life year (VSLY). Both metrics quantify the monetary value that society places on small reductions in mortality risk and are recommended by guidelines for benefit--cost analysis of health interventions [@Robinson2019VSL]. -->
 
-Country-specific VSL values were derived by transferring a United States reference VSL to each country using gross national income (GNI) per capita at purchasing power parity (PPP) and an income elasticity. Following Robinson et al. [-@Robinson2019VSL], the primary estimate used a differential income elasticity of 0.8 for countries at or above US income and 1.2 for countries below. A uniform elasticity of 1.5 was used as a sensitivity bound. GNI per capita was obtained from the World Bank and projected beyond the last observed year using SSP2 GDP growth rates from IIASA SSP 3.1.
+The economic value of averted CVD mortality was estimated using the value of a statistical life year (VSLY). This metric quantifies the monetary value that society places on marginal reductions in mortality risk and is recommended in guidelines for benefit–cost analyses of health interventions, particularly those targeting age-specific populations such as adults [@Robinson2019VSL; @Robinson19BCA].
+
+Country-specific VSLY values were derived by transferring a United States reference VSL to each country using gross national income (GNI) per capita at purchasing power parity (PPP) and an income elasticity. Following Robinson et al. [-@Robinson2019VSL], the primary estimate used a differential income elasticity of 0.8 for countries at or above US income and 1.2 for countries below. A uniform elasticity of 1.5 was used as a sensitivity bound. GNI per capita was obtained from the World Bank and projected beyond the last observed year using SSP2 GDP growth rates from IIASA SSP 3.1 [@IIASA2024Gdp31].
 
 The constant VSLY was derived as $\text{VSLY} = \text{VSL} / e_{\bar{a}}$, where $e_{\bar{a}}$ is the undiscounted remaining life expectancy at the population-weighted average adult age. The monetary value of averted mortality in each country-year was then computed as the product of the VSLY and the total undiscounted life-years gained, where life-years gained were calculated as $\sum_a \text{deaths averted}(a) \times e_x(a)$, with $e_x(a)$ being the remaining life expectancy at the age of death from UNWPP 2024.
 
-Annual monetary values were discounted to 2026 present value at a calendar-year discount rate of 3%. Results are presented as cumulative present values and as a proportion of discounted national income (population $\times$ GNI per capita) to facilitate cross-country comparison. Full mathematical details are provided in the Supplemental Material (see Economic Valuation Methods).
+Annual monetary values were discounted to 2026 present value at a calendar-year discount rate of 3%. Results are presented as cumulative present values and as a proportion of discounted national income (population $\times$ GNI per capita) to facilitate cross-country comparison. A similar reporting approach has been used in prior studies [@Verguet2024ECValue;@Chang2024ECValue]. Full mathematical details are provided in the Supplemental Material (see Economic Valuation Methods).
 
 # Results
 
@@ -1238,7 +1243,7 @@ econ_params <- data.frame(
     "2026"
   ),
   Source = c(
-    "Robinson \\& Hammitt (2011)",
+    "Robinson et al. (2019)",
     "Robinson et al. (2019)",
     "Robinson et al. (2019)",
     "Robinson et al. (2019)",
