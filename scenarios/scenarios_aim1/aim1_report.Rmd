@@ -2076,8 +2076,8 @@ paper_scalars <- list(
   averted_90p   = age_averted_all[age_group == "90+",   averted],
 
   # Sex (All Interventions)
-  averted_male   = sex_averted_all[sex == "male",   averted],
-  averted_female = sex_averted_all[sex == "female", averted],
+  averted_male   = sex_averted_all[sex == "Male",   averted],
+  averted_female = sex_averted_all[sex == "Female", averted],
 
   # BOD summary
   total_ylls_all  = total_ylls_all,
