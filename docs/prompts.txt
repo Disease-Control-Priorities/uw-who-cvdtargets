@@ -1430,3 +1430,68 @@ Deliverables
 
 Updated docs/who_cvd_targets_paper1.RMD
 A short summary of: changes made, any citations missing from references.bib, any cross-references that couldn't be resolved, and any assumptions you made about the economic value math when translating code → equations.
+
+#######################################################################################################
+########################################################################################################
+
+I need you to update two files in this project: docs/who_cvd_targets_paper1.RMD and scenarios/scenarios_aim1/aim1_report.RMD. Do not modify any other files. Please complete the following tasks carefully and in order.
+
+Task 1 — Fix empty averted_male and averted_female values in aim1_report.RMD
+In docs/who_cvd_targets_paper1.RMD, the Results section ## Distribution by age and sex references inline R values r fmt_m(averted_male) and r fmt_m(averted_female) that are currently empty or placeholder values.
+
+First, read scenarios/scenarios_aim1/aim1_report.RMD thoroughly to understand how other averted death/event summary statistics are being calculated.
+Identify where averted_male and averted_female should be defined — they are likely missing or incomplete calculations.
+Add or correct the code in aim1_report.RMD to properly compute averted_male and averted_female as the total number of deaths (or events) averted among males and females respectively, consistent with how other averted totals are calculated in that file.
+Do not use placeholder values — these must be derived from the actual model output data.
+
+
+Task 2 — Add a paragraph on premature mortality in who_cvd_targets_paper1.RMD
+In the ## Distribution by age and sex section of docs/who_cvd_targets_paper1.RMD, add a new paragraph after the existing text that highlights the relevance of the intervention strategies in terms of delaying premature mortality. The paragraph should:
+
+Reference the male and female averted death figures (averted_male, averted_female) inline using r fmt_m(...) calls, consistent with the style used elsewhere in the document
+Discuss how the interventions disproportionately prevent deaths in working-age or younger age groups (use whatever age-stratified data is available in the model outputs)
+Be written in formal academic manuscript style, consistent with the tone of the rest of the document
+
+
+Task 3 — Add a discussion paragraph on economic valuation in who_cvd_targets_paper1.RMD
+In the Discussion section of docs/who_cvd_targets_paper1.RMD, add a new paragraph that:
+
+Discusses the economic valuation findings from the analysis
+Benchmarks and contextualizes the findings against global estimates of the economic value of reducing avoidable mortality, specifically citing @Chang2024ECValue and @Verguet2024ECValue
+Confirm that both citation keys (Chang2024ECValue and Verguet2024ECValue) already exist in docs/references.bib before writing the paragraph — if they are missing, add the full BibTeX entries below to references.bib:
+
+bibtex@article{Chang2024ECValue,
+   author = {Angela Y. Chang and Gretchen A. Stevens and Diego S. Cardoso and Bochen Cao and Dean T. Jamison},
+   doi = {10.1038/s41591-024-03253-7},
+   issn = {1546-170X},
+   issue = {11},
+   journal = {Nature Medicine 2024 30:11},
+   keywords = {Health care economics,Health policy},
+   month = {9},
+   pages = {3327-3334},
+   pmid = {39333313},
+   publisher = {Nature Publishing Group},
+   title = {The economic value of reducing avoidable mortality},
+   volume = {30},
+   url = {https://www.nature.com/articles/s41591-024-03253-7},
+   year = {2024},
+}
+
+@article{Verguet2024ECValue,
+   author = {Stéphane Verguet and Sarah Bolongaita and Angela Y. Chang and Diego S. Cardoso and Gretchen A. Stevens},
+   doi = {10.1038/s41591-024-03248-4},
+   issn = {1546-170X},
+   issue = {11},
+   journal = {Nature Medicine 2024 30:11},
+   keywords = {Health care,Health care economics},
+   month = {9},
+   pages = {3335-3344},
+   pmid = {39333314},
+   publisher = {Nature Publishing Group},
+   title = {The economic value of reducing mortality due to noncommunicable diseases and injuries},
+   volume = {30},
+   url = {https://www.nature.com/articles/s41591-024-03248-4},
+   year = {2024},
+}
+
+The paragraph should be written in formal academic style consistent with the rest of the Discussion, and use [@Chang2024ECValue; @Verguet2024ECValue] citation syntax
