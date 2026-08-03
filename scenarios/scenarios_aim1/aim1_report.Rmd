@@ -742,10 +742,27 @@ ggsave(paste0(wd_outp, "aim1_fig3_annual_averted.png"), plot = g,
 ```{r figure4-cumulative, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
 #g <- ggplot(dt_annual[intervention %in% int_order],
             
-g <- ggplot(dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
+fig4_levels <- c("HTN Control (General Population)",
+                 "HTN Control (Diabetes)",
+                 "Improved Statin Uptake",
+                 "All Interventions")
+fig4_cols <- c("HTN Control (General Population)" = "#1f78b4",
+               "HTN Control (Diabetes)"           = "#a6cee3",
+               "Improved Statin Uptake"           = "#e31a1c",
+               "All Interventions"                = "#6a3d9a")
+
+# Include the combined "All Interventions" line alongside the three single
+# interventions, and relabel "General" -> "General Population" in the legend.
+dt_fig4 <- copy(dt_annual)[intervention != "b.a.u"]
+dt_fig4[, intervention := as.character(intervention)]
+dt_fig4[intervention == "HTN Control (General)",
+        intervention := "HTN Control (General Population)"]
+dt_fig4[, intervention := factor(intervention, levels = fig4_levels)]
+
+g <- ggplot(dt_fig4,
             aes(x = year, y = cum_deaths_delayed / 1e6, color = intervention)) +
   geom_line(linewidth = 1.1) +
-  scale_color_manual(values = int_cols, name = NULL) +
+  scale_color_manual(values = fig4_cols, name = NULL) +
   scale_y_continuous(labels = comma) +
   labs(
     title = "Cumulative Deaths Averted by Intervention, 2026\u20132050",
@@ -757,6 +774,51 @@ g <- ggplot(dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
         plot.title = element_text(face = "bold"))
 print(g)
 ggsave(paste0(wd_outp, "aim1_fig4_cum_averted.png"), plot = g,
+       width = 11, height = 5, dpi = 300)
+```
+
+## Figure 4b --- Cumulative Deaths Averted Over Time by Region (All Interventions)
+
+Cumulative deaths averted over time (2026--2050) under the combined all-interventions
+scenario, with one line per WHO region.
+
+```{r figure4b-cumulative-region, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
+who_region_levels <- c("Africa", "Americas", "Eastern Mediterranean",
+                       "Europe", "South-East Asia", "Western Pacific")
+
+# Region x year deaths averted under the combined scenario (All Interventions),
+# then cumulated over time within each WHO region.
+reg_base <- data.out[intervention == "b.a.u" & year >= 2025,
+                     .(baseline_deaths = sum(dead, na.rm = TRUE)),
+                     by = .(region, year)]
+reg_int  <- data.out[intervention == "All Interventions" & year >= 2025,
+                     .(deaths_projected = sum(dead, na.rm = TRUE)),
+                     by = .(region, year)]
+
+dt_region_annual <- merge(reg_int, reg_base, by = c("region", "year"), all.x = TRUE)
+dt_region_annual <- dt_region_annual[region %in% who_region_levels]
+dt_region_annual[, deaths_delayed := baseline_deaths - deaths_projected]
+setorder(dt_region_annual, region, year)
+dt_region_annual[, cum_deaths_delayed := cumsum(deaths_delayed), by = region]
+dt_region_annual[, region := factor(region, levels = who_region_levels)]
+
+g <- ggplot(dt_region_annual,
+            aes(x = year, y = cum_deaths_delayed / 1e6, color = region)) +
+  geom_line(linewidth = 1.1) +
+  scale_color_brewer(palette = "Dark2", name = NULL) +
+  scale_y_continuous(labels = comma) +
+  labs(
+    title    = "Cumulative Deaths Averted Over Time by Region, 2026–2050",
+    subtitle = "All Interventions combined",
+    x        = "Year",
+    y        = "Cumulative deaths averted (millions)"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        plot.title    = element_text(face = "bold"),
+        plot.subtitle = element_text(color = "grey40"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_fig7_cum_region.png"), plot = g,
        width = 11, height = 5, dpi = 300)
 ```
 

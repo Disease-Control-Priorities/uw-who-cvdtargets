@@ -1495,3 +1495,23 @@ bibtex@article{Chang2024ECValue,
 }
 
 The paragraph should be written in formal academic style consistent with the rest of the Discussion, and use [@Chang2024ECValue; @Verguet2024ECValue] citation syntax
+
+#################################################################################33
+#################################################################################33
+
+# Updating figures
+
+I need you to modify docs/who_cvd_targets_paper1.RMD to update the Figures section. Note that the figures themselves are computed in scenarios/scenarios_aim1/aim1_report.RMD and consumed by docs/who_cvd_targets_paper1.RMD, so you'll need to read and understand both files before making changes.
+Please make the following changes:
+
+Figure 1 ("Cumulative CVD deaths averted over time by intervention scenario"): Add a fourth line representing the cumulative effect of all 3 scenarios combined, labelled "All interventions". Also, relabel the dark blue line from "General" to "General Population".
+Add a new Figure 3: "Cumulative CVD deaths averted over time with all interventions by region", where each region is plotted as a separate line.
+Renumber all figures accordingly, and update every cross-reference to figures throughout the manuscript so the numbering stays consistent.
+
+Before editing, please:
+
+Read both .RMD files to understand the existing figure-generation code, data structures, and how figures flow from aim1_report.RMD into the paper.
+Identify where the new "All interventions" aggregate and the per-region data come from (or flag if the underlying data/computation isn't available and needs to be added in aim1_report.RMD).
+Confirm the existing figure numbering and all cross-reference locations.
+
+Then make the edits, and summarize what you changed in each file.
