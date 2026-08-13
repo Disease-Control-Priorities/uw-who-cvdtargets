@@ -60,7 +60,9 @@ dt_gbd_rr <- copy(dt_expanded)
 #   rr_per_10mmhg = c(0.83, 0.72, 0.73, 0.73, 0.93)
 # )
 
-ETIHAD_RR <- fread(paste0(wd_data, "ettehad_rr_bp_reduction_10mmHg.csv"))
+#ETIHAD_RR <- fread(paste0(wd_data, "ettehad_rr_bp_reduction_10mmHg.csv"))
+
+ETIHAD_RR <- fread(paste0(wd_data, "ettehad_rr_bp_reduction_10mmHg_bplttc_2021.csv"))
 
 # rename to cause column
 ETIHAD_RR[, cause := fcase(
@@ -215,8 +217,11 @@ calculate_aggregate_coverage <- function(dt,
 }
 
 # Import from excel .xlsx file ettehad_rr_bp_reduction_effects
-ETIHAD_RR_BIN<- as.data.table(read_excel(paste0(wd_data, "ettehad_rr_bp_reduction_effects.xlsx"), 
-                                         sheet = "Sheet1")) 
+ETIHAD_RR_BIN<- as.data.table(read_excel(paste0(wd_data, "ettehad_rr_bp_reduction_effects_bplttc_2021.xlsx"), 
+                                         sheet = "Sheet1"))
+
+# ETIHAD_RR_BIN<- as.data.table(read_excel(paste0(wd_data, "ettehad_rr_bp_reduction_effects.xlsx"), 
+#                                          sheet = "Sheet1"))
 
 # Calculate cumulative ETIHAD effect size for BP bins
 # For each bin, calculate cumulative effect of reducing BP by 10 mmHg steps

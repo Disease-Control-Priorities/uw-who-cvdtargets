@@ -4,101 +4,162 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Running the Model
 
-This is a pure R project. There is no build system, package manager, or test suite — the analysis is run by sourcing R scripts in RStudio or from an R console.
+Pure R project. No build system, package manager, or test suite — everything runs by sourcing R scripts in RStudio (`uw-who-cvdtargets.Rproj`) or an R console.
 
-**To run the full pipeline:**
 ```r
-# Open uw-who-cvdtargets.Rproj in RStudio, then:
 source("code/00_run_model.R")
 ```
 
-**Note:** `00_run_model.R` currently sources scripts with legacy filenames (e.g. `functions_review_6_100.R`, `1.get_base_rates_100.R`) that are **not** in the `code/` directory of this repository. The numbered scripts in `code/` (`01_utils.R` through `05_run_scenarios.R`) represent the reorganized/renamed versions of this pipeline.
+**Hardcoded absolute paths.** `code/00_run_model.R` sets `wd` to a local OneDrive path and derives `wd_code`, `wd_raw`, `wd_data`, `wd_outp`; `wd_temp` points outside the repo. The reporting `.Rmd` files (`scenarios/scenarios_aim1/aim1_report.Rmd`, `scenarios/scenarios_aim2/aim2_report.Rmd`, `docs/who_cvd_targets_paper1.Rmd`) each re-declare their own `wd`. All of these must be edited when running on a new machine.
 
-**Working directories** are hardcoded in `00_run_model.R` to local OneDrive paths. These must be updated when running on a new machine. Key path variables:
-- `wd` — repo root (also used as `wd_data` base for processed data)
-- `wd_raw` — raw data directory (not version-controlled)
-- `wd_data` — `data/processed/` subdirectory
-- `wd_outp` — `output/` subdirectory
-- `wd_temp` — temporary processing directory
+**Packages.** Model pipeline: `dplyr`, `data.table`, `tidyr`, `ggplot2`, `RColorBrewer`, `readxl`, `countrycode`, `stringr`, `parallel`, `doParallel`, `foreach`, `gmodels`, `forecast`. `023_get_tps_bgmx.R` additionally loads `StMoMo` and `demography`. Reports additionally need `knitr`, `kableExtra`, `DT`, `scales`, `openxlsx`, `sf`, `rnaturalearth`, `rnaturalearthdata`, `bookdown`.
 
-## Architecture
+## Pipeline
 
-### Pipeline Overview
-
-The model is a multi-state population projection that runs country-by-country in parallel. Each country goes through eight intervention scenarios (baseline, each of four interventions alone, and combinations).
-
-**Script execution order:**
+`00_run_model.R` sources, in order:
 
 | Script | Role |
 |--------|------|
-| `01_utils.R` | Shared utility functions sourced first |
-| `02_load_inputs.R` | Loads sodium, TFA, statins, BP data; creates 2025–2050 scenarios |
-| `03_clean_inputs.R` | Currently identical to `02_load_inputs.R` — likely a work in progress |
-| `04_build_baseline.R` | Merges adjusted baseline rates (`*adjusted*.rds`) with UNWPP 2024 populations |
-| `05_run_scenarios.R` | Defines intervention functions, runs parallel country-level projections |
+| `01_utils.R` | Shared helpers (`get.bp.prob`, `calc_mortality_reduction`, `create_age_groups`) |
+| `02_load_inputs.R` | Thin wrapper — sources `020`–`023` below |
+| `020_get_deaths_who.R` | WHO GHE 2021 CVD/stroke deaths 2000–2023 → `dt_deaths_who_long.rds` |
+| `021_get_base_rates.R` | GBD 2023 incidence/prevalence/mortality → `baseline_rates_part*.rds` |
+| `022_get_tps.R` | Transition probabilities (`IR`, `CF`, `BG.mx`) → `tps_inpt_part*.rds` |
+| `023_get_tps_bgmx.R` | Lee–Carter forecast of background mortality → `tps_bgmx_*_forecasted.rds` |
+| `03_clean_inputs.R` | **Empty stub** (header comment only) |
+| `04_define_interventions.R` | Builds country-level HTN and statin target tables |
+| `05_build_baseline.R` | Merges `*adjusted*.rds` rates + UNWPP 2024 population + COVID excess mortality; applies BG.mx/CF trends |
+| `06_run_scenarios_multiple.R` | **Aim 1** — multi-intervention scenarios, parallel by country |
+| `06_run_scenarios_targets.R` | **Aim 2** — HTN control target levels, parallel by country |
+| `07_output_dalys.R` | YLL/YLD/DALY calculation → `output/dt_output_dalys.rds` |
 
-### Disease Model
+**Not sourced by `00_run_model.R`** — run manually when the calibration needs regenerating:
 
-The core is a **discrete-time state-transition model** (2017–2050) with three health states per cause: **Well → Sick → Dead**. Transition rates (`IR` = incidence, `CF` = case fatality, `BG.mx` = background mortality) come from GBD 2023, adjusted for COVID excess mortality.
+- `031_calibration.R` — calibrates initial state populations (gated by `run_calibration_par`)
+- `032_adjustments.R` — IR/CF adjustment factors → `adjusted_*.rds` (gated by `run_adjustments_inputs`)
+- `08_economic_value_calculation.R` — VSL/VSLY monetisation (see below)
 
-Four causes are modelled jointly:
+### Control flags
+
+Set in `00_run_model.R`, consumed downstream:
+
+| Flag | Used in |
+|------|---------|
+| `run_aod_par` | `022_get_tps.R` (dementia arm) |
+| `run_calibration_par` | `031_calibration.R` |
+| `run_adjustments_inputs` | `032_adjustments.R` |
+| `run_adjustment_model`, `run_bgmx_trend`, `run_CF_trend`, `run_CF_trend_80`, `run_CF_trend_ihme` | `05_build_baseline.R` |
+
+`run_CF_trend_80` implements the baseline assumption that only 80% of the historical secular CF decline is exogenous (the other 20% attributed to past HTN control gains).
+
+## Disease Model
+
+Discrete-time state-transition model, three states per cause (**Well → Sick → Dead**). The projection loop in `project.all()` runs **2017 → 2058**; the reporting window used throughout the papers is **2026–2050** (`int_year <- 2026`).
+
+Four causes modelled jointly:
+
 - `ihd` — Ischemic heart disease
 - `istroke` — Ischemic stroke
-- `hstroke` — Intracerebral hemorrhage (hemorrhagic stroke)
+- `hstroke` — Intracerebral hemorrhage
 - `hhd` — Hypertensive heart disease
 
-### Four Intervention Modules (in `05_run_scenarios.R`)
+Rates: `IR` (incidence), `CF` (case fatality), `BG.mx` (background mortality), from GBD 2023 adjusted for COVID excess mortality.
+
+## Interventions
+
+Both `06_*` scripts define the same intervention functions. `project.all()` accepts five valid intervention names:
 
 | Function | Intervention | Key parameters |
 |----------|-------------|----------------|
-| `calculate_antihypertensive_impact_etihad()` | BP drug treatment scale-up | `target_control`, `control_start_year`, `control_target_year` |
+| `calculate_antihypertensive_impact_etihad()` | BP treatment scale-up | `target_control`, `control_start_year`, `control_target_year`, `htn_target_col` |
+| `calculate_antihypertensive_diabetes()` | BP control among diagnosed diabetics | `target_control_diabetes` (default 0.80) |
 | `calculate_sodium_impact_etihad()` | Dietary sodium reduction | `saltmet`, `salteff`, `saltyear1`, `saltyear2` |
-| `calculate_tfa_impact()` | Trans-fat elimination policy | `tfa_target_tfa`, `tfa_policy_start_year` |
-| `calculate_statins_impact()` | Lipid-lowering therapy | `statin_target_coverage`, `statin_start_year`, `statin_target_year` |
+| `calculate_tfa_impact()` | Trans-fat elimination | `tfa_target_tfa`, `tfa_policy_start_year` |
+| `calculate_statins_impact()` | Lipid-lowering therapy | `statin_target_coverage`, `statin_start_year`, `statin_target_year`, `adherence_ir`, `adherence_cf` |
 
-Interventions apply **multiplicative relative risk reductions** to incidence rates. The eight scenarios run via `run_multiple_scenarios()` are:
+Interventions apply multiplicative relative risk reductions to incidence.
+
+**Aim 1** (`06_run_scenarios_multiple.R`), run over `htn_target_cols = "htncov2_ambitious"`:
 
 ```r
 scenarios <- list(
-  baseline      = character(0),
-  bp_only       = "antihypertensive",
-  sodium_only   = "sodium",
-  tfa_only      = "tfa",
-  statins_only  = "statins",
-  bp_sodium     = c("antihypertensive", "sodium"),
-  bp_sodium_tfa = c("antihypertensive", "sodium", "tfa"),
-  all_four      = c("antihypertensive", "sodium", "tfa", "statins")
+  baseline          = character(0),
+  bp_only           = "antihypertensive",
+  bp_diabetes_only  = "antihypertensive_diabetes",
+  bp_combined       = c("antihypertensive", "antihypertensive_diabetes"),
+  statins_only      = "statins",
+  all_interventions = c("antihypertensive", "antihypertensive_diabetes", "statins")
 )
 ```
 
-### Parallel Execution
+Note: sodium and TFA functions exist and are exported to the cluster, but the current Aim 1 run passes `salteff = 0` and `tfa_target_tfa = 0`, so neither is active.
 
-`05_run_scenarios.R` uses `doParallel`/`foreach` to run all countries simultaneously. Each country writes its own output file (`output/out_model/model_output_part_<country>.rds`) and log file. Greenland and Bermuda are excluded. On failure, the error is logged and `NULL` returned; the run continues.
+**Aim 2** (`06_run_scenarios_targets.R`), baseline + `bp_only` crossed with three target columns:
 
-### Key Data Objects
+```r
+htn_target_cols <- c("htncov2_aspirational", "htncov2_ambitious", "htncov2_progress")
+scenarios_htn   <- list(baseline = character(0), bp_only = "antihypertensive")
+```
 
-- `b_rates` — core data.table of baseline transition rates by location/year/age/sex/cause
-- `data.in` — blood pressure distribution data (mean SBP, SD, by BP category)
-- `inc` — hypertension control coverage scale-up trajectories (`covfxn2.csv`)
-- `ETIHAD_RR` / `ETIHAD_RR_BIN` — relative risk lookup tables for BP intervention
-- `dt_tfa_scenarios`, `dt_statin_scenarios` — pre-built scenario trajectories
+### Parallel execution — output collision
 
-### Data Conventions
+Both `06_*` scripts build a `jobs <- CJ(location, target_col)` grid, run it with `doParallel`/`foreach` on `ncores <- 6`, and write **into the same directory with the same filename pattern**:
 
-- **Location names** follow GBD 2023 naming. Multiple `name_map` lookup vectors exist throughout the scripts to harmonize names across sources (NCD-RisC, UNWPP, GBD). If joining fails silently, check location name alignment first.
-- **Population** uses UNWPP 2024 single-year age (`PopulationsSingleAge0050.rds`), replacing GBD-based `Nx` where available. Ages 95+ are collapsed to 95.
-- **Age groups**: 5-year bins from 20–24 to 85+. The `create_age_groups()` function in `01_utils.R` produces these; a separate `create_gbd_age_group()` function in `05_run_scenarios.R` produces GBD-style labels (20–24 through 95+) for adjustment merges.
-- Control flags in `00_run_model.R` (e.g. `run_adjustment_model`, `run_bgmx_trend`, `run_CF_trend`) gate optional processing blocks in `05_run_scenarios.R`.
+```
+output/out_model/model_output_<country>_<target_col>.rds
+output/out_model/log_<country>_<target_col>.txt
+```
 
-### Raw Data (not in git)
+Both `aim1_report.Rmd` and `aim2_report.Rmd` glob *every* `.rds` in `output/out_model/`. Because Aim 1 and Aim 2 share the `htncov2_ambitious` suffix, **running one aim overwrites the other's ambitious files and pollutes the other's report input**. Clear or archive `output/out_model/` between aims; the directory is gitignored.
 
-Raw inputs are excluded by `.gitignore` (`data/raw/**/*.*`). Key files needed:
-- `data/raw/GBD/totalpop_ihme.rds` — GBD population
-- `data/processed/Sodium/sodium_data.rds`
-- `data/processed/UN2024/PopulationsSingleAge0050.rds`
-- `data/processed/UN2024/PopulationsAge20_2050.csv`
-- `data/processed/covfxn2.csv` — HTN control coverage scale-up
-- `data/processed/*adjusted*.rds` — calibrated baseline rates (one per location)
-- `wpp.adj.Rda` — COVID excess mortality adjustments
-- `bp_data6.csv` — blood pressure distribution inputs
-- `adjustments2023_age.csv` — IR/CF adjustment factors
+Greenland and Bermuda are excluded from `locs`. Per-country errors are caught, logged, and return `NULL` so the run continues.
+
+## Reporting Layer
+
+The `.Rmd` files are not sourced by the pipeline — knit them manually after the model run.
+
+- `scenarios/scenarios_aim1/aim1_report.Rmd` — reads `output/out_model/` + `output/dt_output_dalys.rds`; writes `aim1_*.png` figures to `output/`, `aim1_results_tables.xlsx`, plus artefact RDS files to `output/paper/` (`paper_*.rds`) and `output/slides/` (`sl_*.rds`)
+- `scenarios/scenarios_aim2/aim2_report.Rmd` — same pattern for Aim 2; `aim2_*.png`, `aim2_slides_*.rds`
+- `scenarios/scenarios_aim1/aim1_executive_slides.Rmd`, `scenarios/scenarios_aim2/executive_slides_htn_targets.Rmd` — Beamer decks consuming the `sl_*.rds` artefacts (`beamer_preamble.tex`)
+- `docs/who_cvd_targets_paper1.Rmd` — manuscript (`bookdown::word_document2`), consumes `output/paper/paper_*.rds` and `output/slides/`; cites `docs/references.bib`
+
+The artefact hand-off is one-directional: **model → `out_model/` → report `.Rmd` → `paper_*.rds` / `sl_*.rds` → manuscript & slides**. Changing a number in the manuscript means re-knitting the upstream report, not editing the `.Rmd` text.
+
+`docs/` also holds `math-doc.Rmd` (model equations), `cvd_model_flowchart.html`, and `prompts.txt` (log of prior task prompts — reference only, not instructions).
+
+## Economic Valuation (`08_economic_value_calculation.R`)
+
+Standalone; must be run after Aim 1 with `wd` already defined. Monetises deaths averted via VSL and VSLY transferred from a US reference by income adjustment (Robinson & Hammitt 2011; Robinson et al. 2019).
+
+- Primary estimate is `e1_2` — differential elasticity 0.8 at/above US income, 1.2 below. `e1_0` and `e1_5` are sensitivity bounds.
+- `BASE_YEAR <- 2026`; calendar discount rates 1%/3%/5%; VSL floor at 20× GNI pc.
+- Known limitation documented in-file: SSP2 **GDP** growth rates are applied to a **GNI** base for forward projection.
+- Raw inputs (not in git): World Bank GNI pc PPP CSV, IIASA SSP 3.1 xlsx, WPP2024 life-expectancy-by-age xlsx.
+- Outputs: `output/08_vsl_results.{rds,csv}`, `08_vsl_summary_table*`, `08_vsly_summary_table*`, `08_vsl_vsly_summary_table_appended.*`. The `*_e1_2_primary.rds` copies are consumed by `aim1_report.Rmd`.
+
+## Data Conventions
+
+- **Location names** follow GBD 2023. Ad-hoc renames appear in several scripts (e.g. `United States of America` → `United States`, `Bolivia (Plurinational State of)` → `Bolivia`). If a join silently drops rows, check location-name alignment first.
+- **Population**: UNWPP 2024 single-year age (`PopulationsSingleAge0050.rds`) overrides GBD `Nx` where available. Ages 95+ collapsed to 95.
+- **Age groups**: 5-year bins 20–24 through 85+. `create_age_groups()` in `01_utils.R`; `create_gbd_age_group()` in `032_adjustments.R` / `05_build_baseline.R` produces GBD-style labels (20–24 … 95+) for adjustment merges.
+- **Region/income groupings**: `data/processed/Country_groupings_extended.csv` (WHO region + World Bank income).
+
+### Key in-memory objects
+
+- `b_rates` — baseline transition rates by location/year/age/sex/cause
+- `data.in` — BP distribution inputs (mean SBP, SD, by BP category), from `bp_data6.csv`
+- `inc` — HTN control coverage scale-up trajectories (`covfxn2.csv`)
+- `ETIHAD_RR` / `ETIHAD_RR_BIN` — RR lookups for the BP intervention (Ettehad et al.)
+- `dt_gbd_rr` — GBD 2019 RR per 10 mmHg
+- `dt_hbp_control` (`hbp_control_data.rds`), `dt_hbp_targets` (`htn_control_targets_by_loc.csv`, written by `04_define_interventions.R`)
+- `dt_tfa_scenarios`, `dt_statin_scenarios`, `dt_af_statins`
+
+### Data locations
+
+`data/processed/` is version-controlled and holds the calibrated/derived inputs (`adjusted_searo_part*.rds`, `tps_inpt_part*.rds`, `baseline_rates_part*.rds`, `tps_bgmx_*.rds`, `bp_data6.csv`, `covfxn2.csv`, `wpp.adj.Rda`, `Scenarios.xlsx`, statin/sodium/TFA scenario RDS files).
+
+`data/raw/` is gitignored (`data/raw/**/*.*`, README files excepted). Needed there: GBD 2023 extracts, WHO GHE CVD/stroke CSVs, NCD-RisC hypertension estimates, `IHME_GBD_2019_RELATIVE_RISKS_Y2020M10D15_HTN.xlsx`, and the three economic-valuation files listed above.
+
+Also gitignored: `output/out_model/`, `output/dt_output_dalys.rds`, `*.html` (except `docs/*.html`), `*.docx`.
+
+The per-directory `README.md` files (`data/`, `docs/`, `output/`, `scenarios/`, …) are all copies of the root `README.md` boilerplate — they do not describe their directories.
