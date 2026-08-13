@@ -109,8 +109,7 @@ source("05_build_baseline.R")
 #...........................................................
 
 # Run Aim 1: multiple interventions
-source("06_run_scenarios_multiple.R")
-
+source(paste0(wd_code,"06_run_scenarios_multiple.R"))
 # Run Aim 2: HTN control scenarios, 150 Million by 2030
 source("06_run_scenarios_targets.R")
 
@@ -118,4 +117,11 @@ source("06_run_scenarios_targets.R")
 # 07. Run Burden of Disease ----
 #...........................................................
 
-source("07_output_dalys.R")
+source(paste0(wd_code,"07_output_dalys.R"))
+
+#...........................................................
+# 08. Run economic value ----
+#...........................................................
+
+source(paste0(wd_code,"08_economic_value_calculation.R"))
+
