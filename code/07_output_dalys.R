@@ -121,21 +121,29 @@ data.out <- rbindlist(
 )
 data.out <- data.out[!is.na(location)]
 
+# Map project.all intervention labels (and older scenario-name aliases) to the
+# display labels used in aim1_report.Rmd. The general BP intervention is now the
+# mutually-exclusive no-diabetes subgroup -> "HTN Control (No Diabetes)". The
+# all_interventions bundle now also includes sodium + TFA, so its label is
+# "BP + BP_diabetes + Salt + TFA + Statins" (older label kept for back-compat).
 data.out[intervention %in% c("baseline", "BAU", "b.a.u"),
          intervention := "b.a.u"]
-data.out[intervention %in% c("bp_only", "antihypertensive",
+data.out[intervention %in% c("bp_no_diabetes_only", "bp_only", "antihypertensive",
                              "BP", "Antihypertensive therapy"),
-         intervention := "HTN Control (General)"]
+         intervention := "HTN Control (No Diabetes)"]
 data.out[intervention %in% c("bp_diabetes_only", "antihypertensive_diabetes","BP_diabetes"),
          intervention := "HTN Control (Diabetes)"]
 data.out[intervention %in% c("statins_only", "statins", "Statins"),
          intervention := "Improved Statin Uptake"]
-data.out[intervention %in% c("all_interventions","BP + BP_diabetes + Statins"),
+data.out[intervention %in% c("all_interventions",
+                             "BP + BP_diabetes + Salt + TFA + Statins",
+                             "BP + BP_diabetes + Statins"),
          intervention := "All Interventions"]
 
-## keep only relevant scenarios
+## keep only relevant scenarios (bp_combined is excluded here; it is the sum of
+## the two BP subgroups and is summarised separately in the control-target tables)
 
-data.out <- data.out[intervention %in% c("b.a.u", "HTN Control (General)", "HTN Control (Diabetes)","Improved Statin Uptake","All Interventions")]
+data.out <- data.out[intervention %in% c("b.a.u", "HTN Control (No Diabetes)", "HTN Control (Diabetes)","Improved Statin Uptake","All Interventions")]
 
 # # ---- Core: deaths delayed by intervention x year ----------------------------
 # dt_base <- data.out[intervention == "b.a.u" & year >= 2025,

@@ -48,6 +48,26 @@ wd_raw <- paste0(wd,"data/raw/")
 ```
 
 ```{r helpers, message=FALSE, warning=FALSE, echo=FALSE}
+# ---- OneDrive-resilient artefact writers -------------------------------------
+# The output/ tree lives inside a OneDrive-synced folder. When OneDrive is
+# syncing an existing artefact, a write to that file intermittently fails with
+# "cannot open the connection" (gzfile). These wrappers shadow saveRDS()/ggsave()
+# with a short retry loop so knitting is resilient to transient file locks.
+.write_with_retry <- function(fun, path, ..., .tries = 8, .wait = 0.6) {
+  for (attempt in seq_len(.tries)) {
+    ok <- tryCatch({ fun(...); TRUE }, error = function(e) conditionMessage(e))
+    if (isTRUE(ok)) return(invisible(NULL))
+    if (attempt == .tries) stop(ok, call. = FALSE)
+    Sys.sleep(.wait)
+  }
+}
+saveRDS <- function(object, file = "", ...) {
+  .write_with_retry(function() base::saveRDS(object, file, ...), file)
+}
+ggsave <- function(filename, ...) {
+  .write_with_retry(function() ggplot2::ggsave(filename, ...), filename)
+}
+
 # ---- Formatters --------------------------------------------------------------
 fmt_ci <- function(est, lo, hi, digits = 1) {
   f <- function(x) formatC(round(x / 1e6, digits), format = "f",
@@ -70,24 +90,28 @@ cause_map <- c(
 )
 
 # ---- Intervention display labels --------------------------------------------
-# Scenarios from 06_run_scenarios_multiple.R:
-#   baseline          -> b.a.u
-#   bp_only           -> HTN Control (General)   [50% control by 2030]
-#   bp_diabetes_only  -> HTN Control (Diabetes)  [80% in diabetics by 2030]
-#   bp_combined       -> excluded from report output
-#   statins_only      -> Improved Statin Uptake   [50% coverage by 2030]
-#   all_interventions -> All Interventions
+# Scenarios from 06_run_scenarios_multiple.R (mutually-exclusive BP subgroups):
+#   baseline            -> b.a.u
+#   bp_no_diabetes_only -> HTN Control (No Diabetes)  [hypertensives WITHOUT diabetes]
+#   bp_diabetes_only    -> HTN Control (Diabetes)     [hypertensives WITH diabetes; 0.80 ceiling]
+#   bp_combined         -> excluded from deaths figures (= sum of the two subgroups; 150M policy)
+#   statins_only        -> Improved Statin Uptake
+#   all_interventions   -> All Interventions
+# The two BP subgroups are mutually exclusive and combine ADDITIVELY as a
+# population mixture (no multiplicative cross-term); bp_combined is the 150-million
+# policy scenario and is summarised in the HTN control-target tables, not the
+# per-intervention deaths figures.
 
 int_labels <- c(
-  "b.a.u"                  = "Business-as-Usual",
-  "HTN Control (General)"  = "HTN Control (General)",
-  "HTN Control (Diabetes)" = "HTN Control (Diabetes)",
-  "Improved Statin Uptake" = "Improved Statin Uptake",
-  "All Interventions"      = "All Interventions"
+  "b.a.u"                     = "Business-as-Usual",
+  "HTN Control (No Diabetes)" = "HTN Control (No Diabetes)",
+  "HTN Control (Diabetes)"    = "HTN Control (Diabetes)",
+  "Improved Statin Uptake"    = "Improved Statin Uptake",
+  "All Interventions"         = "All Interventions"
 )
 
 int_order <- c(
-  "HTN Control (General)",
+  "HTN Control (No Diabetes)",
   "HTN Control (Diabetes)",
   "Improved Statin Uptake",
   "All Interventions"
@@ -95,11 +119,11 @@ int_order <- c(
 
 # ---- Colour palettes ---------------------------------------------------------
 int_cols <- c(
-  "HTN Control (General)"  = "#1f78b4",
-  "HTN Control (Diabetes)" = "#a6cee3",
-  "Improved Statin Uptake" = "#e31a1c",
-  "All Interventions"      = "#6a3d9a",
-  "Business-as-Usual"      = "#999999"
+  "HTN Control (No Diabetes)" = "#1f78b4",
+  "HTN Control (Diabetes)"    = "#a6cee3",
+  "Improved Statin Uptake"    = "#e31a1c",
+  "All Interventions"         = "#6a3d9a",
+  "Business-as-Usual"         = "#999999"
 )
 
 cause_cols <- c(
@@ -273,17 +297,22 @@ if ("scenario" %in% names(data.out) && !"intervention" %in% names(data.out)) {
 
 data.out[intervention %in% c("baseline", "BAU", "b.a.u"),
          intervention := "b.a.u"]
-data.out[intervention %in% c("bp_only", "antihypertensive",
+# "bp_no_diabetes_only" is the current scenario name; "bp_only"/"BP"/"antihypertensive"
+# are retained as aliases for backward compatibility with older model outputs.
+data.out[intervention %in% c("bp_no_diabetes_only", "bp_only", "antihypertensive",
                               "BP", "Antihypertensive therapy"),
-         intervention := "HTN Control (General)"]
-data.out[intervention %in% c("bp_diabetes_only", "antihypertensive_diabetes"),
+         intervention := "HTN Control (No Diabetes)"]
+data.out[intervention %in% c("bp_diabetes_only", "antihypertensive_diabetes",
+                              "BP_diabetes"),
          intervention := "HTN Control (Diabetes)"]
 data.out[intervention %in% c("statins_only", "statins", "Statins"),
          intervention := "Improved Statin Uptake"]
 data.out[intervention %in% c("all_interventions"),
          intervention := "All Interventions"]
 
-# Keep only recognised scenarios; bp_combined excluded from report
+# Keep only recognised scenarios; bp_combined (= sum of the two BP subgroups, the
+# 150M policy scenario) is excluded from the per-intervention deaths figures and
+# is instead summarised in the HTN control-target tables below.
 data.out <- data.out[intervention %in% c("b.a.u", int_order)]
 
 # ---- Merge region metadata ---------------------------------------------------
@@ -334,20 +363,270 @@ The model evaluates progress toward four WHO priority cardiovascular targets:
 
 | # | WHO Target | Modelled Intervention |
 |---|---|---|
-| 1 | 150 million more people with hypertension under control by 2030 | **HTN Control (General):** linear scale-up to 50% population BP control by 2030 |
+| 1 | 150 million more people with hypertension under control by 2030 | **HTN Control (Combined):** additional control among hypertensives, split into mutually exclusive **no-diabetes** and **diabetes** subgroups |
 | 2 | >=50% of eligible individuals receiving lipid-lowering therapy and counselling | **Improved Statin Uptake:** 50% statin coverage among eligible adults by 2030 |
-| 3 | 80% blood pressure control among people with diagnosed diabetes | **HTN Control (Diabetes):** 80% BP control in the diabetic sub-population by 2030 |
+| 3 | 80% blood pressure control among people with diagnosed diabetes | **HTN Control (Diabetes):** BP control among hypertensives *with* diabetes (0.80 aspirational ceiling by 2030) |
 | 4 | 80% availability of validated automated blood pressure devices in public and private facilities | Operationally embedded in the HTN Control scenarios; enables Targets 1 and 3 |
 
-Three active intervention scenarios are modelled against a business-as-usual baseline:
+Target 1 (150 million more controlled) is modelled as two **mutually exclusive and
+exhaustive** subgroups of the hypertensive population, so a person with diabetes is
+counted once, in the diabetes subgroup only:
 
-* **HTN Control (General)** --- antihypertensive therapy scale-up across the general hypertensive
-  population (50% control by 2030; Ettehad et al. effect sizes).
-* **HTN Control (Diabetes)** --- targeted BP control in the diabetic sub-population
-  (80% control by 2030; effect sizes weighted by country-level diabetes prevalence).
+* **HTN Control (No Diabetes)** --- antihypertensive scale-up among hypertensives
+  **without** diabetes (subgroup-specific Ettehad effect sizes).
+* **HTN Control (Diabetes)** --- BP control among hypertensives **with** diabetes,
+  moving toward a 0.80 aspirational ceiling (diabetes-specific Ettehad effect sizes).
+* **HTN Control (Combined)** --- both subgroups together; this is the scenario that
+  delivers the **150-million** additional-controlled target and is the sum of the two
+  subgroup contributions (there is no multiplicative cross-term between them).
 * **Improved Statin Uptake** --- lipid-lowering therapy for eligible adults
-  (50% coverage by 2030; affects IHD and ischemic stroke via attributable-fraction approach).
-* **All Interventions** --- all three strategies simultaneously.
+  (50% coverage by 2030; affects IHD and ischemic stroke via an attributable-fraction approach).
+* **All Interventions** --- BP subgroups + statins simultaneously.
+
+Baseline control among hypertensives with diabetes is assumed 15 percentage points
+higher than among those without, preserving the observed overall control rate
+($c = (1-w_D)\,c_N + w_D\,c_D$, with $c_N = c - w_D(0.15)$ and $c_D = c + (1-w_D)(0.15)$).
+The 150-million target is allocated between subgroups by a single shared proportional
+scale-up (diabetes capped at 0.80, no-diabetes at 1.0) on the **fixed 2025 population**,
+so the two subgroup additions sum to exactly 150 million.
+
+## HTN Control Targets: 150 Million Additional Controlled, by Diabetes Status and WHO Region
+
+```{r control-summary, message=FALSE, warning=FALSE, echo=FALSE}
+# Build the control-target summary directly from the long scenario table written
+# by code/04_define_interventions.R (scenario_id x location x sex x subgroup),
+# joined to WHO region. All coverage rates and 2030 controlled counts use the
+# FIXED 2025 population denominator, so the diabetes / no-diabetes additions sum
+# to exactly 150 million. This object is saved to output/slides/ and reused
+# verbatim by aim1_executive_slides.Rmd (no recomputation in the slides).
+
+htn_tg <- fread(paste0(wd_data, "htn_control_targets_by_loc.csv"))
+htn_tg <- merge(htn_tg, countries_dt[, .(location, region)],
+                by = "location", all.x = TRUE)
+n_region_unmapped <- htn_tg[is.na(region), uniqueN(location)]
+
+scenario_lbl <- c(
+  baseline            = "Baseline (business-as-usual)",
+  bp_no_diabetes_only = "HTN Control (No Diabetes)",
+  bp_diabetes_only    = "HTN Control (Diabetes)",
+  bp_combined         = "HTN Control (Combined, 150M target)"
+)
+subgroup_lbl <- c(
+  htn_no_diabetes = "Without diabetes",
+  htn_diabetes    = "With diabetes",
+  total           = "All hypertensives"
+)
+
+agg_control <- function(dt) {
+  base <- dt[, .(
+    htn_pop_2025    = sum(htn_population_2025),
+    controlled_2025 = sum(controlled_2025),
+    controlled_2030 = sum(controlled_2030),
+    additional_2030 = sum(additional_controlled_2030)
+  ), by = .(region, scenario_id, subgroup)]
+  tot <- dt[, .(
+    subgroup        = "total",
+    htn_pop_2025    = sum(htn_population_2025),
+    controlled_2025 = sum(controlled_2025),
+    controlled_2030 = sum(controlled_2030),
+    additional_2030 = sum(additional_controlled_2030)
+  ), by = .(region, scenario_id)]
+  rbind(base, tot)
+}
+
+control_summary <- rbind(
+  agg_control(htn_tg[!is.na(region)]),
+  agg_control(copy(htn_tg)[, region := "Global"])
+)
+control_summary[, `:=`(
+  coverage_2025 = controlled_2025 / htn_pop_2025,
+  coverage_2030 = controlled_2030 / htn_pop_2025,
+  pct_increase  = fifelse(controlled_2025 > 0,
+                          additional_2030 / controlled_2025 * 100, NA_real_),
+  scenario_label = scenario_lbl[scenario_id],
+  subgroup_label = subgroup_lbl[subgroup]
+)]
+
+# Split scalars for reuse (global bp_combined).
+gcomb <- control_summary[region == "Global" & scenario_id == "bp_combined"]
+add_no_diabetes <- gcomb[subgroup == "htn_no_diabetes", additional_2030]
+add_diabetes    <- gcomb[subgroup == "htn_diabetes",    additional_2030]
+add_total       <- gcomb[subgroup == "total",           additional_2030]
+
+# QA: the two subgroups must sum to exactly 150 million on the fixed 2025 pop.
+stopifnot(
+  "diabetes + no-diabetes additions must equal 150M" =
+    abs((add_no_diabetes + add_diabetes) - 150e6) <= 1,
+  "total-subgroup additional must equal 150M" =
+    abs(add_total - 150e6) <= 1
+)
+
+# Persist the reusable objects for the slides.
+slides_dir <- paste0(wd_outp, "slides/")
+if (!dir.exists(slides_dir)) dir.create(slides_dir, recursive = TRUE)
+saveRDS(control_summary, paste0(slides_dir, "sl_control_summary.rds"))
+sl_control_scalars <- list(
+  target_total          = 150e6,
+  add_total             = add_total,
+  add_no_diabetes       = add_no_diabetes,
+  add_diabetes          = add_diabetes,
+  share_no_diabetes     = add_no_diabetes / add_total,
+  share_diabetes        = add_diabetes / add_total,
+  n_region_unmapped     = n_region_unmapped
+)
+saveRDS(sl_control_scalars, paste0(slides_dir, "sl_control_scalars.rds"))
+message("Control-target summary saved: sl_control_summary.rds, sl_control_scalars.rds")
+
+# ---- Display helper ---------------------------------------------------------
+control_disp <- function(dt, group_col, group_name) {
+  d <- copy(dt)
+  setnames(d, group_col, "Group")
+  out <- d[, .(
+    Group,
+    `Target population 2025`      = comma(htn_pop_2025,    accuracy = 1),
+    `Controlled 2025 (n)`         = comma(controlled_2025, accuracy = 1),
+    `Coverage 2025`               = percent(coverage_2025, accuracy = 0.1),
+    `Controlled 2030 (n)`         = comma(controlled_2030, accuracy = 1),
+    `Coverage 2030`               = percent(coverage_2030, accuracy = 0.1),
+    `Additional controlled 2030`  = comma(additional_2030, accuracy = 1),
+    `% increase vs baseline`      = ifelse(is.na(pct_increase), "—",
+                                           percent(pct_increase / 100, accuracy = 0.1))
+  )]
+  setnames(out, "Group", group_name)
+  out[]
+}
+```
+
+### Global summary, by scenario (all hypertensives)
+
+```{r control-summary-global, message=FALSE, warning=FALSE, echo=FALSE}
+glob_by_scen <- control_summary[region == "Global" & subgroup == "total"]
+glob_by_scen[, scenario_label := factor(scenario_label, levels = scenario_lbl)]
+setorder(glob_by_scen, scenario_label)
+kable(control_disp(glob_by_scen, "scenario_label", "Scenario"),
+      caption = paste0("HTN control targets, global totals by scenario, on the fixed ",
+                       "2025 hypertensive population. Coverage rates and 2030 counts ",
+                       "use the 2025 denominator."),
+      align = c("l", rep("r", 7))) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 13) |>
+  row_spec(0, bold = TRUE) |>
+  row_spec(which(glob_by_scen$scenario_id == "bp_combined"),
+           bold = TRUE, background = "#eef3fb")
+```
+
+### The 150 million split: diabetes vs. no diabetes (Combined scenario, global)
+
+```{r control-summary-split, message=FALSE, warning=FALSE, echo=FALSE}
+split_tab <- control_summary[region == "Global" & scenario_id == "bp_combined"]
+split_tab[, subgroup_label := factor(subgroup_label,
+          levels = c("Without diabetes", "With diabetes", "All hypertensives"))]
+setorder(split_tab, subgroup_label)
+kable(control_disp(split_tab, "subgroup_label", "Subgroup"),
+      caption = paste0("The 150-million additional-controlled target, split between ",
+                       "mutually exclusive hypertensive subgroups (fixed 2025 population). ",
+                       "The two subgroups sum to exactly 150 million."),
+      align = c("l", rep("r", 7))) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 13) |>
+  row_spec(0, bold = TRUE) |>
+  row_spec(which(split_tab$subgroup == "total"), bold = TRUE, background = "#eef3fb")
+```
+
+Of the **`r comma(add_total, accuracy = 1)`** additional people with hypertension
+controlled by 2030, **`r comma(add_no_diabetes, accuracy = 1)`**
+(`r percent(add_no_diabetes / add_total, accuracy = 0.1)`) are **without diabetes** and
+**`r comma(add_diabetes, accuracy = 1)`**
+(`r percent(add_diabetes / add_total, accuracy = 0.1)`) are **with diabetes**, summing to
+exactly 150 million on the fixed 2025 population baseline.
+
+### Combined scenario (150M target), by WHO region
+
+```{r control-summary-region, message=FALSE, warning=FALSE, echo=FALSE}
+region_order <- c("Africa", "Americas", "Eastern Mediterranean", "Europe",
+                  "South-East Asia", "Western Pacific", "Global")
+reg_comb <- control_summary[scenario_id == "bp_combined" & subgroup == "total"]
+reg_comb[, region := factor(region, levels = region_order)]
+setorder(reg_comb, region)
+kable(control_disp(reg_comb, "region", "WHO region"),
+      caption = paste0("HTN Control (Combined, 150M target) by WHO region, on the fixed ",
+                       "2025 hypertensive population. Regional additions sum to 150 million."),
+      align = c("l", rep("r", 7))) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 13) |>
+  row_spec(0, bold = TRUE) |>
+  row_spec(which(reg_comb$region == "Global"), bold = TRUE, background = "#eef3fb")
+```
+
+`r if (n_region_unmapped > 0) paste0("*Note: ", n_region_unmapped, " location(s) could not be mapped to a WHO region and are included in the Global total only.*") else ""`
+
+### Combined scenario (150M target), by WHO region **and** diabetes subgroup
+
+This table and figure disaggregate the 150-million target **both** ways: by WHO region
+and, within each region, by the mutually exclusive no-diabetes / diabetes subgroups, with
+a subtotal ("All hypertensives") for each region and a Global block. Regional totals sum
+to 150 million, and so do the two subgroup totals (83.8 M without + 66.2 M with diabetes).
+
+```{r control-summary-region-subgroup, message=FALSE, warning=FALSE, echo=FALSE}
+sub_levels <- c("htn_no_diabetes", "htn_diabetes", "total")
+rs <- control_summary[scenario_id == "bp_combined" & region %in% region_order]
+rs[, region   := factor(region, levels = region_order)]
+rs[, subgroup := factor(subgroup, levels = sub_levels)]
+setorder(rs, region, subgroup)
+rs_disp <- rs[, .(
+  `WHO region`                 = as.character(region),
+  Subgroup                     = subgroup_lbl[as.character(subgroup)],
+  `Target population 2025`     = comma(htn_pop_2025,    accuracy = 1),
+  `Controlled 2025 (n)`        = comma(controlled_2025, accuracy = 1),
+  `Coverage 2025`              = percent(coverage_2025, accuracy = 0.1),
+  `Controlled 2030 (n)`        = comma(controlled_2030, accuracy = 1),
+  `Coverage 2030`              = percent(coverage_2030, accuracy = 0.1),
+  `Additional controlled 2030` = comma(additional_2030, accuracy = 1),
+  `% increase vs baseline`     = percent(pct_increase / 100, accuracy = 0.1)
+)]
+kable(rs_disp,
+      caption = paste0("HTN Control (Combined, 150M target) by WHO region AND diabetes ",
+                       "subgroup, on the fixed 2025 hypertensive population."),
+      align = c("l", "l", rep("r", 7))) |>
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE, font_size = 12) |>
+  row_spec(0, bold = TRUE) |>
+  row_spec(which(rs$subgroup == "total"), italic = TRUE) |>
+  collapse_rows(columns = 1, valign = "top")
+```
+
+```{r control-summary-region-fig, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=5.5}
+fig_dat <- control_summary[scenario_id == "bp_combined" &
+                           subgroup %in% c("htn_no_diabetes", "htn_diabetes") &
+                           region != "Global"]
+fig_dat[, subgroup_lbl := factor(
+  fifelse(subgroup == "htn_no_diabetes", "Without diabetes", "With diabetes"),
+  levels = c("Without diabetes", "With diabetes"))]
+reg_ord <- fig_dat[, .(tot = sum(additional_2030)), by = region][order(tot), region]
+fig_dat[, region := factor(region, levels = reg_ord)]
+reg_tot <- fig_dat[, .(tot = sum(additional_2030) / 1e6), by = region]
+
+g <- ggplot(fig_dat, aes(x = additional_2030 / 1e6, y = region, fill = subgroup_lbl)) +
+  geom_col(width = 0.7) +
+  geom_text(data = reg_tot, aes(x = tot, y = region, label = sprintf("%.1f", tot)),
+            inherit.aes = FALSE, hjust = -0.15, size = 3.6) +
+  scale_fill_manual(values = c("Without diabetes" = "#1f78b4",
+                               "With diabetes"    = "#a6cee3"), name = NULL) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.10))) +
+  labs(
+    title = "150 Million Additional BP-Controlled by 2030\nby WHO Region and Diabetes Status",
+    subtitle = paste0("Fixed 2025 population | global total ", fmt_m(add_total),
+                      " M (", fmt_m(add_no_diabetes), " M without + ",
+                      fmt_m(add_diabetes), " M with diabetes)"),
+    x = "Additional people controlled (millions)", y = NULL
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom", plot.title = element_text(face = "bold"),
+        panel.grid.minor = element_blank())
+print(g)
+ggsave(paste0(wd_outp, "aim1_control_region_split.png"), plot = g,
+       width = 11, height = 5.5, dpi = 300)
+```
 
 ---
 
@@ -537,7 +816,7 @@ dt_annual[, cum_deaths_delayed := cumsum(deaths_delayed), by = intervention]
 
 # ---- Per-scenario totals for inline text ------------------------------------
 total_all  <- dt_cumul[intervention == "All Interventions",      deaths_delayed]
-total_bp   <- dt_cumul[intervention == "HTN Control (General)",  deaths_delayed]
+total_bp   <- dt_cumul[intervention == "HTN Control (No Diabetes)",  deaths_delayed]
 total_bpd  <- dt_cumul[intervention == "HTN Control (Diabetes)", deaths_delayed]
 total_stat <- dt_cumul[intervention == "Improved Statin Uptake", deaths_delayed]
 ```
@@ -562,10 +841,10 @@ tab1[, deaths_M      := round(deaths_delayed / 1e6, 2)]
 tab1[, deaths_annual := round(deaths_delayed / 25 / 1e3, 1)]
 
 tab1[, who_target := fcase(
-  intervention == "HTN Control (General)",
-    "Target 1: 150M more with HTN controlled by 2030 (50% control)",
+  intervention == "HTN Control (No Diabetes)",
+    "Target 1 (no-diabetes subgroup of the 150M split)",
   intervention == "HTN Control (Diabetes)",
-    "Target 3: 80% BP control in people with diabetes by 2030",
+    "Target 3: BP control in people with diabetes (0.80 ceiling); diabetes subgroup of the 150M split",
   intervention == "Improved Statin Uptake",
     "Target 2: >=50% eligible adults on lipid-lowering therapy by 2030",
   intervention == "All Interventions",
@@ -742,21 +1021,12 @@ ggsave(paste0(wd_outp, "aim1_fig3_annual_averted.png"), plot = g,
 ```{r figure4-cumulative, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
 #g <- ggplot(dt_annual[intervention %in% int_order],
             
-fig4_levels <- c("HTN Control (General Population)",
-                 "HTN Control (Diabetes)",
-                 "Improved Statin Uptake",
-                 "All Interventions")
-fig4_cols <- c("HTN Control (General Population)" = "#1f78b4",
-               "HTN Control (Diabetes)"           = "#a6cee3",
-               "Improved Statin Uptake"           = "#e31a1c",
-               "All Interventions"                = "#6a3d9a")
+fig4_levels <- int_order
+fig4_cols   <- int_cols[int_order]
 
-# Include the combined "All Interventions" line alongside the three single
-# interventions, and relabel "General" -> "General Population" in the legend.
+# Include the combined "All Interventions" line alongside the single interventions.
 dt_fig4 <- copy(dt_annual)[intervention != "b.a.u"]
 dt_fig4[, intervention := as.character(intervention)]
-dt_fig4[intervention == "HTN Control (General)",
-        intervention := "HTN Control (General Population)"]
 dt_fig4[, intervention := factor(intervention, levels = fig4_levels)]
 
 g <- ggplot(dt_fig4,
@@ -1101,6 +1371,16 @@ This section presents burden of disease estimates --- including deaths averted, 
 # ---- Load DALYs output from 07_output_dalys.R --------------------------------
 dt_dalys <- readRDS(paste0(wd_outp, "dt_output_dalys.rds"))
 setDT(dt_dalys)
+
+# Compatibility relabel: 07_output_dalys.R currently maps the no-diabetes BP
+# subgroup to "HTN Control (General)". Align it with the current scenario label so
+# the burden-of-disease tables below match int_order. (07_output_dalys.R is a
+# pipeline script outside this reporting refactor; once it is updated to emit the
+# new labels this line becomes a harmless no-op. NOTE: the "All Interventions"
+# DALY rows also require 07 to recognise the new combined-intervention label —
+# see the follow-up note in the completion report.)
+dt_dalys[intervention == "HTN Control (General)",
+         intervention := "HTN Control (No Diabetes)"]
 
 # ---- Merge country metadata for WHO region and income group -------------------
 dt_dalys <- merge(dt_dalys,
@@ -1673,10 +1953,11 @@ econ_ok <- all(file.exists(econ_files))
 if (econ_ok) {
 
   econ_scen_lbl <- c(
-    bp_only          = "HTN Control (General)",
-    bp_diabetes_only = "HTN Control (Diabetes)",
-    statins_only     = "Improved Statin Uptake",
-    all_interventions = "All Interventions"
+    bp_no_diabetes_only = "HTN Control (No Diabetes)",
+    bp_only             = "HTN Control (No Diabetes)",  # alias for older econ files
+    bp_diabetes_only    = "HTN Control (Diabetes)",
+    statins_only        = "Improved Statin Uptake",
+    all_interventions   = "All Interventions"
   )
 
   # ---- Region × scenario tables (primary, e1_2) ----------------------------
@@ -1821,7 +2102,7 @@ ggsave(paste0(slides_dir, "sl_econ_dotplot.png"),
 <!-- if (econ_ok) { -->
 
 <!--   econ_scen_lbl <- c( -->
-<!--     bp_only          = "HTN Control (General)", -->
+<!--     bp_only          = "HTN Control (No Diabetes)", -->
 <!--     bp_diabetes_only = "HTN Control (Diabetes)", -->
 <!--     statins_only     = "Improved Statin Uptake", -->
 <!--     all_interventions = "All Interventions" -->
@@ -2015,7 +2296,7 @@ cause_averted_all <- dt_merged[intervention == "All Interventions",
                                 by = cause]
 
 # ---- Cause-specific deaths averted by intervention --------------------------
-cause_averted_bp <- dt_merged[intervention == "HTN Control (General)",
+cause_averted_bp <- dt_merged[intervention == "HTN Control (No Diabetes)",
                                .(averted = sum(deaths_delayed, na.rm = TRUE)),
                                by = cause]
 cause_averted_bpd <- dt_merged[intervention == "HTN Control (Diabetes)",
@@ -2041,9 +2322,9 @@ annual_2030_all <- dt_annual[intervention == "All Interventions" & year == 2030,
                               deaths_delayed]
 annual_2050_all <- dt_annual[intervention == "All Interventions" & year == 2050,
                               deaths_delayed]
-annual_2030_bp  <- dt_annual[intervention == "HTN Control (General)" & year == 2030,
+annual_2030_bp  <- dt_annual[intervention == "HTN Control (No Diabetes)" & year == 2030,
                               deaths_delayed]
-annual_2050_bp  <- dt_annual[intervention == "HTN Control (General)" & year == 2050,
+annual_2050_bp  <- dt_annual[intervention == "HTN Control (No Diabetes)" & year == 2050,
                               deaths_delayed]
 annual_2030_stat <- dt_annual[intervention == "Improved Statin Uptake" & year == 2030,
                                deaths_delayed]
@@ -2081,7 +2362,7 @@ total_ylls_all  <- bod_all$YLLs
 total_ylds_all  <- bod_all$YLDs
 total_dalys_all <- bod_all$DALYs
 
-bod_bp <- bod_tab1[intervention == "HTN Control (General)"]
+bod_bp <- bod_tab1[intervention == "HTN Control (No Diabetes)"]
 total_dalys_bp <- bod_bp$DALYs
 
 bod_stat <- bod_tab1[intervention == "Improved Statin Uptake"]

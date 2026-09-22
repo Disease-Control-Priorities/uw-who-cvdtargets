@@ -1,196 +1,661 @@
 # Required inputs----
 
-
 #...........................................................
 # HTN Targets Aim 2----
 #...........................................................
 
+# Pure helpers are defined before the execution guard so the QA script can
+# source them without running the full intervention-input pipeline.
 
-#............................................................................
-#  Here create the needed improvement rate to reach 150 more under control by 2030,
-# and apply it to the baseline rates to create the "improvement" scenario for aim2
-#...........................................................................
-
-# Use data.in, weight by pop20 year==2025
-# The control rate in 2025 is reach_base data.in$htncov2 weighted by pop20 year==2025
-# The target is 150 million more under control by 2030, which is
-# 150 million / global pop in 2025* htncov2 = x% increase in control rate
-# htncov2 varies by sex and location, so we calculate the needed increase in
-# control rate for each location and sex
-
-target_additional_control <- 150e6
-
-# Control rates from NCD Risk Factor Collaboration (NCD-RisC) data, 
-# which is the basis for our baseline control rates (htncov2)
-data.in<-fread(paste0(wd_data,"bp_data6.csv"))%>%rename(location = location_gbd)%>%select(-Year, -Country)
-
-# NCD risk htn prevalence
-dt_htn_prev <- fread(paste0(wd_raw,"NCD-RisC_Lancet_2021_Hypertension_age_specific_estimates_by_country.csv"))
-
-# Select 2019 and required columns
-dt_htn_prev <- dt_htn_prev[Year == 2019,c("Country", "Sex", "Age", "Prevalence of hypertension"),with=F]
-
-setnames(dt_htn_prev,old=c("Country", "Sex", "Age", "Prevalence of hypertension"),
-                     new=c("location","sex","age","htn_prev"))
-
-# re encode sex to Male and Female
-dt_htn_prev[,sex := ifelse(sex == "Men","Male","Female")]
-
-# re encode locations to match names
-# dt_htn_prev[location == "United States", location := "United States of America"]
-# dt_htn_prev[location == "Viet Nam", location := "vietnam"]
-# dt_htn_prev[location == "The Gambia", location := "Gambia"]
-
-dt_htn_prev[, location := fcase(
-  location == "Viet Nam", "Vietnam",
-  location == "United States of America", "United States",
-  location == "Lao PDR", "Laos",
-  location == "Congo, Dem. Rep.", "Democratic Republic of the Congo",
-  location == "Cabo Verde", "Cape Verde",
-  location == "Gambia", "The Gambia",
-  location == "Bahamas", "The Bahamas",
-  location == "Micronesia (Federated States of)", "Federated States of Micronesia",
-  location == "Syrian Arab Republic", "Syria",
-  location == "Palestine, State of", "Palestine",
-  location == "North Macedonia", "Macedonia",
-  location == "Taiwan", "Taiwan (Province of China)",
-  location == "Brunei Darussalam", "Brunei",
-  location == "DR Congo", "Democratic Republic of the Congo",
-  location == "Guinea Bissau", "Guinea-Bissau",
-  location == "Macedonia (TFYR)", "Macedonia",
-  location == "Occupied Palestinian Territory", "Palestine",
-  default = location
-)]
-
-# create htn prev for 20-30 and 70-85+ by taking the average of adjacent age groups (30-34 for 20-24 and 25-29, and 75-79 for 80-84 and 85+ )
-
-# add missing ages by copying adjacent groups
-add_low  <- dt_htn_prev[age == "30-34", .(location, sex, htn_prev)][, age := "20-24"]
-add_low2 <- dt_htn_prev[age == "30-34", .(location, sex, htn_prev)][, age := "25-29"]
-
-add_high  <- dt_htn_prev[age == "75-79", .(location, sex, htn_prev)][, age := "80-84"]
-add_high2 <- dt_htn_prev[age == "75-79", .(location, sex, htn_prev)][, age := "85plus"]
-
-# bind + de-duplicate (in case you run it twice)
-dt_htn_prev<- unique(
-  rbind(dt_htn_prev, add_low, add_low2, add_high, add_high2),
-  by = c("location","sex","age")
+aim2_model_location_map <- c(
+  "Brunei"                         = "Brunei Darussalam",
+  "Cape Verde"                     = "Cabo Verde",
+  "Cote d'Ivoire"                  = "Ivory Coast",
+  "Czech Republic"                 = "Czechia",
+  "Federated States of Micronesia" = "Micronesia (Federated States of)",
+  "Iran"                           = "Iran (Islamic Republic of)",
+  "Laos"                           = "Lao People's Democratic Republic",
+  "Macedonia"                      = "North Macedonia",
+  "Moldova"                        = "Republic of Moldova",
+  "South Korea"                    = "Republic of Korea",
+  "Swaziland"                      = "Eswatini",
+  "Syria"                          = "Syrian Arab Republic",
+  "The Bahamas"                    = "Bahamas",
+  "The Gambia"                     = "Gambia",
+  "Venezuela"                      = "Venezuela (Bolivarian Republic of)",
+  "Vietnam"                        = "Viet Nam",
+  "North Korea"                    = "Democratic People's Republic of Korea"
 )
 
-# merge data in with data prev
-data.in <- merge(data.in,dt_htn_prev,by.x=c("location","sex","Age.group"),
-                 by.y=c("location","sex","age"),all.x = TRUE)
+aim2_recode_locations <- function(x) {
+  mapped <- unname(aim2_model_location_map[x])
+  fifelse(is.na(mapped), x, mapped)
+}
 
-# data.in$salt[data.in$location=="China"]<-4.83*2.54
-# length(unique(data.in$location))
+aim2_decompose_control <- function(observed_control,
+                                   diabetes_share_among_htn_assumed,
+                                   requested_gap = 0.15,
+                                   tolerance = 1e-12) {
+  if (anyNA(observed_control) || anyNA(diabetes_share_among_htn_assumed)) {
+    stop("Missing observed control or assumed diabetes share in Aim 2 strata.")
+  }
+  if (any(observed_control < 0 | observed_control > 1) ||
+      any(diabetes_share_among_htn_assumed < 0 |
+          diabetes_share_among_htn_assumed > 1)) {
+    stop("Observed control and assumed diabetes shares must lie in [0, 1].")
+  }
 
-# 2025 hypertension control and population by location-sex
-pop2095 <- as.data.table(readRDS(paste0(wd_data,"PopulationsSingleAge0050.rds")))
-setnames(pop2095, "year_id", "year")
+  w_d <- diabetes_share_among_htn_assumed
+  max_gap_lower <- fifelse(w_d > 0, observed_control / w_d, Inf)
+  max_gap_upper <- fifelse(w_d < 1, (1 - observed_control) / (1 - w_d), Inf)
+  gap_used <- pmin(requested_gap, max_gap_lower, max_gap_upper)
 
-# for some reason in UNWPP 2025 Samoa and American Samoa have no data, so taking 2023 and appending to 2025
-pop2095_samoa <- pop2095[location %in% c("Samoa", "American Samoa") & year == 2023 & age >= 20,]
+  c_n <- observed_control - w_d * gap_used
+  c_d <- observed_control + (1 - w_d) * gap_used
+  if (any(c_n < -tolerance | c_n > 1 + tolerance |
+          c_d < -tolerance | c_d > 1 + tolerance)) {
+    stop("Bounded-gap decomposition produced a control rate outside [0, 1].")
+  }
 
-pop2095_samoa <- pop2095_samoa[,
-                   .(pop20 = sum(Nx, na.rm = TRUE)),
-                   by = .(location, sex)]
+  # Values within floating-point tolerance are exact boundary solutions, not
+  # silent clamping of an infeasible 15-percentage-point decomposition.
+  c_n[abs(c_n) <= tolerance] <- 0
+  c_d[abs(c_d - 1) <= tolerance] <- 1
+  list(control_gap_used = gap_used,
+       baseline_control_no_diabetes = c_n,
+       baseline_control_diabetes = c_d)
+}
 
-# pop age>=20 in 2025, by location-sex
-pop2095 <- pop2095[age >= 20 & year == 2025,
-                   .(pop20 = sum(Nx, na.rm = TRUE)),
-                   by = .(location, sex)]
+aim2_solve_no_diabetes_scale <- function(htn_population_no_diabetes,
+                                         baseline_control_no_diabetes,
+                                         required_additional,
+                                         tolerance_people = 1) {
+  if (required_additional < -tolerance_people) {
+    stop("Diabetes scale-up exceeds the full Aim 2 target; no non-diabetes residual remains.")
+  }
+  if (required_additional <= tolerance_people) {
+    return(list(scale_factor = 1,
+                target_control = baseline_control_no_diabetes,
+                achieved_additional = 0,
+                number_capped_strata = 0L))
+  }
 
-pop2095 <- rbind(pop2095, pop2095_samoa)
-# unique location-sex HTN inputs (htncov2 is among raisedBP)
-data.in_htn <- unique(
-  data.in[, .(location, sex, htncov2, raisedBP,htn_prev,diabetes)],
-  by = c("location", "sex")
-)
+  scalable <- baseline_control_no_diabetes > 0 & htn_population_no_diabetes > 0
+  capacity <- sum(htn_population_no_diabetes[scalable] *
+                    (1 - baseline_control_no_diabetes[scalable]))
+  if (required_additional > capacity + tolerance_people) {
+    stop(sprintf(
+      paste0("Non-diabetes proportional scale-up capacity is insufficient: ",
+             "required %.3f million, available %.3f million."),
+      required_additional / 1e6, capacity / 1e6
+    ))
+  }
 
-aim2_base_2025 <- merge(
-  data.in_htn,
-  pop2095,
-  by = c("location", "sex"),
-  all.x = TRUE
-)[!is.na(pop20)]
+  upper <- max(1 / baseline_control_no_diabetes[scalable])
+  objective <- function(scale_factor) {
+    sum(htn_population_no_diabetes *
+          (pmin(1, scale_factor * baseline_control_no_diabetes) -
+             baseline_control_no_diabetes)) - required_additional
+  }
+  if (objective(1) > tolerance_people || objective(upper) < -tolerance_people) {
+    stop("Could not bracket the non-diabetes proportional scale-factor root.")
+  }
 
-# ---- Baseline global controlled (among raisedBP) in 2025
-global_raisedBP_pop_2025 <- aim2_base_2025[, sum(pop20 * htn_prev, na.rm = TRUE)]
-global_controlled_2025   <- aim2_base_2025[, sum(pop20 * htn_prev * htncov2, na.rm = TRUE)]
+  solved <- uniroot(objective, interval = c(1, upper),
+                    tol = .Machine$double.eps^0.5)
+  target <- pmin(1, solved$root * baseline_control_no_diabetes)
+  achieved <- sum(htn_population_no_diabetes *
+                    (target - baseline_control_no_diabetes))
+  if (abs(achieved - required_additional) > tolerance_people) {
+    stop(sprintf("Non-diabetes root reconciliation differs by %.6f people.",
+                 achieved - required_additional))
+  }
 
-global_control_rate_2025 <- global_controlled_2025 / global_raisedBP_pop_2025
+  list(scale_factor = solved$root,
+       target_control = target,
+       achieved_additional = achieved,
+       number_capped_strata = sum(target >= 1 - 1e-12))
+}
 
-# ---- Target controlled count and target control rate (still among raisedBP)
-target_controlled_2030   <- global_controlled_2025 + target_additional_control
-target_control_rate_2030 <- target_controlled_2030 / global_raisedBP_pop_2025
+# Joint solver for allocation_mode = "diabetes_capped_to_target". A single shared
+# multiplicative scale factor s raises baseline control in BOTH subgroups, capped
+# at cap_diabetes (diabetes) and cap_no_diabetes (no diabetes), so that the total
+# additional controlled equals the policy target EXACTLY by construction
+# (Delta_D + Delta_N = policy_target). The diabetes cap (0.80) is an aspirational
+# ceiling, not a hard floor; the achieved diabetes control rate may be < 0.80.
+aim2_solve_joint_scale <- function(htn_population_diabetes,
+                                   baseline_control_diabetes,
+                                   htn_population_no_diabetes,
+                                   baseline_control_no_diabetes,
+                                   policy_target = 150e6,
+                                   cap_diabetes = 0.80,
+                                   cap_no_diabetes = 1,
+                                   tolerance_people = 1) {
+  additional_at <- function(s) {
+    td <- pmin(cap_diabetes, s * baseline_control_diabetes)
+    tn <- pmin(cap_no_diabetes, s * baseline_control_no_diabetes)
+    sum(htn_population_diabetes * (td - baseline_control_diabetes)) +
+      sum(htn_population_no_diabetes * (tn - baseline_control_no_diabetes))
+  }
 
-# multiplicative scale factor on htncov2
-aim2_scale_factor <- target_control_rate_2030 / global_control_rate_2025
+  # Proportional scaling cannot lift a stratum whose baseline control is 0, so its
+  # reachable capacity is 0; count capacity only where baseline control > 0.
+  cap_gain_d <- fifelse(baseline_control_diabetes > 0,
+                        pmax(cap_diabetes - baseline_control_diabetes, 0), 0)
+  cap_gain_n <- fifelse(baseline_control_no_diabetes > 0,
+                        pmax(cap_no_diabetes - baseline_control_no_diabetes, 0), 0)
+  capacity <- sum(htn_population_diabetes * cap_gain_d) +
+    sum(htn_population_no_diabetes * cap_gain_n)
+  if (policy_target > capacity + tolerance_people) {
+    stop(sprintf(paste0(
+      "Joint Aim 2 allocation is infeasible: policy target %.3f million exceeds ",
+      "the maximum controllable capacity %.3f million (diabetes capped at %.2f, ",
+      "no-diabetes capped at %.2f)."),
+      policy_target / 1e6, capacity / 1e6, cap_diabetes, cap_no_diabetes),
+      call. = FALSE)
+  }
+  if (policy_target <= tolerance_people) {
+    return(list(scale_factor = 1,
+                target_control_diabetes = baseline_control_diabetes,
+                target_control_no_diabetes = baseline_control_no_diabetes,
+                achieved_additional = 0,
+                number_capped_strata = 0L))
+  }
 
-# ---- Apply proportional increase to each location-sex htncov2 (cap at 1)
-aim2_locsex <- copy(aim2_base_2025)
+  pos_d <- baseline_control_diabetes > 0
+  pos_n <- baseline_control_no_diabetes > 0
+  upper <- max(c(
+    if (any(pos_d)) cap_diabetes / min(baseline_control_diabetes[pos_d]) else 1,
+    if (any(pos_n)) cap_no_diabetes / min(baseline_control_no_diabetes[pos_n]) else 1,
+    1 + 1e-6
+  ))
+  objective <- function(s) additional_at(s) - policy_target
+  if (objective(1) > tolerance_people || objective(upper) < -tolerance_people) {
+    stop("Could not bracket the joint Aim 2 proportional scale-factor root.")
+  }
 
-aim2_locsex[, `:=`(
-  htncov2_2025 = htncov2,
-  htncov2_2030 = pmin(1, htncov2 * aim2_scale_factor),
-  
-  # annual increment over 5 years (2025 -> 2030)
-  annual_increment = (pmin(1, htncov2 * aim2_scale_factor) - htncov2) / 5
-)]
+  solved <- uniroot(objective, interval = c(1, upper),
+                    tol = .Machine$double.eps^0.5)
+  s <- solved$root
+  td <- pmin(cap_diabetes, s * baseline_control_diabetes)
+  tn <- pmin(cap_no_diabetes, s * baseline_control_no_diabetes)
+  achieved <- sum(htn_population_diabetes * (td - baseline_control_diabetes)) +
+    sum(htn_population_no_diabetes * (tn - baseline_control_no_diabetes))
+  if (abs(achieved - policy_target) > tolerance_people) {
+    stop(sprintf("Joint Aim 2 root reconciliation differs by %.6f people.",
+                 achieved - policy_target))
+  }
 
-# ---- Controlled counts MUST include htn_prev
-aim2_locsex[, controlled_2025 := pop20 * htn_prev * htncov2_2025]
-aim2_locsex[, controlled_2030 := pop20 * htn_prev * htncov2_2030]
+  list(scale_factor = s,
+       target_control_diabetes = td,
+       target_control_no_diabetes = tn,
+       achieved_additional = achieved,
+       number_capped_strata = sum(td >= cap_diabetes - 1e-12) +
+         sum(tn >= cap_no_diabetes - 1e-12))
+}
 
-aim2_achieved_additional_control <- aim2_locsex[
-  , sum(controlled_2030 - controlled_2025, na.rm = TRUE)
-]
+aim2_prepare_strata <- function(wd_data, wd_raw) {
+  data_in <- fread(paste0(wd_data, "bp_data6.csv"))
+  setnames(data_in, "location_gbd", "location")
+  data_in[, location := aim2_recode_locations(location)]
+  data_in[, c("Year", "Country") := NULL]
 
-aim2_loc <- aim2_locsex[, {
-  
-  pop_total <- sum(pop20, na.rm = TRUE)
-  
-  raisedBP_pop_total <- sum(pop20 * htn_prev, na.rm = TRUE)
-  
-  controlled_2025_total <- sum(controlled_2025, na.rm = TRUE)
-  controlled_2030_total <- sum(controlled_2030, na.rm = TRUE)
-  
-  list(
-    # keep original column names
-    htncov2 = controlled_2025_total / raisedBP_pop_total,
-    raisedBP = raisedBP_pop_total / pop_total,
-    pop20 = pop_total,
-    htncov2_2025 = controlled_2025_total / raisedBP_pop_total,
-    htncov2_2030 = controlled_2030_total / raisedBP_pop_total,
-    annual_increment = (controlled_2030_total - controlled_2025_total) /
-      raisedBP_pop_total / 5,
-    controlled_2025 = controlled_2025_total,
-    controlled_2030 = controlled_2030_total
+  htn_prev <- fread(paste0(
+    wd_raw,
+    "NCD-RisC_Lancet_2021_Hypertension_age_specific_estimates_by_country.csv"
+  ))
+  htn_prev <- htn_prev[
+    Year == 2019,
+    .(location = Country, sex = Sex, Age.group = Age,
+      htn_prevalence = `Prevalence of hypertension`)
+  ]
+  htn_prev[, sex := fifelse(sex == "Men", "Male", "Female")]
+  htn_prev[, location := fcase(
+    location == "Viet Nam", "Vietnam",
+    location == "United States of America", "United States",
+    location == "Lao PDR", "Laos",
+    location %in% c("Congo, Dem. Rep.", "DR Congo"),
+      "Democratic Republic of the Congo",
+    location == "Cabo Verde", "Cape Verde",
+    location == "Gambia", "The Gambia",
+    location == "Bahamas", "The Bahamas",
+    location == "Micronesia (Federated States of)",
+      "Federated States of Micronesia",
+    location == "Syrian Arab Republic", "Syria",
+    location %in% c("Palestine, State of", "Occupied Palestinian Territory"),
+      "Palestine",
+    location %in% c("North Macedonia", "Macedonia (TFYR)"), "Macedonia",
+    location == "Taiwan", "Taiwan (Province of China)",
+    location == "Brunei Darussalam", "Brunei",
+    location == "Guinea Bissau", "Guinea-Bissau",
+    default = location
+  )]
+  htn_prev[, location := aim2_recode_locations(location)]
+
+  add_age <- function(source_age, target_age) {
+    htn_prev[Age.group == source_age,
+             .(location, sex, Age.group = target_age, htn_prevalence)]
+  }
+  htn_prev <- unique(rbindlist(list(
+    htn_prev,
+    add_age("30-34", "20-24"),
+    add_age("30-34", "25-29"),
+    add_age("75-79", "80-84"),
+    add_age("75-79", "85plus")
+  )), by = c("location", "sex", "Age.group"))
+
+  population <- as.data.table(readRDS(paste0(
+    wd_data, "PopulationsSingleAge0050.rds"
+  )))
+  if ("year_id" %in% names(population)) setnames(population, "year_id", "year")
+  population <- population[age >= 20]
+
+  # UNWPP 2024 single-year population is the FIXED 2025 denominator. A handful of
+  # small Pacific states (Samoa, Tonga, ...) have no 2025 single-year row; for
+  # those, fall back to their most recent available year (2023) as a documented
+  # approximation of the fixed denominator. This mirrors the statins section
+  # below, which already applies a 2023 fallback for Samoa/American Samoa. It is a
+  # transparent, recorded fallback (population_fallback_locations), NOT silent
+  # imputation, so these locations are retained in the policy universe instead of
+  # being dropped and forcing a fatal abort.
+  pop_year_used <- population[, .(
+    year_used = as.integer(if (any(year == 2025)) 2025L else max(year))
+  ), by = location]
+  population_fallback_locations <- sort(pop_year_used[year_used != 2025L, location])
+  population <- merge(population, pop_year_used, by = "location")
+  population <- population[year == year_used]
+  population[, Age.group := fifelse(
+    age >= 85, "85plus",
+    paste0(5L * (age %/% 5L), "-", 5L * (age %/% 5L) + 4L)
+  )]
+  population <- population[
+    , .(population_2025 = sum(Nx)),
+    by = .(location, sex, Age.group)
+  ]
+
+  # The policy universe follows the explicit exclusions recorded in
+  # Scenarios.xlsx Sheet1. The workbook's calculated target columns are not read.
+  excluded_locations <- c(
+    "Palestine", "Bermuda", "Puerto Rico", "Greenland",
+    "Taiwan (Province of China)", "American Samoa"
   )
-  
-}, by = location]
+  fine <- data_in[!location %in% excluded_locations,
+                  .(location, sex, Age.group, htncov2, diabetes)]
+  fine <- merge(fine, htn_prev,
+                by = c("location", "sex", "Age.group"), all.x = TRUE)
+  fine <- merge(fine, population,
+                by = c("location", "sex", "Age.group"), all.x = TRUE)
 
-# save .csv for input in running the model
-fwrite(aim2_loc, paste0(wd_data,"htn_control_targets_by_loc.csv"))
+  missing <- fine[is.na(htn_prevalence) | is.na(population_2025),
+                  .(missing_strata = .N,
+                    missing_htn_prevalence = any(is.na(htn_prevalence)),
+                    missing_population_2025 = any(is.na(population_2025))),
+                  by = location]
+  complete <- fine[complete.cases(
+    fine[, .(htncov2, diabetes, htn_prevalence, population_2025)]
+  )]
+  complete[, `:=`(
+    htn_population_age = population_2025 * htn_prevalence,
+    htn_population_diabetes_age =
+      population_2025 * htn_prevalence * diabetes,
+    htn_population_no_diabetes_age =
+      population_2025 * htn_prevalence * (1 - diabetes),
+    controlled_overall_age =
+      population_2025 * htn_prevalence * htncov2
+  )]
 
-#clean up environment
-rm(aim2_loc,aim2_base_2025, aim2_locsex, data.in_htn,pop2095_samoa,pop2095, target_additional_control, global_raisedBP_pop_2025, global_controlled_2025,
-   global_control_rate_2025, target_controlled_2030, target_control_rate_2030, aim2_scale_factor)
+  locsex <- complete[, .(
+    population_2025 = sum(population_2025),
+    htn_population_2025 = sum(htn_population_age),
+    htn_population_diabetes = sum(htn_population_diabetes_age),
+    htn_population_no_diabetes = sum(htn_population_no_diabetes_age),
+    controlled_overall_2025 = sum(controlled_overall_age)
+  ), by = .(location, sex)]
+  locsex[, `:=`(
+    diabetes_share_among_htn_assumed =
+      htn_population_diabetes / htn_population_2025,
+    observed_overall_control =
+      controlled_overall_2025 / htn_population_2025
+  )]
 
+  decomposition <- aim2_decompose_control(
+    locsex$observed_overall_control,
+    locsex$diabetes_share_among_htn_assumed
+  )
+  locsex[, `:=`(
+    control_gap_requested = 0.15,
+    control_gap_used = decomposition$control_gap_used,
+    baseline_control_no_diabetes =
+      decomposition$baseline_control_no_diabetes,
+    baseline_control_diabetes = decomposition$baseline_control_diabetes
+  )]
 
+  list(strata = locsex,
+       missing = missing,
+       excluded_locations = excluded_locations,
+       population_fallback_locations = population_fallback_locations,
+       data_in = data_in)
+}
 
-## Temporary code to test the impact of the proportional increase in control rates on the number of people controlled globally in 2030, to confirm it matches the target of 150 million additional controlled
-## Import targets excel ----
-aim2_loc <- as.data.table(
-  read_excel(paste0(wd_data,"Scenarios.xlsx"),
-             sheet = "Sheet1",range = "A9:S200")
+# allocation_mode controls how the 150-million target is split between the
+# diabetes and non-diabetes subgroups when the 0.80 diabetes ceiling alone would
+# already exceed 150M (which it does with the real 2025 inputs: Delta_D = 242.7M):
+#   "diabetes_capped_to_target"    (DEFAULT) - 0.80 is an aspirational CEILING.
+#       One shared solver raises both subgroups (diabetes capped at 0.80,
+#       no-diabetes capped at 1.0) so Delta_D + Delta_N = 150M EXACTLY. The
+#       achieved diabetes control rate may be < 0.80.
+#   "diabetes_floor_then_reconcile" - 0.80 is a HARD FLOOR. If Delta_D > 150M the
+#       function stop()s with a clear diagnostic (matches the spec's literal
+#       "Fail clearly if Delta_D > 150 million"). Usable only when Delta_D <= 150M.
+#   "diabetes_floor_uncapped_total" - 0.80 is a hard floor and the total is
+#       allowed to exceed 150M (150M becomes a floor, not an exact target).
+# Spec tension: aim2_bp_control_refactor_prompt.md text ("Fail clearly if
+# Delta_D > 150 million") reads like mode 2, but Part A3 requires script 04 to
+# run end-to-end and reconcile to 150M, which only mode 1 satisfies with real
+# data. Default is therefore mode 1; confirm this is the intended policy.
+aim2_build_target_tables <- function(strata,
+                                     missing = data.table(),
+                                     excluded_locations = character(),
+                                     population_fallback_locations = character(),
+                                     policy_target = 150e6,
+                                     diabetes_target = 0.80,
+                                     allocation_mode = c("diabetes_capped_to_target",
+                                                          "diabetes_floor_then_reconcile",
+                                                          "diabetes_floor_uncapped_total"),
+                                     tolerance_people = 1) {
+  allocation_mode <- match.arg(allocation_mode)
+  x <- copy(strata)
+  required <- c(
+    "location", "sex", "population_2025", "htn_population_2025",
+    "htn_population_diabetes", "htn_population_no_diabetes",
+    "observed_overall_control", "diabetes_share_among_htn_assumed",
+    "baseline_control_no_diabetes", "baseline_control_diabetes"
+  )
+  absent <- setdiff(required, names(x))
+  if (length(absent)) {
+    stop("Aim 2 stratum table is missing: ", paste(absent, collapse = ", "))
+  }
+  if (anyDuplicated(x, by = c("location", "sex"))) {
+    stop("Aim 2 stratum table has duplicate location-sex keys.")
+  }
+
+  partition_error <- x$htn_population_no_diabetes +
+    x$htn_population_diabetes - x$htn_population_2025
+  reconstruction_error <-
+    x$htn_population_no_diabetes * x$baseline_control_no_diabetes +
+    x$htn_population_diabetes * x$baseline_control_diabetes -
+    x$htn_population_2025 * x$observed_overall_control
+  if (max(abs(partition_error)) > tolerance_people ||
+      max(abs(reconstruction_error)) > tolerance_people) {
+    stop("Hypertension partition or baseline-control reconstruction failed.")
+  }
+
+  # Locations with genuinely unavailable 2025 inputs were dropped upstream
+  # (complete.cases in aim2_prepare_strata) and are recorded in `missing`. Their
+  # exclusion is documented in the audit summary below (never silently imputed);
+  # it is NOT a fatal error. A fatal stop() is raised only if the remaining
+  # policy universe cannot reach the target (handled inside the solvers).
+
+  if (allocation_mode == "diabetes_capped_to_target") {
+    # Mode 1 (DEFAULT): joint shared-scale solver, diabetes capped at 0.80.
+    joint <- aim2_solve_joint_scale(
+      htn_population_diabetes      = x$htn_population_diabetes,
+      baseline_control_diabetes    = x$baseline_control_diabetes,
+      htn_population_no_diabetes    = x$htn_population_no_diabetes,
+      baseline_control_no_diabetes  = x$baseline_control_no_diabetes,
+      policy_target    = policy_target,
+      cap_diabetes     = diabetes_target,
+      cap_no_diabetes  = 1,
+      tolerance_people = tolerance_people
+    )
+    x[, target_control_diabetes := joint$target_control_diabetes]
+    x[, target_control_no_diabetes := joint$target_control_no_diabetes]
+    delta_d <- x[, sum(htn_population_diabetes *
+                         (target_control_diabetes - baseline_control_diabetes))]
+    delta_n <- x[, sum(htn_population_no_diabetes *
+                         (target_control_no_diabetes - baseline_control_no_diabetes))]
+    scale_factor <- joint$scale_factor
+    number_capped_strata <- joint$number_capped_strata
+    allocation_method_diabetes <-
+      "joint_shared_proportional_scale_cap_diabetes_0.80"
+    allocation_method_no_diabetes <-
+      "joint_shared_proportional_scale_cap_1.0"
+
+  } else if (allocation_mode == "diabetes_floor_then_reconcile") {
+    # Mode 2: 0.80 as a hard floor; fail clearly if it alone exceeds 150M.
+    x[, target_control_diabetes := pmax(baseline_control_diabetes,
+                                        diabetes_target)]
+    delta_d <- x[, sum(htn_population_diabetes *
+                         (target_control_diabetes - baseline_control_diabetes))]
+    if (delta_d > policy_target + tolerance_people) {
+      stop(sprintf(paste0(
+        "Aim 2 allocation_mode='diabetes_floor_then_reconcile' is infeasible: ",
+        "the 0.80 diabetes floor alone adds %.3f million controlled people, ",
+        "exceeding the %.3f million policy target by %.3f million (implied ",
+        "minimum total %.3f million). Use allocation_mode='diabetes_capped_to_",
+        "target' to reconcile to %.0f million, or 'diabetes_floor_uncapped_",
+        "total' to let the total exceed it."),
+        delta_d / 1e6, policy_target / 1e6, (delta_d - policy_target) / 1e6,
+        delta_d / 1e6, policy_target / 1e6), call. = FALSE)
+    }
+    solved <- aim2_solve_no_diabetes_scale(
+      x$htn_population_no_diabetes, x$baseline_control_no_diabetes,
+      policy_target - delta_d, tolerance_people
+    )
+    x[, target_control_no_diabetes := solved$target_control]
+    delta_n <- solved$achieved_additional
+    scale_factor <- solved$scale_factor
+    number_capped_strata <- solved$number_capped_strata
+    allocation_method_diabetes <- "diabetes_floor_0.80_no_reduction"
+    allocation_method_no_diabetes <- "residual_proportional_scale_with_cap"
+
+  } else {
+    # Mode 3: 0.80 hard floor, total allowed to exceed 150M (150M is a floor).
+    x[, target_control_diabetes := pmax(baseline_control_diabetes,
+                                        diabetes_target)]
+    delta_d <- x[, sum(htn_population_diabetes *
+                         (target_control_diabetes - baseline_control_diabetes))]
+    residual_n <- policy_target - delta_d
+    if (residual_n > tolerance_people) {
+      solved <- aim2_solve_no_diabetes_scale(
+        x$htn_population_no_diabetes, x$baseline_control_no_diabetes,
+        residual_n, tolerance_people
+      )
+      x[, target_control_no_diabetes := solved$target_control]
+      delta_n <- solved$achieved_additional
+      scale_factor <- solved$scale_factor
+      number_capped_strata <- solved$number_capped_strata
+    } else {
+      x[, target_control_no_diabetes := baseline_control_no_diabetes]
+      delta_n <- 0
+      scale_factor <- 1
+      number_capped_strata <- 0L
+    }
+    allocation_method_diabetes <- "diabetes_floor_0.80_no_reduction"
+    allocation_method_no_diabetes <-
+      "residual_proportional_scale_uncapped_total"
+  }
+
+  # Achieved (population-weighted) diabetes control rate in 2030 (may be < 0.80).
+  diabetes_control_2030_effective <-
+    x[, sum(htn_population_diabetes * target_control_diabetes) /
+        sum(htn_population_diabetes)]
+
+  scenario_ids <- c(
+    "baseline", "bp_no_diabetes_only", "bp_diabetes_only", "bp_combined"
+  )
+  targets <- rbindlist(lapply(scenario_ids, function(id) {
+    no_diabetes_target <- if (id %in% c("bp_no_diabetes_only", "bp_combined")) {
+      x$target_control_no_diabetes
+    } else x$baseline_control_no_diabetes
+    diabetes_target_rate <- if (id %in% c("bp_diabetes_only", "bp_combined")) {
+      x$target_control_diabetes
+    } else x$baseline_control_diabetes
+
+    rbind(
+      x[, .(
+        scenario_id = id, location, sex,
+        subgroup = "htn_no_diabetes",
+        baseline_year = 2025L, scaleup_start_year = 2026L,
+        target_year = 2030L, population_2025,
+        htn_population_2025 = htn_population_no_diabetes,
+        diabetes_share_among_htn_assumed,
+        baseline_control = baseline_control_no_diabetes,
+        target_control = no_diabetes_target,
+        control_gap_requested, control_gap_used,
+        allocation_method = fifelse(
+          id %in% c("bp_no_diabetes_only", "bp_combined"),
+          allocation_method_no_diabetes, "inactive_at_baseline"
+        )
+      )],
+      x[, .(
+        scenario_id = id, location, sex,
+        subgroup = "htn_diabetes",
+        baseline_year = 2025L, scaleup_start_year = 2026L,
+        target_year = 2030L, population_2025,
+        htn_population_2025 = htn_population_diabetes,
+        diabetes_share_among_htn_assumed,
+        baseline_control = baseline_control_diabetes,
+        target_control = diabetes_target_rate,
+        control_gap_requested, control_gap_used,
+        allocation_method = fifelse(
+          id %in% c("bp_diabetes_only", "bp_combined"),
+          allocation_method_diabetes, "inactive_at_baseline"
+        )
+      )]
+    )
+  }))
+  targets[, `:=`(
+    annual_control_increment = (target_control - baseline_control) /
+      (target_year - baseline_year),
+    controlled_2025 = htn_population_2025 * baseline_control,
+    controlled_2030 = htn_population_2025 * target_control
+  )]
+  targets[, additional_controlled_2030 := controlled_2030 - controlled_2025]
+  setcolorder(targets, c(
+    "scenario_id", "location", "sex", "subgroup", "baseline_year",
+    "scaleup_start_year", "target_year", "population_2025",
+    "htn_population_2025", "diabetes_share_among_htn_assumed",
+    "baseline_control", "target_control", "annual_control_increment",
+    "controlled_2025", "controlled_2030", "additional_controlled_2030",
+    "allocation_method", "control_gap_requested", "control_gap_used"
+  ))
+
+  scenario_summary <- targets[, .(
+    achieved_total = sum(additional_controlled_2030),
+    additional_controlled_no_diabetes =
+      sum(additional_controlled_2030[subgroup == "htn_no_diabetes"]),
+    additional_controlled_diabetes =
+      sum(additional_controlled_2030[subgroup == "htn_diabetes"])
+  ), by = scenario_id]
+  # For modes 1 and 2 the combined additional controlled equals policy_target
+  # exactly; for mode 3 it may exceed it, so the combined scenario_target is the
+  # achieved total and 150M is enforced only as a floor below.
+  combined_target <- if (allocation_mode == "diabetes_floor_uncapped_total") {
+    delta_d + delta_n
+  } else {
+    policy_target
+  }
+  scenario_summary[, scenario_target := fcase(
+    scenario_id == "baseline", 0,
+    scenario_id == "bp_no_diabetes_only", delta_n,
+    scenario_id == "bp_diabetes_only", delta_d,
+    scenario_id == "bp_combined", combined_target
+  )]
+  scenario_summary[, `:=`(
+    reconciliation_difference = achieved_total - scenario_target,
+    allocation_mode = allocation_mode,
+    diabetes_target = diabetes_target,
+    diabetes_control_2030_effective = diabetes_control_2030_effective,
+    solved_non_diabetes_scale_factor = scale_factor,
+    number_capped_strata = number_capped_strata,
+    number_bounded_gap_strata = sum(x$control_gap_used < 0.15 - 1e-12),
+    number_population_fallback_locations = length(population_fallback_locations),
+    population_fallback_locations =
+      paste(population_fallback_locations, collapse = " | "),
+    number_missing_or_excluded_locations =
+      uniqueN(c(missing$location, excluded_locations)),
+    missing_or_excluded_locations =
+      paste(sort(unique(c(missing$location, excluded_locations))), collapse = " | ")
+  )]
+  setcolorder(scenario_summary, c(
+    "scenario_id", "scenario_target", "achieved_total",
+    "additional_controlled_no_diabetes", "additional_controlled_diabetes",
+    "reconciliation_difference", "allocation_mode", "diabetes_target",
+    "diabetes_control_2030_effective", "solved_non_diabetes_scale_factor",
+    "number_capped_strata", "number_bounded_gap_strata",
+    "number_population_fallback_locations", "population_fallback_locations",
+    "number_missing_or_excluded_locations", "missing_or_excluded_locations"
+  ))
+
+  combined <- scenario_summary[scenario_id == "bp_combined"]
+  if (allocation_mode == "diabetes_floor_uncapped_total") {
+    if (combined$achieved_total < policy_target - tolerance_people) {
+      stop("Uncapped-total Aim 2 allocation fell below the 150-million floor.")
+    }
+  } else if (abs(combined$reconciliation_difference) > tolerance_people) {
+    stop("Combined Aim 2 target does not reconcile to 150 million.")
+  }
+  if (anyNA(targets[, .(scenario_id, location, sex, subgroup)]) ||
+      anyDuplicated(targets,
+                    by = c("scenario_id", "location", "sex", "subgroup"))) {
+    stop("Long Aim 2 target table has missing or duplicate keys.")
+  }
+  if (any(targets$baseline_control < 0 | targets$baseline_control > 1 |
+          targets$target_control < 0 | targets$target_control > 1) ||
+      any(targets$htn_population_2025 < 0 |
+          targets$additional_controlled_2030 < -tolerance_people)) {
+    stop("Long Aim 2 target table failed rate or non-negative-count checks.")
+  }
+
+  list(targets = targets, summary = scenario_summary, strata = x)
+}
+
+# Tests set this option to FALSE so sourcing exposes only the pure helpers.
+if (isTRUE(getOption("who_cvd.execute_04", TRUE))) {
+
+aim2_prepared <- aim2_prepare_strata(wd_data, wd_raw)
+data.in <- aim2_prepared$data_in
+
+# allocation_mode default = "diabetes_capped_to_target" (see aim2_build_target_tables
+# header). Override here (or via getOption below) to switch policy modes.
+aim2_allocation_mode <- getOption(
+  "who_cvd.aim2_allocation_mode", "diabetes_capped_to_target"
+)
+aim2_outputs <- aim2_build_target_tables(
+  aim2_prepared$strata,
+  aim2_prepared$missing,
+  aim2_prepared$excluded_locations,
+  population_fallback_locations = aim2_prepared$population_fallback_locations,
+  allocation_mode = aim2_allocation_mode
 )
 
-# keep target control rates baseline htncov2, _aspirational,_ambitious, and _progress
-aim2_loc <- aim2_loc[, .(location,htncov2, htncov2_aspirational, htncov2_ambitious, htncov2_progress,htn_ctrl_diabetes)]
+# Write only after all feasibility and reconciliation checks have passed. This
+# prevents a failed run from overwriting the last valid processed target file.
+fwrite(aim2_outputs$targets,
+       paste0(wd_data, "htn_control_targets_by_loc.csv"))
+fwrite(aim2_outputs$summary,
+       paste0(wd_data, "htn_control_targets_summary.csv"))
 
-# save .csv for input in running the model
-fwrite(aim2_loc, paste0(wd_data,"htn_control_targets_by_loc.csv"))
+local({
+  s <- aim2_outputs$summary[scenario_id == "bp_combined"]
+  cat(sprintf(paste0(
+    "Aim 2 BP target [%s]: %.6f million additional controlled people using ",
+    "fixed 2025 denominators (diabetes %.3fM + no-diabetes %.3fM; achieved ",
+    "diabetes control %.3f).\n"),
+    s$allocation_mode, s$achieved_total / 1e6,
+    s$additional_controlled_diabetes / 1e6,
+    s$additional_controlled_no_diabetes / 1e6,
+    s$diabetes_control_2030_effective))
+  if (length(aim2_prepared$population_fallback_locations)) {
+    cat("  Population 2023 fallback (no 2025 UNWPP row):",
+        paste(aim2_prepared$population_fallback_locations, collapse = ", "), "\n")
+  }
+  if (nrow(aim2_prepared$missing)) {
+    cat("  Excluded (missing 2025 inputs):",
+        paste(aim2_prepared$missing$location, collapse = ", "), "\n")
+  }
+})
 
 
 #...........................................................
@@ -307,7 +772,10 @@ rm(aim2_loc_full_s, diab_cols_s)
 # (constant across all years; equals the baseline pp_cov from FDC_coverage_data_statints_pp.csv)
 # NA statins_current means no coverage data for that location -> treated as 0 in the model
 
-dt_statin_s <- readRDS(file = paste0(wd_data, "Statins/statin_data.rds"))
+# NOTE: statin_data.rds lives at the processed root (as read by both 06 scripts);
+# the previous "Statins/" subfolder prefix did not exist here and aborted script 04
+# end-to-end. Minimal path correction only (no change to statin logic).
+dt_statin_s <- readRDS(file = paste0(wd_data, "statin_data.rds"))
 
 statin_base_s <- unique(
   dt_statin_s[, .(location, statins_baseline_2025 = statins_current)],
@@ -494,3 +962,4 @@ rm(statins_targets_s, pop40_2025_s, aim2_diab_s, iso3_map_s, statin_base_s,
    sec_prev_s, prim_prev_s, prop_athero_stroke_s,
    af_ihd_def_s, af_istroke_def_s, diab_col_use_s,
    col_order_s, earliest_yr_s)
+}

@@ -36,7 +36,9 @@ stopifnot(
   "output/slides/ not found — knit aim1_report.Rmd first." =
     dir.exists(slides_dir),
   "sl_scalars.rds missing — knit aim1_report.Rmd first." =
-    file.exists(paste0(slides_dir, "sl_scalars.rds"))
+    file.exists(paste0(slides_dir, "sl_scalars.rds")),
+  "sl_control_summary.rds missing — knit aim1_report.Rmd first." =
+    file.exists(paste0(slides_dir, "sl_control_summary.rds"))
 )
 
 # ---- SL-01: Scalars ----------------------------------------------------------
@@ -57,6 +59,11 @@ sl_dt_cause    <- readRDS(paste0(slides_dir, "sl_dt_cause.rds"))
 sl_dt_age      <- readRDS(paste0(slides_dir, "sl_dt_age.rds"))
 sl_dt_asmr     <- readRDS(paste0(slides_dir, "sl_dt_asmr.rds"))
 sl_dt_annual   <- readRDS(paste0(slides_dir, "sl_dt_annual.rds"))
+
+# ---- Control-target summary (150M split; built in aim1_report.Rmd) ----------
+# All values are pre-computed in the report; the slides only display them.
+sl_control_summary <- readRDS(paste0(slides_dir, "sl_control_summary.rds"))
+sl_control_scalars <- readRDS(paste0(slides_dir, "sl_control_scalars.rds"))
 
 # ---- SL-09 to SL-14: PNG paths ----------------------------------------------
 png_trend       <- paste0(slides_dir, "sl_fig_baseline_trend.png")
@@ -106,18 +113,18 @@ fmt_M <- function(x, digits = 1)
   formatC(round(x / 1e6, digits), format = "f", digits = digits, big.mark = ",")
 
 int_order <- c(
-  "HTN Control (General)",
+  "HTN Control (No Diabetes)",
   "HTN Control (Diabetes)",
   "Improved Statin Uptake",
   "All Interventions"
 )
 
 int_cols <- c(
-  "HTN Control (General)"  = "#1f78b4",
-  "HTN Control (Diabetes)" = "#a6cee3",
-  "Improved Statin Uptake" = "#e31a1c",
-  "All Interventions"      = "#6a3d9a",
-  "Business-as-Usual"      = "#999999"
+  "HTN Control (No Diabetes)" = "#1f78b4",
+  "HTN Control (Diabetes)"    = "#a6cee3",
+  "Improved Statin Uptake"    = "#e31a1c",
+  "All Interventions"         = "#6a3d9a",
+  "Business-as-Usual"         = "#999999"
 )
 
 knitr::opts_chunk$set(
@@ -200,7 +207,7 @@ design <- data.table(
 kable(design, col.names=c("Component","Detail"),
       align="ll", escape=FALSE, booktabs=TRUE, format="latex") |>
   kable_styling(latex_options=c("striped","hold_position"),
-                font_size=8, full_width=TRUE) |>
+                font_size=8, full_width=FALSE) |>
   column_spec(1, bold=TRUE, width="3.2cm") |>
   column_spec(2, width="9.8cm") |>
   row_spec(4, background="#dbeafe")
@@ -263,7 +270,7 @@ ds <- data.table(
 kable(ds, align="lll", escape=FALSE, booktabs=TRUE, format="latex",
       col.names=c("Source","Variables extracted","Role in model")) |>
   kable_styling(latex_options=c("striped","hold_position"),
-                font_size=8, full_width=TRUE) |>
+                font_size=8, full_width=FALSE) |>
   column_spec(1, bold=TRUE, width="2.8cm") |>
   column_spec(2, width="6.8cm") |>
   column_spec(3, width="3.4cm")
@@ -278,81 +285,126 @@ kable(ds, align="lll", escape=FALSE, booktabs=TRUE, format="latex",
 ## Four WHO Priority Targets
 
 ```{r scenario-table, results='asis'}
+# Split values are pre-computed in aim1_report.Rmd (sl_control_scalars); the
+# slide only displays them — no recomputation or hard-coding here.
+add_nd_M <- fmt_M(sl_control_scalars$add_no_diabetes)
+add_d_M  <- fmt_M(sl_control_scalars$add_diabetes)
+add_t_M  <- fmt_M(sl_control_scalars$add_total)
 dt_scen <- data.table(
   N  = 1:4,
   WT = c("150M more with HTN controlled by 2030",
          "$\\geq$50\\% eligible adults on lipid-lowering therapy by 2030",
          "80\\% BP control among diagnosed diabetics by 2030",
          "80\\% availability of validated BP devices"),
-  Sc = c("\\textbf{HTN Control (General)}: $\\approx$ 100M more people with BP control by 2030",
+  Sc = c(paste0("\\textbf{HTN Control (Combined)}: ", add_t_M,
+                "M more controlled = ", add_nd_M, "M without + ", add_d_M,
+                "M with diabetes (mutually exclusive, additive)"),
          "\\textbf{Improved Statin Uptake}: 50\\% coverage by 2030",
-         "\\textbf{HTN Control (Diabetes)}: 80\\% BP control in diabetics by 2030 ($\\approx$ 50M more people with BP control)",
+         paste0("\\textbf{HTN Control (Diabetes)}: 0.80 aspirational ceiling by 2030 (",
+                add_d_M, "M of the 150M)"),
          "Operationally embedded in HTN scenarios (150M Target [1+3])")
 )
 kable(dt_scen, format = "latex", booktabs = TRUE, escape = FALSE,
       col.names = c("\\#", "WHO Target", "Modelled Scenario"), caption = NULL) |>
   kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 7) |>
   column_spec(2, width = "4.5cm") |>
-  column_spec(3, width = "4.5cm")
+  column_spec(3, width = "5.5cm")
 ```
 
 \vspace{4pt}
-\textbf{Combination rule:} $\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}$
+\textbf{Combination rule:} the two BP subgroups combine \emph{additively} as a population mixture, $\varepsilon_{IR,\text{BP}} = 1-(1-w_D)e_N - w_D e_D$; the BP composite then combines multiplicatively with statins, $\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}$.
 
-## HTN Control Targets by 2030 --- Country Distribution
+## The 150 Million Target --- Additional BP Control by Region and Diabetes Status
 
-```{r scenario-targets-plot, fig.height=2.9}
-dt_hbp_targets <- fread(paste0(wd_data,"htn_control_targets_by_loc.csv"))
-dt_long <- melt(
-  dt_hbp_targets,
-  id.vars = "location",
-  measure.vars = c("htncov2", "htncov2_progress"),
-  variable.name = "target_col",
-  value.name   = "target_value"
-)
+```{r scenario-split-plot, fig.height=2.9}
+# Pre-computed in aim1_report.Rmd (sl_control_summary); the slide only displays it.
+csr <- sl_control_summary[scenario_id == "bp_combined" &
+                          subgroup %in% c("htn_no_diabetes", "htn_diabetes") &
+                          region != "Global"]
+csr[, subgroup_lbl := factor(
+  fifelse(subgroup == "htn_no_diabetes", "Without diabetes", "With diabetes"),
+  levels = c("Without diabetes", "With diabetes"))]
+region_ord <- csr[, .(tot = sum(additional_2030)), by = region][order(tot), region]
+csr[, region := factor(region, levels = region_ord)]
 
-# Clean scenario labels
-dt_long[, scenario_lbl := factor(
-  ifelse(target_col == "htncov2", "Current",
-         "Progress"),
-  levels = c("Current","Progress")
-)]
-
-ggplot(dt_long,
-       aes(x = scenario_lbl,
-           y = target_value*100,
-           fill = scenario_lbl)) +
-  
-  geom_boxplot(alpha=0.75, outlier.size=1, width=0.45) +
-  
-  annotate("rect",
-           xmin=1.5, xmax=2.5,
-           ymin=0, ymax=100,
-           fill="#2171b5",
-           alpha=0.07) +
-  
-  annotate("text",
-           x=2, y=97,
-           label="Headline scenario",
-           size=3,
-           color="#2171b5",
-           fontface="bold") +
-  
-  scale_y_continuous(limits=c(0,100), expand=c(0,0)) +
-  
+ggplot(csr, aes(x = additional_2030 / 1e6, y = region, fill = subgroup_lbl)) +
+  geom_col(width = 0.7) +
+  scale_fill_manual(values = c("Without diabetes" = "#1f78b4",
+                               "With diabetes"    = "#a6cee3"), name = NULL) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.05))) +
   labs(
-    title="Distribution of Country-Level HTN Control Targets",
-    subtitle="Current vs 150M scenario | scale-up starts 2026",
-    x=NULL,
-    y="HTN Control Rate (%)"
+    title = "150 Million Additional People with BP Control by 2030",
+    subtitle = paste0("By WHO region and diabetes status | fixed 2025 population | ",
+                      "global total = ", fmt_M(sl_control_scalars$add_total),
+                      "M (", fmt_M(sl_control_scalars$add_no_diabetes),
+                      "M without + ", fmt_M(sl_control_scalars$add_diabetes),
+                      "M with diabetes)"),
+    x = "Additional people controlled (millions)", y = NULL
   ) +
-  
-  theme_minimal(base_size=11) +
-  theme(
-    plot.title = element_text(face="bold"),
-    panel.grid.minor = element_blank()
-  )
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom", plot.title = element_text(face = "bold"),
+        panel.grid.minor = element_blank())
 ```
+
+## HTN Control Target: 150 Million by WHO Region
+
+```{r scenario-region-table, results='asis'}
+region_order <- c("Africa", "Americas", "Eastern Mediterranean", "Europe",
+                  "South-East Asia", "Western Pacific", "Global")
+rc <- sl_control_summary[scenario_id == "bp_combined" & subgroup == "total"]
+rc[, region := factor(region, levels = region_order)]
+setorder(rc, region)
+rc_disp <- rc[, .(
+  Region                 = as.character(region),
+  `HTN pop 2025 (M)`     = fmt_M(htn_pop_2025),
+  `Controlled 2025 (M)`  = fmt_M(controlled_2025),
+  `Cov.\\ 2025`          = paste0(formatC(coverage_2025 * 100, format = "f", digits = 1), "\\%"),
+  `Controlled 2030 (M)`  = fmt_M(controlled_2030),
+  `Cov.\\ 2030`          = paste0(formatC(coverage_2030 * 100, format = "f", digits = 1), "\\%"),
+  `Added (M)`            = fmt_M(additional_2030),
+  `+\\%`                 = paste0(formatC(pct_increase, format = "f", digits = 1), "\\%")
+)]
+kable(rc_disp, format = "latex", booktabs = TRUE, escape = FALSE,
+      align = c("l", rep("r", 7)), caption = NULL) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 7) |>
+  row_spec(0, bold = TRUE) |>
+  row_spec(which(rc_disp$Region == "Global"),
+           bold = TRUE, color = "white", background = "#2166ac")
+```
+
+\footnotesize Coverage rates and 2030 counts use the fixed 2025 hypertensive population; regional additions sum to exactly 150 million.
+
+## HTN Control Target: 150 Million by WHO Region \emph{and} Diabetes Subgroup
+
+```{r scenario-region-subgroup-table, results='asis'}
+# Disaggregate the 150M BOTH ways — by WHO region and by mutually exclusive
+# subgroup — with totals. Values come from sl_control_summary (no recomputation).
+cs   <- sl_control_summary[scenario_id == "bp_combined"]
+addw <- dcast(cs[subgroup %in% c("htn_no_diabetes", "htn_diabetes", "total")],
+              region ~ subgroup, value.var = "additional_2030")
+tot  <- cs[subgroup == "total", .(region, coverage_2030, pct_increase)]
+m <- merge(addw, tot, by = "region")
+m[, region := factor(region, levels = region_order)]
+setorder(m, region)
+rsw_disp <- m[, .(
+  Region        = as.character(region),
+  `No diabetes` = fmt_M(htn_no_diabetes),
+  Diabetes      = fmt_M(htn_diabetes),
+  Total         = fmt_M(total),
+  `Cov.\\ 2030` = paste0(formatC(coverage_2030 * 100, format = "f", digits = 1), "\\%"),
+  `+\\%`        = paste0(formatC(pct_increase, format = "f", digits = 1), "\\%")
+)]
+kable(rsw_disp, format = "latex", booktabs = TRUE, escape = FALSE,
+      align = c("l", rep("r", 5)), caption = NULL) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 8) |>
+  add_header_above(c(" " = 1, "Additional controlled 2030 (M)" = 3, " " = 2),
+                   bold = TRUE) |>
+  row_spec(0, bold = TRUE) |>
+  row_spec(which(rsw_disp$Region == "Global"),
+           bold = TRUE, color = "white", background = "#2166ac")
+```
+
+\footnotesize Additional people with BP control by 2030, disaggregated by WHO region \emph{and} mutually exclusive diabetes status (fixed 2025 population). Both the regional totals and the two subgroup totals sum to exactly 150 million.
 
 <!-- ======================================================================
      MODEL
@@ -432,16 +484,17 @@ ggplot() +
   \item Static log-normal BP distribution: no secular trend, no endogenous updating as coverage rises
   \item Treatment eligibility: $\geq$140 mmHg (5 hypertensive bins)
   \item GBD RRs anchor bin-level baseline incidence
-  \item \alert{Diabetes subgroup: base control rates assumed 15 percentage points higher than general HTN}
-  \item \alert{Diabetes subgroup: multiplicative reduction blended with general HTN effects using diabetes prevalence and high blood pressure prevalence as weights}
+  \item \alert{Hypertensives split into mutually exclusive no-diabetes and diabetes subgroups; a person with diabetes is counted only in the diabetes subgroup}
+  \item \alert{Baseline control assumed 15 percentage points higher with diabetes, preserving the observed overall rate: $c_N = c - w_D(0.15)$, $c_D = c + (1-w_D)(0.15)$}
+  \item \alert{Subgroup-specific Ettehad effect sizes applied to each subgroup's own share, then combined \emph{additively} as a population mixture (no cross-term)}
 \end{itemize}
 
 \medskip
 \textbf{Combination of interventions}
 \begin{itemize}\footnotesize
-  \item Effects combine \textbf{multiplicatively} across all interventions
-  \item BP-related effects combined first, then with statins
-  \item No saturation, synergy, or interaction terms beyond multiplicative combination
+  \item The two BP subgroups combine \textbf{additively}: $\varepsilon_{IR,\text{BP}} = 1-(1-w_D)e_N - w_D e_D$ (one composite BP effect, no multiplicative cross-term)
+  \item The BP composite then combines \textbf{multiplicatively} with statins
+  \item No saturation, synergy, or interaction terms beyond this combination
 \end{itemize}
 \end{column}
 \end{columns}
@@ -705,7 +758,7 @@ The combined WHO target package generates large health gains, with most benefits
 <!-- \medskip -->
 <!-- \textbf{By individual intervention} -->
 <!-- \begin{itemize}\footnotesize -->
-<!--   \item HTN Control (General): \texttt{[requires sl\_scalars\$total\_dalys\_bp]} DALYs -->
+<!--   \item HTN Control (No Diabetes): \texttt{[requires sl\_scalars\$total\_dalys\_bp]} DALYs -->
 <!--   \item HTN Control (Diabetes): \texttt{[requires sl\_scalars\$total\_dalys\_bpd]} DALYs -->
 <!--   \item Improved Statin Uptake: \texttt{[requires sl\_scalars\$total\_dalys\_stat]} DALYs -->
 <!-- \end{itemize} -->
@@ -1056,8 +1109,10 @@ $C_{\text{agg}}^{\Delta}$ & Population-weighted incremental coverage (hypertensi
 $P(\text{BP}_{\text{cat}})$ & BP category population distribution (8 bins) \\
 $RR_{\text{GBD}}$ & GBD relative risk per 10 mmHg SBP increase \\
 $\alpha_{\text{inc}}$ & Incidence normalization factor \\
-$E_{\text{trial}}$, $E_{\text{DM}}$, $E_{\text{noDM}}$ & Ettehad effect sizes (blended, DM-only, non-DM) \\
-$w_{\text{DM}}$ & Diabetes prevalence weight (general HTN: 0.10; DM subgroup: 1.0) \\
+$E_{D}$, $E_{N}$ & Ettehad effect sizes (diabetes, no-diabetes subgroups) \\
+$e_{g,t}$ & Baseline-adjusted incremental effect for subgroup $g\in\{N,D\}$ \\
+$w_{D}$ & Diabetes share among hypertensives ($=P(D\mid H)$, mixture weight) \\
+$c_N$, $c_D$ & Baseline control without / with diabetes ($c_D - c_N = 0.15$) \\
 $\rho_{CF,c}$ & CF reduction factor per unit incremental coverage \\
 $T_{\text{start}}$, $T_{\text{end}}$ & Scale-up start (2026) \& end (2030) \\
 \bottomrule
@@ -1092,7 +1147,7 @@ steps <- data.table(
   Action=c(
     "Baseline BP distribution $P(\\text{BP}_{\\text{cat}})$ without treatment (rx$\\,=\\,0$)",
     "GBD relative risks per 10 mmHg SBP $\\to$ bin-specific incidence $IR_{\\text{bin}}$",
-    "Diabetes-weighted Ettehad trial effect sizes $E_{\\text{trial}}$ per BP bin $\\times$ cause",
+    "Subgroup-specific Ettehad effect sizes $E_N, E_D$ (no-diabetes, diabetes) per BP bin $\\times$ cause",
     "Linear coverage scale-up from $C_0$ to $C_{\\text{target}}$, \\textbf{starting 2026}",
     "Coverage adjustment: $E_{\\text{adj}} = E_{\\text{trial}}(C_t - C_0)\\,/\\,(1 - E_{\\text{trial}}\\,C_0)$",
     "New bin incidence: $IR_{\\text{bin,new}} = IR_{\\text{bin}} \\times (1 - E_{\\text{adj}})$",
@@ -1111,7 +1166,7 @@ steps <- data.table(
 kable(steps, col.names=c("","Action","Output"),
       align="cll", escape=FALSE, booktabs=TRUE, format="latex") |>
   kable_styling(latex_options=c("striped","hold_position"),
-                font_size=7.5, full_width=TRUE) |>
+                font_size=7.5, full_width=FALSE) |>
   column_spec(1, bold=TRUE, width="0.5cm") |>
   column_spec(2, width="9.5cm") |>
   column_spec(3, italic=TRUE, width="2.8cm") |>
@@ -1162,38 +1217,35 @@ Hemorrhagic stroke & 0.76 \\ HHD & 0.20 \\
 \end{column}
 \end{columns}
 
-## HTN Control (Diabetes Subgroup)
+## HTN Control: Mutually Exclusive Diabetes / No-Diabetes Subgroups
 \footnotesize
 \begin{columns}[T]
 \begin{column}{0.52\textwidth}
-\textbf{WHO Target:} 80\% BP control among diagnosed diabetics by 2030
+\textbf{Two mutually exclusive, exhaustive subgroups} of the hypertensive population; each uses its own Ettehad effect size applied \emph{only} to its own share.
 
 \medskip
-\textbf{Same 9-step pipeline as general HTN.} Key distinction: diabetes-specific Ettehad effect sizes ($w_{\text{DM}} = 1$):
+\textit{Subgroup-specific incremental effect ($g \in \{N,D\}$):}
+$$e_{g,t} = \frac{E_g\,(c_{g,t} - c_{g,0})}{1 - E_g\,c_{g,0}}$$
 
-\medskip
-\textit{General HTN (DM-blended):}
-$$E_{\text{trial}} = (1-w_{\text{DM}})\,E_{\text{noDM}} + w_{\text{DM}}\,E_{\text{DM}},\quad w_{\text{DM}}=0.10$$
+\textit{Baseline decomposition (preserves observed rate $c$):}
+$$c_N = c - w_D(0.15),\qquad c_D = c + (1-w_D)(0.15)$$
 
-\textit{Diabetes subgroup (DM-only):}
-$$E_{\text{trial}}^{\text{DM}} = E_{\text{DM}}$$
-
-\textit{Coverage scale-up to $C_{\text{target}}^{\text{DM}} = 0.80$:}
-$$C_t^{\text{DM}} = C_0^{\text{DM}} + \Delta C^{\text{DM}}\;\min\!\left[\frac{t-2026}{4},\,1\right]$$
+\textit{Diabetes coverage scale-up toward the 0.80 ceiling:}
+$$c_{D,t} = c_{D,0} + \Delta c_D\;\min\!\left[\tfrac{t-2026}{4},\,1\right]$$
 \end{column}
 
 \begin{column}{0.46\textwidth}
-\textbf{Effect ratios} (same structure as general HTN):
-$$\varepsilon_{IR,\text{DM}}(a,s,c,t) = \frac{IR^{\text{DM}}_{\text{new}}}{IR_{\text{original}}}$$
-$$\varepsilon_{CF,\text{DM}} = 1 - \rho_{CF,c} \times C_{\text{agg}}^{\Delta,\text{DM}}$$
+\textbf{Additive population mixture} ($w_D$ = diabetes share among hypertensives), \emph{one} composite BP effect --- no cross-term:
+$$\varepsilon_{IR,\text{BP}} = 1 - (1-w_D)\,e_{N,t} - w_D\,e_{D,t}$$
+$$\Delta c_t = (1-w_D)\,\Delta c_{N,t} + w_D\,\Delta c_{D,t}$$
 
-\begin{exampleblock}{Why a separate module?}
-\small People with diabetes have higher CVD risk at any BP level. DM-specific Ettehad effects are larger (especially for stroke) than blended effects at $w_{\text{DM}}=0.10$.
+\begin{exampleblock}{Why mutually exclusive?}
+\small People with diabetes have higher baseline control and larger DM-specific Ettehad effects. Counting each hypertensive once (diabetes \emph{or} not) avoids double-counting and lets the two subgroup additions sum to exactly 150 million.
 \end{exampleblock}
 
-\begin{alertblock}{When combined with general HTN}
-\small Effects multiply (no double-counting via incremental coverage formulation):
-$$\varepsilon_{IR,\text{BP,total}} = \varepsilon_{IR,\text{gen}} \times \varepsilon_{IR,\text{DM}}$$
+\begin{alertblock}{Combined with statins}
+\small The BP composite then combines multiplicatively with the (independent) statin effect:
+$$\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{stat}}$$
 \end{alertblock}
 \end{column}
 \end{columns}

@@ -1,3 +1,244 @@
+# Aim 2 BP-control helpers ----------------------------------------------------
+# Defined before the execution guard so tests can source them without loading
+# the full model or starting the parallel cluster.
+
+aim2_control_trajectory <- function(year, baseline_control, target_control,
+                                    baseline_year = 2025L,
+                                    target_year = 2030L) {
+  if (anyNA(c(year, baseline_control, target_control)) ||
+      any(baseline_control < 0 | baseline_control > 1 |
+          target_control < 0 | target_control > 1)) {
+    stop("Aim 2 trajectory inputs must be non-missing rates in [0, 1].")
+  }
+  fraction <- pmin(1, pmax(0, (year - baseline_year) /
+                             (target_year - baseline_year)))
+  baseline_control + fraction * (target_control - baseline_control)
+}
+
+aim2_incremental_effect <- function(effect_size, coverage_t, coverage_0) {
+  denominator <- 1 - effect_size * coverage_0
+  if (anyNA(c(effect_size, coverage_t, coverage_0)) ||
+      any(coverage_t < coverage_0 - 1e-12) ||
+      any(coverage_0 < 0 | coverage_0 > 1 |
+          coverage_t < 0 | coverage_t > 1) ||
+      any(denominator <= 0)) {
+    stop("Invalid subgroup coverage or effect-size input for Aim 2.")
+  }
+  effect_size * (coverage_t - coverage_0) / denominator
+}
+
+aim2_subgroup_incidence_multiplier <- function(effect_no_diabetes,
+                                                effect_diabetes,
+                                                diabetes_share) {
+  if (anyNA(c(effect_no_diabetes, effect_diabetes, diabetes_share)) ||
+      any(diabetes_share < 0 | diabetes_share > 1)) {
+    stop("Diabetes shares used in the Aim 2 mixture must lie in [0, 1].")
+  }
+  1 - (1 - diabetes_share) * effect_no_diabetes -
+    diabetes_share * effect_diabetes
+}
+
+validate_htn_target_table <- function(targets) {
+  required <- c(
+    "scenario_id", "location", "sex", "subgroup", "baseline_year",
+    "scaleup_start_year", "target_year", "baseline_control",
+    "target_control", "diabetes_share_among_htn_assumed"
+  )
+  missing_columns <- setdiff(required, names(targets))
+  if (length(missing_columns)) {
+    stop("HTN target table is missing: ", paste(missing_columns, collapse = ", "))
+  }
+  if (anyNA(targets[, .(scenario_id, location, sex, subgroup)]) ||
+      anyDuplicated(targets,
+                    by = c("scenario_id", "location", "sex", "subgroup"))) {
+    stop("HTN target table has missing or duplicate keys.")
+  }
+  expected_subgroups <- c("htn_no_diabetes", "htn_diabetes")
+  key_check <- targets[, .(
+    n_rows = .N,
+    n_subgroups = uniqueN(subgroup),
+    correct_subgroups = setequal(subgroup, expected_subgroups)
+  ), by = .(scenario_id, location, sex)]
+  if (key_check[, any(n_rows != 2L | n_subgroups != 2L | !correct_subgroups)]) {
+    stop("Each scenario-location-sex key must contain exactly both HTN subgroups.")
+  }
+  if (any(targets$baseline_control < 0 | targets$baseline_control > 1 |
+          targets$target_control < 0 | targets$target_control > 1)) {
+    stop("HTN target-table rates must lie in [0, 1].")
+  }
+  if (any(targets$baseline_year != 2025L |
+          targets$scaleup_start_year != 2026L |
+          targets$target_year != 2030L)) {
+    stop("Aim 2 trajectories require baseline 2025, scale-up start 2026, and target 2030.")
+  }
+  invisible(TRUE)
+}
+
+calculate_antihypertensive_split <- function(intervention_rates,
+                                             Country,
+                                             DT.in,
+                                             dt_gbd_rr,
+                                             target_rows,
+                                             active_no_diabetes = TRUE,
+                                             active_diabetes = TRUE,
+                                             etihad_rr_table = ETIHAD_RR_BIN) {
+  cat(" - Calculating mutually exclusive antihypertensive subgroup impacts\n")
+  validate_htn_target_table(target_rows)
+  if (uniqueN(target_rows$location) != 1L ||
+      unique(target_rows$location) != Country ||
+      uniqueN(target_rows$scenario_id) != 1L) {
+    stop("Target rows must contain exactly one country and one scenario.")
+  }
+
+  targets_wide <- dcast(
+    target_rows,
+    location + sex + baseline_year + scaleup_start_year + target_year ~ subgroup,
+    value.var = c("baseline_control", "target_control",
+                  "diabetes_share_among_htn_assumed")
+  )
+  setnames(
+    targets_wide,
+    c("baseline_control_htn_no_diabetes",
+      "baseline_control_htn_diabetes",
+      "target_control_htn_no_diabetes",
+      "target_control_htn_diabetes"),
+    c("baseline_control_no_diabetes", "baseline_control_diabetes",
+      "target_control_no_diabetes", "target_control_diabetes")
+  )
+  redundant_share_col <- "diabetes_share_among_htn_assumed_htn_diabetes"
+  share_col <- "diabetes_share_among_htn_assumed_htn_no_diabetes"
+  if (any(abs(targets_wide[[share_col]] -
+              targets_wide[[redundant_share_col]]) > 1e-12)) {
+    stop("Target-table diabetes shares differ between subgroup rows.")
+  }
+  targets_wide[, diabetes_share_among_htn_assumed := get(share_col)]
+  targets_wide[, c(share_col, redundant_share_col) := NULL]
+  if (!active_no_diabetes) {
+    targets_wide[, target_control_no_diabetes := baseline_control_no_diabetes]
+  }
+  if (!active_diabetes) {
+    targets_wide[, target_control_diabetes := baseline_control_diabetes]
+  }
+
+  bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
+  dt_baseline <- calculate_baseline_incidence_gbd(
+    copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
+  )
+
+  diabetes_age <- expand_to_single_year_ages(DT.in)
+  diabetes_age <- unique(diabetes_age[, .(
+    location, Year, age, sex, bp_cat,
+    diabetes_share_among_htn_assumed_age_specific = diabetes
+  )])
+  setnames(diabetes_age, "Year", "year")
+  if (anyNA(diabetes_age$diabetes_share_among_htn_assumed_age_specific) ||
+      any(diabetes_age$diabetes_share_among_htn_assumed_age_specific < 0 |
+          diabetes_age$diabetes_share_among_htn_assumed_age_specific > 1)) {
+    stop(paste0(
+      "The age-specific diabetes variable is interpreted as overall-population ",
+      "prevalence and, by assumption, as P(D|H); values must lie in [0, 1]."
+    ))
+  }
+  dt_baseline <- merge(
+    dt_baseline, diabetes_age,
+    by = c("location", "year", "age", "sex", "bp_cat"), all.x = TRUE
+  )
+  dt_baseline <- merge(dt_baseline, targets_wide,
+                       by = c("location", "sex"), all.x = TRUE)
+  if (anyNA(dt_baseline[, .(
+    baseline_control_no_diabetes, baseline_control_diabetes,
+    target_control_no_diabetes, target_control_diabetes,
+    diabetes_share_among_htn_assumed_age_specific
+  )])) {
+    stop("Missing Aim 2 subgroup target or diabetes-share join in model strata.")
+  }
+
+  lookup_key <- paste(dt_baseline$cause, dt_baseline$bp_cat, sep = "_")
+  table_key <- paste(etihad_rr_table$cause, etihad_rr_table$bp_cat, sep = "_")
+  lookup_index <- match(lookup_key, table_key)
+  if (anyNA(lookup_index)) {
+    missing_keys <- unique(lookup_key[is.na(lookup_index)])
+    stop("Missing Ettehad subgroup effect sizes for: ",
+         paste(missing_keys, collapse = ", "))
+  }
+  dt_baseline[, `:=`(
+    effect_size_no_diabetes =
+      etihad_rr_table$effect_size_nodiabetes[lookup_index],
+    effect_size_diabetes =
+      etihad_rr_table$effect_size_diabetes[lookup_index],
+    control_no_diabetes_t = aim2_control_trajectory(
+      year, baseline_control_no_diabetes, target_control_no_diabetes,
+      baseline_year, target_year
+    ),
+    control_diabetes_t = aim2_control_trajectory(
+      year, baseline_control_diabetes, target_control_diabetes,
+      baseline_year, target_year
+    )
+  )]
+
+  hypertensive_bins <- c("140-149", "150-159", "160-169", "170-179", "180+")
+  dt_baseline[, `:=`(
+    incremental_effect_no_diabetes = 0,
+    incremental_effect_diabetes = 0
+  )]
+  dt_baseline[bp_cat %in% hypertensive_bins, `:=`(
+    incremental_effect_no_diabetes = aim2_incremental_effect(
+      effect_size_no_diabetes, control_no_diabetes_t,
+      baseline_control_no_diabetes
+    ),
+    incremental_effect_diabetes = aim2_incremental_effect(
+      effect_size_diabetes, control_diabetes_t,
+      baseline_control_diabetes
+    )
+  )]
+  dt_baseline[, incidence_multiplier := aim2_subgroup_incidence_multiplier(
+    incremental_effect_no_diabetes,
+    incremental_effect_diabetes,
+    diabetes_share_among_htn_assumed_age_specific
+  )]
+  dt_baseline[, IR_bin_new := IR_bin * incidence_multiplier]
+  dt_baseline[, IR_new := sum(IR_bin_new * prob),
+              by = .(age, sex, location, cause, year)]
+  dt_baseline[, eff_ir := fifelse(IR == 0 & IR_new == 0, 1, IR_new / IR)]
+
+  dt_baseline[, coverage_delta_weighted :=
+                (1 - diabetes_share_among_htn_assumed_age_specific) *
+                  (control_no_diabetes_t - baseline_control_no_diabetes) +
+                diabetes_share_among_htn_assumed_age_specific *
+                  (control_diabetes_t - baseline_control_diabetes)]
+  coverage_aggregate <- calculate_aggregate_coverage(
+    dt_baseline,
+    hypertensive_bins = hypertensive_bins,
+    bp_col = "bp_cat", coverage_col = "coverage_delta_weighted",
+    prob_col = "prob",
+    grouping_vars = c("age", "sex", "location", "cause", "year"),
+    hypertensive_only = TRUE
+  )
+  dt_baseline <- merge(
+    dt_baseline, coverage_aggregate,
+    by = c("age", "sex", "location", "cause", "year"), all.x = TRUE
+  )
+  dt_baseline[is.na(coverage_agg), coverage_agg := 0]
+  cf_etihad <- data.table(
+    cause = c("ihd", "istroke", "hstroke", "hhd", "aod"),
+    cf_reduction_per_control = c(0.24, 0.36, 0.76, 0.20, 0.047)
+  )
+  dt_baseline <- merge(dt_baseline, cf_etihad, by = "cause", all.x = TRUE)
+  dt_baseline[, CF_new := CF * (1 - cf_reduction_per_control * coverage_agg)]
+  dt_baseline[cause == "aod" & age < 60, CF_new := CF]
+  dt_baseline[, eff_cf := fifelse(CF == 0 & CF_new == 0, 1, CF_new / CF)]
+
+  dt_final <- unique(dt_baseline[, .(
+    age, sex, location, cause, year,
+    IR = IR_new, CF = CF_new,
+    BG.mx, BG.mx.all, PREVt0, DIS.mx.t0, Nx, ALL.mx,
+    eff_ir, eff_cf
+  )])
+  setorder(dt_final, year, sex, location, cause, age)
+  dt_final
+}
+
+if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
 
 # #...........................................................
 # # Interventions and Targets ----
@@ -438,14 +679,11 @@ apply_coverage_adjustment <- function(effect_size,
 ## Anti hypertensive therapy ----
 #...........................................................
 
-dt_hbp_control <- readRDS(file = paste0(wd_data,"hbp_control_data.rds"))
-
-
 # For aim 2 (150 million more controlled people) upload targets file
 
 dt_hbp_targets <- fread(paste0(wd_data,"htn_control_targets_by_loc.csv"))
 
-calculate_antihypertensive_impact_etihad <- function(intervention_rates, 
+calculate_antihypertensive_impact_etihad_legacy_do_not_use <- function(intervention_rates,
                                                      Country, 
                                                      DT.in,
                                                      dt_gbd_rr,
@@ -454,6 +692,10 @@ calculate_antihypertensive_impact_etihad <- function(intervention_rates,
                                                      start_year = 2026,
                                                      target_year = 2050,
                                                      baseline_ctrl = 0) {
+  stop(paste0(
+    "Deprecated for Aim 2: use calculate_antihypertensive_split(), which ",
+    "keeps diabetes and non-diabetes populations mutually exclusive."
+  ))
   cat(" - Calculating antihypertensive impact using ETIHAD effect sizes\n")
   
   # Clamp baseline control to [0,1]
@@ -1197,12 +1439,10 @@ calculate_statins_impact <- function(dt_statin_scenarios,
 # adherence <- 1
 # prop_athero_stroke <- 0.6
 
-project.all <- function(Country, 
-                        interventions = c("antihypertensive", "sodium", "tfa", "statins"),
-                        #explicit hypertension control parameters
-                        target_control,
-                        control_start_year,
-                        control_target_year,
+project.all <- function(Country,
+                        interventions = c("antihypertensive_no_diabetes",
+                                          "antihypertensive_diabetes"),
+                        htn_scenario_id,
                         # explicit Statins params
                         statin_target_coverage,
                         statin_start_year,
@@ -1217,11 +1457,7 @@ project.all <- function(Country,
                         # explicit TFA policy parameters (NEW)
                         tfa_target_tfa        = 0,      # target %E from TFA
                         tfa_policy_start_year = 2027,   # first year policy is active
-                        #Implicit hypertension control parameters
-                        drugcov = "p75",  ## this not binding but keep temporally
-                        baseline_ctrl = NULL,   # use provided or extract from dt_hbp_control
-                        dt_hbp_targets = NULL, # optional data.table with country-specific HTN control targets (location, htncov2_2030)
-                        htn_target_col = "htncov2_aspirational",  # NEW: dynamic column
+                        dt_hbp_targets,
                         # implicit statins parameters
                         baseline_statin_coverage = NULL
 ) {
@@ -1232,7 +1468,10 @@ project.all <- function(Country,
   cat("========================================\n\n")
   
   # Validate interventions
-  valid_interventions <- c("antihypertensive", "sodium", "tfa", "statins")
+  valid_interventions <- c(
+    "antihypertensive_no_diabetes", "antihypertensive_diabetes",
+    "sodium", "tfa", "statins"
+  )
   if (!all(interventions %in% valid_interventions)) {
     stop("Invalid intervention(s). Must be one or more of: ", 
          paste(valid_interventions, collapse = ", "))
@@ -1249,19 +1488,6 @@ project.all <- function(Country,
     by = c("iso3", "Year")
   ))
   
-  #...............................................................
-  # Baseline for htn control
-  
-  if (!is.null(baseline_ctrl)) {
-    baseline_ctrl_loc <- baseline_ctrl
-  } else {
-    baseline_ctrl_loc <- dt_hbp_control[
-      year == 2024 & location == Country,
-      mean(baseline_ctrl, na.rm = TRUE)
-    ]
-  }
-  baseline_ctrl_loc <- max(min(baseline_ctrl_loc, 1), 0)
-  
   # Force all AROC-related variables in DT.in to zero (no checks)
   
   DT.in[, c("aroc",
@@ -1273,24 +1499,15 @@ project.all <- function(Country,
             "ideal",
             "drugaroc") := 0]
   
-  #...............................................................
-  # specific targets for htn control
-  
-  # Country-specific HTN target 
-  # Priority: country-specific target > user-defined target > default (0.50)
-  
-  if (!is.null(dt_hbp_targets) &&
-      Country %in% dt_hbp_targets$location &&
-      htn_target_col %in% names(dt_hbp_targets)) {
-    
-    target_control <- dt_hbp_targets[location == Country, get(htn_target_col)]
-    cat("  HTN target: country-specific [", htn_target_col, "] =",
-        round(target_control, 4), "\n")
-    
-  } else {
-    # target_control keeps whatever was passed in
-    cat("  HTN target: user-defined =", round(target_control, 4), "\n")
+  if (is.null(dt_hbp_targets)) stop("The long Aim 2 HTN target table is required.")
+  htn_target_rows <- dt_hbp_targets[
+    location == Country & scenario_id == htn_scenario_id
+  ]
+  if (!nrow(htn_target_rows)) {
+    stop("No Aim 2 target rows for ", Country, " / ", htn_scenario_id, ".")
   }
+  validate_htn_target_table(htn_target_rows)
+  cat("  HTN scenario:", htn_scenario_id, "\n")
   
   #...............................................................
   # Baseline for sodium intervention
@@ -1336,32 +1553,33 @@ project.all <- function(Country,
   intervention_effects <- list()
   
   #..................................
-  ## Apply Antihypertensive Intervention ----
+  ## Apply mutually exclusive antihypertensive interventions ----
   #..................................
   
-  if ("antihypertensive" %in% interventions) {
-    cat("\n=== Applying Antihypertensive Therapy ===\n")
-    
-    # Calculate with treatment using new method
-    intervention_rates_drug <- calculate_antihypertensive_impact_etihad(
-      intervention_rates_bau, 
-      Country, 
-      DT.in, 
-      dt_gbd_rr,
-      # NEW PARAMETERIZATION
-      target_control      = target_control,
-      baseline_ctrl       = baseline_ctrl_loc,
-      drugcov             = drugcov,
-      start_year          = control_start_year,
-      target_year         = control_target_year
+  bp_interventions <- c(
+    "antihypertensive_no_diabetes", "antihypertensive_diabetes"
+  )
+  if (any(bp_interventions %in% interventions)) {
+    cat("\n=== Applying split-population antihypertensive therapy ===\n")
+    intervention_rates_drug <- calculate_antihypertensive_split(
+      intervention_rates = intervention_rates_bau,
+      Country = Country,
+      DT.in = DT.in,
+      dt_gbd_rr = dt_gbd_rr,
+      target_rows = htn_target_rows,
+      active_no_diabetes =
+        "antihypertensive_no_diabetes" %in% interventions,
+      active_diabetes = "antihypertensive_diabetes" %in% interventions
     )
-    
-    # Store effects
-    intervention_effects[["antihypertensive"]] <- 
-      intervention_rates_drug[, .(age, sex, location, cause, year, 
-                                  eff_ir_bp = eff_ir, eff_cf_bp = eff_cf)]
-    
-    applied_interventions <- c(applied_interventions, "BP")
+    intervention_effects[["antihypertensive_split"]] <-
+      intervention_rates_drug[, .(
+        age, sex, location, cause, year,
+        eff_ir_bp = eff_ir, eff_cf_bp = eff_cf
+      )]
+    applied_interventions <- c(
+      applied_interventions,
+      intersect(bp_interventions, interventions)
+    )
   }
   
   #..................................
@@ -1403,21 +1621,20 @@ project.all <- function(Country,
       )
     }
     
-    # Calculate combined multiplicative effects
-    if ("antihypertensive" %in% interventions && "sodium" %in% interventions) {
-      # Both interventions present
+    # The two antihypertensive subgroup effects were already combined once as
+    # an additive population mixture. Sodium remains a separate intervention.
+    has_bp <- any(bp_interventions %in% interventions)
+    if (has_bp && "sodium" %in% interventions) {
       intervention_rates[, `:=`(
         eff_ir = eff_ir_bp * eff_ir_salt,
         eff_cf = eff_cf_bp * eff_cf_salt
       )]
-    } else if ("antihypertensive" %in% interventions) {
-      # Only antihypertensive
+    } else if (has_bp) {
       intervention_rates[, `:=`(
         eff_ir = eff_ir_bp,
         eff_cf = eff_cf_bp
       )]
     } else if ("sodium" %in% interventions) {
-      # Only sodium
       intervention_rates[, `:=`(
         eff_ir = eff_ir_salt,
         eff_cf = eff_cf_salt
@@ -1633,9 +1850,7 @@ b_rates[IR<0, IR:=0]
 
 run_multiple_scenarios <- function(Country,
                                    scenario_list,
-                                   target_control,
-                                   control_start_year,
-                                   control_target_year,
+                                   htn_scenario_id,
                                    statin_target_coverage,
                                    statin_start_year,
                                    statin_target_year,
@@ -1647,10 +1862,7 @@ run_multiple_scenarios <- function(Country,
                                    saltyear2 = 2030,
                                    tfa_target_tfa        = 0,
                                    tfa_policy_start_year = 2027,
-                                   drugcov = "p75",
-                                   baseline_ctrl = NULL,
-                                   dt_hbp_targets = NULL,
-                                   htn_target_col = "htncov2_aspirational",  # NEW
+                                   dt_hbp_targets,
                                    baseline_statin_coverage = NULL) {
   
   results <- list()
@@ -1663,9 +1875,7 @@ run_multiple_scenarios <- function(Country,
     results[[scenario_name]] <- project.all(
       Country             = Country,
       interventions       = scenario_list[[scenario_name]],
-      target_control      = target_control,
-      control_start_year  = control_start_year,
-      control_target_year = control_target_year,
+      htn_scenario_id     = htn_scenario_id,
       statin_target_coverage   = statin_target_coverage,
       statin_start_year        = statin_start_year,
       statin_target_year       = statin_target_year,
@@ -1677,10 +1887,7 @@ run_multiple_scenarios <- function(Country,
       saltyear2 = saltyear2,
       tfa_target_tfa        = tfa_target_tfa,
       tfa_policy_start_year = tfa_policy_start_year,
-      drugcov        = drugcov,
-      baseline_ctrl  = baseline_ctrl,
       dt_hbp_targets = dt_hbp_targets,
-      htn_target_col = htn_target_col,          # passed through
       baseline_statin_coverage = baseline_statin_coverage
     )
   }
@@ -1691,23 +1898,21 @@ run_multiple_scenarios <- function(Country,
 
 
 
-# The three HTN target columns to loop over
-htn_target_cols <- c("htncov2_aspirational", "htncov2_ambitious", "htncov2_progress")
-
-# HTN-only scenarios
+# Diagnostic scenarios use explicit mutually exclusive intervention names.
 scenarios <- list(
   baseline = character(0),
-  bp_only  = "antihypertensive"
+  bp_no_diabetes_only = "antihypertensive_no_diabetes",
+  bp_diabetes_only = "antihypertensive_diabetes",
+  bp_combined = c("antihypertensive_no_diabetes",
+                  "antihypertensive_diabetes")
 )
 
 
+if (isTRUE(getOption("who_cvd.run_aim2_example", FALSE))) {
 all_results <- run_multiple_scenarios(
   Country = "China",
-  scenario_list = scenarios,
-  #explicit hypertension control parameters
-  target_control = 0.5,
-  control_start_year = 2026,
-  control_target_year = 2030,
+  scenario_list = scenarios["bp_combined"],
+  htn_scenario_id = "bp_combined",
   # explicit statins parameters
   statin_target_coverage = 0.60,
   statin_start_year      = 2026,
@@ -1722,13 +1927,10 @@ all_results <- run_multiple_scenarios(
   # explicit TFA parameters (NEW)
   tfa_target_tfa        = 0,    # 0% of energy from TFA
   tfa_policy_start_year = 2028, # <-- flexible start year (2026 lagged two years)
-  #Implicit hypertension control parameters
-  drugcov = "p75",
-  baseline_ctrl       = NULL,
   baseline_statin_coverage = NULL,
-  htn_target_col = "htncov2_ambitious",
   dt_hbp_targets = dt_hbp_targets
 )
+}
 
 #...........................................................
 ## Comparison Helper Functions ----
@@ -1809,13 +2011,12 @@ calculate_cumulative_impact <- function(results_dt,
   return(cumulative)
 }
 
-# # Example:
-cumulative_deaths <- calculate_cumulative_impact(
-  all_results,
-  metric = "dead",
-  start_year = 2025,
-  end_year = 2050
-)
+# Example calculations run only with the explicitly enabled example model.
+if (exists("all_results", inherits = FALSE)) {
+  cumulative_deaths <- calculate_cumulative_impact(
+    all_results, metric = "dead", start_year = 2025, end_year = 2050
+  )
+}
 
 
 #...........................................................
@@ -1900,26 +2101,28 @@ validate_intervention_results <- function(results_dt) {
 #...........................................................
 # 1. Define your intervention parameters BEFORE starting cluster
 
-# explicit hypertension control parameters
-target_control <- 0.5
-control_start_year <- 2026
-control_target_year <- 2030
-
-# HTN target columns in dt_hbp_targets
-htn_target_cols <- c("htncov2_aspirational", "htncov2_ambitious", "htncov2_progress")
-
-# Scenarios: baseline + antihypertensive only (you can expand this list with more combinations as needed)
-scenarios_htn <- list(
+# One model scenario per scenario_id in the long target table.
+scenario_definitions <- list(
   baseline = character(0),
-  bp_only = "antihypertensive"
+  bp_no_diabetes_only = "antihypertensive_no_diabetes",
+  bp_diabetes_only = "antihypertensive_diabetes",
+  bp_combined = c("antihypertensive_no_diabetes",
+                  "antihypertensive_diabetes")
 )
+validate_htn_target_table(dt_hbp_targets)
+missing_scenarios <- setdiff(names(scenario_definitions),
+                             unique(dt_hbp_targets$scenario_id))
+if (length(missing_scenarios)) {
+  stop("Long HTN target table is missing scenario_id values: ",
+       paste(missing_scenarios, collapse = ", "))
+}
+scenario_ids <- names(scenario_definitions)
 
 # explicit sodium reduction parameters
 saltmet <- "percent"
 salteff <- 0.3
 saltyear1 <- 2026
 saltyear2 <- 2030
-drugcov <- "p75"
 
 ## TFA (NEW explicit params)
 tfa_target_tfa        <- 0         # target % energy from TFA
@@ -1953,7 +2156,11 @@ clusterExport(
     "add_coverage_by_year",
     "calculate_aggregate_coverage",
     "apply_coverage_adjustment",
-    "calculate_antihypertensive_impact_etihad",
+    "aim2_control_trajectory",
+    "aim2_incremental_effect",
+    "aim2_subgroup_incidence_multiplier",
+    "validate_htn_target_table",
+    "calculate_antihypertensive_split",
     "calculate_sodium_impact_etihad",
     "calculate_tfa_impact",
     "calculate_statins_impact",
@@ -1961,7 +2168,6 @@ clusterExport(
     "data.in",
     "b_rates",
     "inc",
-    "dt_hbp_control",
     "dt_hbp_targets",
     "dt_gbd_rr",
     "ETIHAD_RR",
@@ -1969,12 +2175,9 @@ clusterExport(
     "dt_tfa_scenarios",
     "dt_statin_scenarios",
     "dt_af_statins",
-    "scenarios_htn",
+    "scenario_definitions",
     "wd_outp",
-    "control_start_year",
-    "control_target_year",
-    "drugcov",
-    "htn_target_cols"
+    "scenario_ids"
   ),
   envir = globalenv()
 )
@@ -1984,9 +2187,22 @@ clusterEvalQ(cl, {
   library(dplyr)
 })
 
-# 5. Define your countries and scenarios
-locs <- unique(data.in$location)
-locs <- locs[!locs %in% c("Greenland", "Bermuda")]  # Exclusions
+# Define the model countries from the validated policy target table. Locations
+# absent from that table are explicit target-preparation exclusions, not silent
+# country-level fallbacks.
+model_locs <- unique(data.in$location)
+target_locs <- unique(dt_hbp_targets$location)
+locs <- intersect(model_locs, target_locs)
+missing_in_model <- setdiff(target_locs, model_locs)
+if (length(missing_in_model)) {
+  stop("Target-table locations missing from model inputs: ",
+       paste(missing_in_model, collapse = ", "))
+}
+excluded_from_jobs <- setdiff(model_locs, target_locs)
+if (length(excluded_from_jobs)) {
+  cat("Locations excluded from Aim 2 jobs:",
+      paste(excluded_from_jobs, collapse = ", "), "\n")
+}
 
 # locs <- c("China", "India", "Russian Federation",
 #           "United States","Colombia","France","Australia","Nigeria")
@@ -1996,8 +2212,8 @@ locs <- locs[!locs %in% c("Greenland", "Bermuda")]  # Exclusions
 #...........................................................
 
 
-# One job per (country, target_col)
-jobs <- CJ(location = locs, target_col = htn_target_cols)
+# One job per country x scenario_id.
+jobs <- CJ(location = locs, scenario_id = scenario_ids)
 
 time_start <- Sys.time()
 
@@ -2008,32 +2224,27 @@ results_list <- foreach(
   .verbose       = TRUE
 ) %dopar% {
   
-  country    <- jobs$location[job_idx]
-  target_col <- jobs$target_col[job_idx]
+  country <- jobs$location[job_idx]
+  scenario_id <- jobs$scenario_id[job_idx]
   
   log_file <- file.path(
     wd_outp, "out_model",
-    paste0("log_", country, "_", target_col, ".txt")
+    paste0("log_", country, "_", scenario_id, ".txt")
   )
   sink(log_file, split = FALSE)
   
   cat("\n==============================\n")
-  cat("Country      :", country,    "\n")
-  cat("Target column:", target_col, "\n")
+  cat("Country    :", country, "\n")
+  cat("Scenario ID:", scenario_id, "\n")
   cat("Time         :", as.character(Sys.time()), "\n")
   cat("==============================\n")
   
   res <- tryCatch({
     run_multiple_scenarios(
       Country             = country,
-      scenario_list       = scenarios_htn,
-      target_control      = 0.5,           # fallback if country not in dt_hbp_targets
-      control_start_year  = control_start_year,
-      control_target_year = control_target_year,
-      drugcov             = drugcov,
-      baseline_ctrl       = NULL,          # inferred from dt_hbp_control
+      scenario_list       = scenario_definitions[scenario_id],
+      htn_scenario_id     = scenario_id,
       dt_hbp_targets      = dt_hbp_targets,
-      htn_target_col      = target_col,    # key: drives which column is read
       statin_target_coverage   = 0.60,
       statin_start_year        = 2026,
       statin_target_year       = 2050,
@@ -2048,21 +2259,21 @@ results_list <- foreach(
       tfa_policy_start_year = 2028
     )
   }, error = function(e) {
-    cat("ERROR in", country, "/", target_col, ":", e$message, "\n")
+    cat("ERROR in", country, "/", scenario_id, ":", e$message, "\n")
     return(NULL)
   })
   
   if (!is.null(res)) {
-    res[, htn_target_scenario := target_col]
+    res[, htn_target_scenario := scenario_id]
     
     output_file <- file.path(
       wd_outp, "out_model",
-      paste0("model_output_", country, "_", target_col, ".rds")
+      paste0("model_output_", country, "_", scenario_id, ".rds")
     )
     saveRDS(res, file = output_file)
     cat("Saved:", output_file, "\n")
   } else {
-    cat("No results to save for", country, "/", target_col, "\n")
+    cat("No results to save for", country, "/", scenario_id, "\n")
   }
   
   sink()
@@ -2076,8 +2287,13 @@ stopCluster(cl)
 
 # Check which countries succeeded
 successful <- sapply(results_list, function(x) !is.null(x))
-cat("\nSuccessful runs:", sum(successful), "out of", length(locs), "\n")
-cat("Failed countries:", paste(locs[!successful], collapse = ", "), "\n")
+cat("\nSuccessful runs:", sum(successful), "out of", nrow(jobs), "\n")
+if (any(!successful)) {
+  cat("Failed jobs:", paste(
+    paste(jobs$location[!successful], jobs$scenario_id[!successful], sep = "/"),
+    collapse = ", "
+  ), "\n")
+}
 
 # Combine all results (if not too large)
 #all_results <- rbindlist(results_list, fill = TRUE)
@@ -2088,3 +2304,4 @@ cat("Failed countries:", paste(locs[!successful], collapse = ", "), "\n")
 
 rm(list = ls()[sapply(ls(), function(x) is.data.frame(get(x)))])
 rm(is,bpcats,locs,i,time1,time2)
+}

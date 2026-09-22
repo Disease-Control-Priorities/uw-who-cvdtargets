@@ -300,7 +300,7 @@ What is the projected \textbf{burden-of-disease impact} of achieving the WHO car
 \begin{column}{0.48\textwidth}
 \begin{exampleblock}{Scope}
 \small
-\textbf{190 countries} $\cdot$ Ages 20--95 $\cdot$ 2026--2050 $\cdot$ Multiple CVD causes $\cdot$ WHO Target Scenarios
+\textbf{186 countries} $\cdot$ Ages 20--95 $\cdot$ 2026--2050 $\cdot$ Multiple CVD causes $\cdot$ WHO Target Scenarios
 \end{exampleblock}
 \end{column}
 
@@ -316,9 +316,10 @@ Model calibrated to 2019 baseline. First year of target scale-up effects enterin
 
 \begin{frame}{Study Design at a Glance}
 \phantomsection\label{study-design-at-a-glance}
-\begingroup\fontsize{8}{10}\selectfont
+\begin{table}[!h]
+\centering\begingroup\fontsize{8}{10}\selectfont
 
-\begin{tabu} to \linewidth {>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}p{9.8cm}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.2cm}>{\raggedright\arraybackslash}p{9.8cm}}
 \toprule
 Component & Detail\\
 \midrule
@@ -332,8 +333,9 @@ Component & Detail\\
 \textbf{\cellcolor{gray!10}{Outcome}} & \cellcolor{gray!10}{CVD deaths averted vs.~BAU; age-standardised mortality rate (ASMR)}\\
 \textbf{Time horizon} & 2026--2050 (25-year horizon); model calibrated from 2019\\
 \bottomrule
-\end{tabu}
+\end{tabular}
 \endgroup{}
+\end{table}
 \end{frame}
 
 \begin{frame}{Study Context}
@@ -343,7 +345,7 @@ Component & Detail\\
 \textbf{Objective}
 \begin{itemize}
   \item Quantify CVD deaths avertable by achieving WHO 2030 cardiovascular targets
-  \item Coverage: \textbf{190 countries}, 2025–2050
+  \item Coverage: \textbf{186 countries}, 2025–2050
   \item Four causes: IHD, ischemic stroke, hemorrhagic stroke, hypertensive HD
 \end{itemize}
 \vspace{6pt}
@@ -357,7 +359,7 @@ Component & Detail\\
 \end{column}
 \begin{column}{0.43\textwidth}
 \begin{exampleblock}{Research Question}
-What are the projected deaths averted from achieving WHO hypertension control and lipid-lowering therapy targets across \textbf{190 countries}, 2026--2050?
+What are the projected deaths averted from achieving WHO hypertension control and lipid-lowering therapy targets across \textbf{186 countries}, 2026--2050?
 \end{exampleblock}
 \begin{block}{Pending \textcolor{red!70!black}{$\bigtriangleup$}}
 Confirm primary metric: deaths averted vs.\ DALYs vs.\ LYG
@@ -370,9 +372,10 @@ Confirm primary metric: deaths averted vs.\ DALYs vs.\ LYG
 
 \begin{frame}{Data Sources and Key Variables}
 \phantomsection\label{data-sources-and-key-variables}
-\begingroup\fontsize{8}{10}\selectfont
+\begin{table}[!h]
+\centering\begingroup\fontsize{8}{10}\selectfont
 
-\begin{tabu} to \linewidth {>{\raggedright\arraybackslash}p{2.8cm}>{\raggedright\arraybackslash}p{6.8cm}>{\raggedright\arraybackslash}p{3.4cm}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.8cm}>{\raggedright\arraybackslash}p{6.8cm}>{\raggedright\arraybackslash}p{3.4cm}}
 \toprule
 Source & Variables extracted & Role in model\\
 \midrule
@@ -384,8 +387,9 @@ Source & Variables extracted & Role in model\\
 \addlinespace
 \textbf{Country-specific} & HTN control targets 2030 (Progress / Ambitious / Aspirational) & $C_{\text{target}}$ per scenario\\
 \bottomrule
-\end{tabu}
+\end{tabular}
 \endgroup{}
+\end{table}
 \end{frame}
 
 \section{Scenarios}\label{scenarios}
@@ -396,13 +400,13 @@ Source & Variables extracted & Role in model\\
 \centering\begingroup\fontsize{7}{9}\selectfont
 
 \resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
-\begin{tabular}{r>{\raggedright\arraybackslash}p{4.5cm}>{\raggedright\arraybackslash}p{4.5cm}}
+\begin{tabular}{r>{\raggedright\arraybackslash}p{4.5cm}>{\raggedright\arraybackslash}p{5.5cm}}
 \toprule
 \# & WHO Target & Modelled Scenario\\
 \midrule
-1 & 150M more with HTN controlled by 2030 & \textbf{HTN Control (General)}: $\approx$ 100M more people with BP control by 2030\\
+1 & 150M more with HTN controlled by 2030 & \textbf{HTN Control (Combined)}: 150.0M more controlled = 83.8M without + 66.2M with diabetes (mutually exclusive, additive)\\
 2 & $\geq$50\% eligible adults on lipid-lowering therapy by 2030 & \textbf{Improved Statin Uptake}: 50\% coverage by 2030\\
-3 & 80\% BP control among diagnosed diabetics by 2030 & \textbf{HTN Control (Diabetes)}: 80\% BP control in diabetics by 2030 ($\approx$ 50M more people with BP control)\\
+3 & 80\% BP control among diagnosed diabetics by 2030 & \textbf{HTN Control (Diabetes)}: 0.80 aspirational ceiling by 2030 (66.2M of the 150M)\\
 4 & 80\% availability of validated BP devices & Operationally embedded in HTN scenarios (150M Target [1+3])\\
 \bottomrule
 \end{tabular}}
@@ -411,13 +415,76 @@ Source & Variables extracted & Role in model\\
 
 \vspace{4pt}
 
-\textbf{Combination rule:}
-\(\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}\)
+\textbf{Combination rule:} the two BP subgroups combine
+\emph{additively} as a population mixture,
+\(\varepsilon_{IR,\text{BP}} = 1-(1-w_D)e_N - w_D e_D\); the BP
+composite then combines multiplicatively with statins,
+\(\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}\).
 \end{frame}
 
-\begin{frame}{HTN Control Targets by 2030 --- Country Distribution}
-\phantomsection\label{htn-control-targets-by-2030-country-distribution}
-\begin{center}\includegraphics[width=\linewidth]{aim1_executive_slides_files/figure-beamer/scenario-targets-plot-1} \end{center}
+\begin{frame}{The 150 Million Target --- Additional BP Control by Region
+and Diabetes Status}
+\phantomsection\label{the-150-million-target-additional-bp-control-by-region-and-diabetes-status}
+\begin{center}\includegraphics[width=\linewidth]{aim1_executive_slides_files/figure-beamer/scenario-split-plot-1} \end{center}
+\end{frame}
+
+\begin{frame}{HTN Control Target: 150 Million by WHO Region}
+\phantomsection\label{htn-control-target-150-million-by-who-region}
+\begin{table}[!h]
+\centering\begingroup\fontsize{7}{9}\selectfont
+
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{tabular}{lrrrrrrr}
+\toprule
+\textbf{Region} & \textbf{HTN pop 2025 (M)} & \textbf{Controlled 2025 (M)} & \textbf{Cov.\ 2025} & \textbf{Controlled 2030 (M)} & \textbf{Cov.\ 2030} & \textbf{Added (M)} & \textbf{+\%}\\
+\midrule
+Africa & 182.0 & 20.6 & 11.3\% & 29.1 & 16.0\% & 8.5 & 41.5\%\\
+Americas & 273.9 & 100.4 & 36.7\% & 140.5 & 51.3\% & 40.1 & 40.0\%\\
+Eastern Mediterranean & 157.5 & 24.0 & 15.2\% & 34.0 & 21.6\% & 10.0 & 41.5\%\\
+Europe & 300.3 & 80.5 & 26.8\% & 113.9 & 37.9\% & 33.3 & 41.4\%\\
+South-East Asia & 425.8 & 57.3 & 13.4\% & 81.1 & 19.0\% & 23.8 & 41.5\%\\
+\addlinespace
+Western Pacific & 456.1 & 83.5 & 18.3\% & 117.7 & 25.8\% & 34.2 & 41.0\%\\
+\cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{Global}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{1,795.5}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{366.2}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{20.4\%}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{516.2}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{28.8\%}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{150.0}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{41.0\%}}}\\
+\bottomrule
+\end{tabular}}
+\endgroup{}
+\end{table}
+
+\footnotesize Coverage rates and 2030 counts use the fixed 2025
+hypertensive population; regional additions sum to exactly 150 million.
+\end{frame}
+
+\begin{frame}{HTN Control Target: 150 Million by WHO Region \emph{and}
+Diabetes Subgroup}
+\phantomsection\label{htn-control-target-150-million-by-who-region-diabetes-subgroup}
+\begin{table}[!h]
+\centering\begingroup\fontsize{8}{10}\selectfont
+
+\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{
+\begin{tabular}{lrrrrr}
+\toprule
+\multicolumn{1}{c}{\textbf{ }} & \multicolumn{3}{c}{\textbf{Additional controlled 2030 (M)}} & \multicolumn{2}{c}{\textbf{ }} \\
+\cmidrule(l{3pt}r{3pt}){2-4}
+\textbf{Region} & \textbf{No diabetes} & \textbf{Diabetes} & \textbf{Total} & \textbf{Cov.\ 2030} & \textbf{+\%}\\
+\midrule
+Africa & 4.3 & 4.3 & 8.5 & 16.0\% & 41.5\%\\
+Americas & 24.7 & 15.5 & 40.1 & 51.3\% & 40.0\%\\
+Eastern Mediterranean & 5.1 & 4.9 & 10.0 & 21.6\% & 41.5\%\\
+Europe & 17.9 & 15.4 & 33.3 & 37.9\% & 41.4\%\\
+South-East Asia & 12.3 & 11.5 & 23.8 & 19.0\% & 41.5\%\\
+\addlinespace
+Western Pacific & 19.5 & 14.7 & 34.2 & 25.8\% & 41.0\%\\
+\cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{Global}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{83.8}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{66.2}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{150.0}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{28.8\%}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{41.0\%}}}\\
+\bottomrule
+\end{tabular}}
+\endgroup{}
+\end{table}
+
+\footnotesize Additional people with BP control by 2030, disaggregated
+by WHO region \emph{and} mutually exclusive diabetes status (fixed 2025
+population). Both the regional totals and the two subgroup totals sum to
+exactly 150 million.
 \end{frame}
 
 \section{Mathematical Model}\label{mathematical-model}
@@ -459,16 +526,17 @@ BG.mx = background mortality \(\cdot\) COVID-19 excess mortality applied
   \item Static log-normal BP distribution: no secular trend, no endogenous updating as coverage rises
   \item Treatment eligibility: $\geq$140 mmHg (5 hypertensive bins)
   \item GBD RRs anchor bin-level baseline incidence
-  \item \alert{Diabetes subgroup: base control rates assumed 15 percentage points higher than general HTN}
-  \item \alert{Diabetes subgroup: multiplicative reduction blended with general HTN effects using diabetes prevalence and high blood pressure prevalence as weights}
+  \item \alert{Hypertensives split into mutually exclusive no-diabetes and diabetes subgroups; a person with diabetes is counted only in the diabetes subgroup}
+  \item \alert{Baseline control assumed 15 percentage points higher with diabetes, preserving the observed overall rate: $c_N = c - w_D(0.15)$, $c_D = c + (1-w_D)(0.15)$}
+  \item \alert{Subgroup-specific Ettehad effect sizes applied to each subgroup's own share, then combined \emph{additively} as a population mixture (no cross-term)}
 \end{itemize}
 
 \medskip
 \textbf{Combination of interventions}
 \begin{itemize}\footnotesize
-  \item Effects combine \textbf{multiplicatively} across all interventions
-  \item BP-related effects combined first, then with statins
-  \item No saturation, synergy, or interaction terms beyond multiplicative combination
+  \item The two BP subgroups combine \textbf{additively}: $\varepsilon_{IR,\text{BP}} = 1-(1-w_D)e_N - w_D e_D$ (one composite BP effect, no multiplicative cross-term)
+  \item The BP composite then combines \textbf{multiplicatively} with statins
+  \item No saturation, synergy, or interaction terms beyond this combination
 \end{itemize}
 \end{column}
 \end{columns}
@@ -535,17 +603,17 @@ calibration, dashed = projection.
 \toprule
 Scenario & Cumulative (M) & Avg./year (M) & \% of BAU deaths\\
 \midrule
-HTN Control (General) & 29.4 M & 1.2 M & 4.2\%\\
-HTN Control (Diabetes) & 16.2 M & 0.6 M & 2.3\%\\
-Improved Statin Uptake & 21.3 M & 0.9 M & 3.1\%\\
-\cellcolor[HTML]{6a3d9a}{\textcolor{white}{\textbf{All Interventions}}} & \cellcolor[HTML]{6a3d9a}{\textcolor{white}{\textbf{65.6 M}}} & \cellcolor[HTML]{6a3d9a}{\textcolor{white}{\textbf{2.6 M}}} & \cellcolor[HTML]{6a3d9a}{\textcolor{white}{\textbf{9.4\%}}}\\
+HTN Control (No Diabetes) & 20.2 M & 0.8 M & 2.9\%\\
+HTN Control (Diabetes) & 26.7 M & 1.1 M & 3.9\%\\
+Improved Statin Uptake & 21.2 M & 0.8 M & 3.1\%\\
+\cellcolor[HTML]{6a3d9a}{\textcolor{white}{\textbf{All Interventions}}} & \cellcolor[HTML]{6a3d9a}{\textcolor{white}{\textbf{35.3 M}}} & \cellcolor[HTML]{6a3d9a}{\textcolor{white}{\textbf{1.4 M}}} & \cellcolor[HTML]{6a3d9a}{\textcolor{white}{\textbf{5.1\%}}}\\
 \bottomrule
 \end{tabular}}
 \endgroup{}
 \end{table}
 
 \begin{exampleblock}{Headline}
-\textbf{All Interventions}: \textbf{65.6 million deaths averted} globally, 2026--2050 ($\approx$ 2.6 M/year).
+\textbf{All Interventions}: \textbf{35.3 million deaths averted} globally, 2026--2050 ($\approx$ 1.4 M/year).
 \end{exampleblock}
 \end{frame}
 
@@ -580,19 +648,19 @@ business-as-usual.
 \begin{itemize}
 \tightlist
 \item
-  DALYs averted: 787.0 M
+  DALYs averted: 450.0 M
 \item
-  YLLs averted: 769.3 M
+  YLLs averted: 460.9 M
 \item
-  YLDs averted: 17.7 M
+  YLDs averted: -10.8 M
 \end{itemize}
 
 \begin{longtable}[]{@{}
-  >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.2949}}
-  >{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1923}}
-  >{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1795}}
-  >{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1667}}
-  >{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1667}}@{}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.3210}}
+  >{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1852}}
+  >{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1728}}
+  >{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1605}}
+  >{\raggedleft\arraybackslash}p{(\linewidth - 8\tabcolsep) * \real{0.1605}}@{}}
 \toprule\noalign{}
 \begin{minipage}[b]{\linewidth}\raggedright
 Intervention
@@ -607,10 +675,10 @@ YLLs averted
 \end{minipage} \\
 \midrule\noalign{}
 \endhead
-HTN Control (General) & 29.4 M & 376.2 M & 14.0 M & 390.2 M \\
-HTN Control (Diabetes) & 16.2 M & 144.5 M & 5.4 M & 149.8 M \\
-Improved Statin Uptake & 21.3 M & 264.8 M & -1.7 M & 263.1 M \\
-All Interventions & 65.6 M & 769.3 M & 17.7 M & 787.0 M \\
+HTN Control (No Diabetes) & 19.8 M & 283.4 M & 10.7 M & 294.1 M \\
+HTN Control (Diabetes) & 26.4 M & 327.8 M & 13.2 M & 341.0 M \\
+Improved Statin Uptake & 21.2 M & 264.3 M & -1.8 M & 262.5 M \\
+All Interventions & 35.0 M & 460.9 M & -10.8 M & 450.0 M \\
 \bottomrule\noalign{}
 \end{longtable}
 
@@ -630,13 +698,13 @@ The combined WHO target package generates large health gains, with most benefits
 \toprule
 \textbf{Region} & \textbf{BAU deaths (M)} & \textbf{Averted (M)} & \textbf{\% averted}\\
 \midrule
-Western Pacific & 227.3 & 21.7 & 9.5\%\\
-South-East Asia & 175.8 & 17.2 & 9.8\%\\
-Europe & 117.2 & 9.8 & 8.3\%\\
-Africa & 48.7 & 5.9 & 12.2\%\\
-Eastern Mediterranean & 64.3 & 5.8 & 9.1\%\\
+Western Pacific & 225.9 & 12.6 & 5.6\%\\
+South-East Asia & 175.8 & 7.3 & 4.2\%\\
+Europe & 117.2 & 5.8 & 4.9\%\\
+Americas & 62.6 & 4.0 & 6.4\%\\
+Eastern Mediterranean & 64.0 & 3.5 & 5.4\%\\
 \addlinespace
-Americas & 62.8 & 5.2 & 8.2\%\\
+Africa & 48.7 & 2.1 & 4.2\%\\
 \bottomrule
 \end{tabular}}
 \endgroup{}
@@ -688,7 +756,7 @@ Approach follows \textbf{Robinson et al.\ (2019)} guidance and is consistent wit
 2026--2050)}
 \phantomsection\label{economic-value-by-who-region-primary-cumulative-20262050}
 \begin{exampleblock}{World: All Interventions, 2026--2050 (primary, discounted at 3\%)}
-\textbf{VSLY} = \textbf{1.5\%} of annual income PPP (cumulative \textbf{\$62.1 T}).
+\textbf{VSLY} = \textbf{1.0\%} of annual income PPP (cumulative \textbf{\$41.5 T}).
 \end{exampleblock}
 
 \begin{table}[!h]
@@ -699,14 +767,14 @@ Approach follows \textbf{Robinson et al.\ (2019)} guidance and is consistent wit
 \toprule
 \textbf{Region} & \textbf{VSLY (USD T)} & \textbf{VSLY \% GNI}\\
 \midrule
-Africa & \$1.3 & 0.6\%\\
-Americas & \$6.7 & 0.7\%\\
-Eastern Mediterranean & \$3.5 & 1.2\%\\
-Europe & \$17.3 & 1.9\%\\
-South-East Asia & \$10.6 & 1.5\%\\
+Africa & \$0.6 & 0.3\%\\
+Americas & \$6.8 & 0.8\%\\
+Eastern Mediterranean & \$2.6 & 0.9\%\\
+Europe & \$11.7 & 1.3\%\\
+South-East Asia & \$4.7 & 0.7\%\\
 \addlinespace
-Western Pacific & \$22.7 & 2.1\%\\
-\cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{World}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{\$62.1}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{1.5\%}}}\\
+Western Pacific & \$15.1 & 1.4\%\\
+\cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{World}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{\$41.5}}} & \cellcolor[HTML]{2166ac}{\textcolor{white}{\textbf{1.0\%}}}\\
 \bottomrule
 \end{tabular}}
 \endgroup{}
@@ -815,7 +883,7 @@ Sensitivity analysis to diabetes targeting assumptions and secular trends pendin
 \begin{frame}{Summary}
 \phantomsection\label{summary}
 \begin{block}{\textbf{1. The health gains are large and achievable}}
-All Interventions: \textbf{65.6 million deaths averted} globally, 2026--2050.
+All Interventions: \textbf{35.3 million deaths averted} globally, 2026--2050.
 \end{block}
 
 \begin{block}{\textbf{2. HTN control + statins compound risk reduction}}
@@ -827,7 +895,7 @@ Absolute gains largest in high-burden regions; proportional gains reflect curren
 \end{block}
 
 \begin{exampleblock}{\textbf{4. The economic value rivals annual income itself}}
-World, All Interventions, 2026--2050: avoidable CVD mortality is worth \textbf{1.5\%\ of annual income} (VSLY, cumulative \textbf{\$62.1 T}, discounted at 3\%).
+World, All Interventions, 2026--2050: avoidable CVD mortality is worth \textbf{1.0\%\ of annual income} (VSLY, cumulative \textbf{\$41.5 T}, discounted at 3\%).
 \end{exampleblock}
 
 \vspace{6pt}
@@ -870,8 +938,10 @@ $C_{\text{agg}}^{\Delta}$ & Population-weighted incremental coverage (hypertensi
 $P(\text{BP}_{\text{cat}})$ & BP category population distribution (8 bins) \\
 $RR_{\text{GBD}}$ & GBD relative risk per 10 mmHg SBP increase \\
 $\alpha_{\text{inc}}$ & Incidence normalization factor \\
-$E_{\text{trial}}$, $E_{\text{DM}}$, $E_{\text{noDM}}$ & Ettehad effect sizes (blended, DM-only, non-DM) \\
-$w_{\text{DM}}$ & Diabetes prevalence weight (general HTN: 0.10; DM subgroup: 1.0) \\
+$E_{D}$, $E_{N}$ & Ettehad effect sizes (diabetes, no-diabetes subgroups) \\
+$e_{g,t}$ & Baseline-adjusted incremental effect for subgroup $g\in\{N,D\}$ \\
+$w_{D}$ & Diabetes share among hypertensives ($=P(D\mid H)$, mixture weight) \\
+$c_N$, $c_D$ & Baseline control without / with diabetes ($c_D - c_N = 0.15$) \\
 $\rho_{CF,c}$ & CF reduction factor per unit incremental coverage \\
 $T_{\text{start}}$, $T_{\text{end}}$ & Scale-up start (2026) \& end (2030) \\
 \bottomrule
@@ -902,15 +972,16 @@ $E^{IR}_{c,\ell}(t)$, $E^{CF}_{c,\ell}(t)$ & Incremental effect sizes for $IR$ a
 
 \begin{frame}{HTN Intervention Module: 9-Step Pipeline}
 \phantomsection\label{htn-intervention-module-9-step-pipeline}
-\begingroup\fontsize{7.5}{9.5}\selectfont
+\begin{table}[!h]
+\centering\begingroup\fontsize{7.5}{9.5}\selectfont
 
-\begin{tabu} to \linewidth {>{\centering\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{9.5cm}>{\raggedright\arraybackslash}p{2.8cm}}
+\begin{tabular}{>{\centering\arraybackslash}p{0.5cm}>{\raggedright\arraybackslash}p{9.5cm}>{\raggedright\arraybackslash}p{2.8cm}}
 \toprule
  & Action & Output\\
 \midrule
 \textbf{\cellcolor{gray!10}{1}} & \cellcolor{gray!10}{Baseline BP distribution $P(\text{BP}_{\text{cat}})$ without treatment (rx$\,=\,0$)} & \em{\cellcolor{gray!10}{$P(\text{BP}_{\text{cat}}\,|\,a,s,t)$}}\\
 \textbf{2} & GBD relative risks per 10 mmHg SBP $\to$ bin-specific incidence $IR_{\text{bin}}$ & \em{$IR_{\text{bin}}$}\\
-\textbf{\cellcolor{gray!10}{3}} & \cellcolor{gray!10}{Diabetes-weighted Ettehad trial effect sizes $E_{\text{trial}}$ per BP bin $\times$ cause} & \em{\cellcolor{gray!10}{$E_{\text{trial}}$}}\\
+\textbf{\cellcolor{gray!10}{3}} & \cellcolor{gray!10}{Subgroup-specific Ettehad effect sizes $E_N, E_D$ (no-diabetes, diabetes) per BP bin $\times$ cause} & \em{\cellcolor{gray!10}{$E_{\text{trial}}$}}\\
 \cellcolor[HTML]{dbeafe}{\textbf{4}} & \cellcolor[HTML]{dbeafe}{Linear coverage scale-up from $C_0$ to $C_{\text{target}}$, \textbf{starting 2026}} & \cellcolor[HTML]{dbeafe}{\em{$C_t(t,\,\text{BP}_{\text{cat}})$}}\\
 \textbf{\cellcolor{gray!10}{5}} & \cellcolor{gray!10}{Coverage adjustment: $E_{\text{adj}} = E_{\text{trial}}(C_t - C_0)\,/\,(1 - E_{\text{trial}}\,C_0)$} & \em{\cellcolor{gray!10}{$E_{\text{adj}}(t)$}}\\
 \addlinespace
@@ -919,8 +990,9 @@ $E^{IR}_{c,\ell}(t)$, $E^{CF}_{c,\ell}(t)$ & Incremental effect sizes for $IR$ a
 \cellcolor[HTML]{d4edda}{\textbf{8}} & \cellcolor[HTML]{d4edda}{Incidence effect ratio: $\varepsilon_{IR} = IR_{\text{new}}\,/\,IR_{\text{original}}$} & \cellcolor[HTML]{d4edda}{\em{$\varepsilon_{IR}\to$ model}}\\
 \cellcolor[HTML]{d4edda}{\textbf{\cellcolor{gray!10}{9}}} & \cellcolor[HTML]{d4edda}{\cellcolor{gray!10}{Case-fatality effect ratio: $\varepsilon_{CF} = 1 - \rho_{CF} \times C_{\text{agg}}^{\Delta}$}} & \cellcolor[HTML]{d4edda}{\em{\cellcolor{gray!10}{$\varepsilon_{CF}\to$ model}}}\\
 \bottomrule
-\end{tabu}
+\end{tabular}
 \endgroup{}
+\end{table}
 
 \small\textit{Blue row = intervention start (2026). Green rows = outputs passed to state-transition model.}
 \end{frame}
@@ -967,39 +1039,37 @@ Hemorrhagic stroke & 0.76 \\ HHD & 0.20 \\
 \end{columns}
 \end{frame}
 
-\begin{frame}{HTN Control (Diabetes Subgroup)}
-\phantomsection\label{htn-control-diabetes-subgroup}
+\begin{frame}{HTN Control: Mutually Exclusive Diabetes / No-Diabetes
+Subgroups}
+\phantomsection\label{htn-control-mutually-exclusive-diabetes-no-diabetes-subgroups}
 \footnotesize
 \begin{columns}[T]
 \begin{column}{0.52\textwidth}
-\textbf{WHO Target:} 80\% BP control among diagnosed diabetics by 2030
+\textbf{Two mutually exclusive, exhaustive subgroups} of the hypertensive population; each uses its own Ettehad effect size applied \emph{only} to its own share.
 
 \medskip
-\textbf{Same 9-step pipeline as general HTN.} Key distinction: diabetes-specific Ettehad effect sizes ($w_{\text{DM}} = 1$):
+\textit{Subgroup-specific incremental effect ($g \in \{N,D\}$):}
+$$e_{g,t} = \frac{E_g\,(c_{g,t} - c_{g,0})}{1 - E_g\,c_{g,0}}$$
 
-\medskip
-\textit{General HTN (DM-blended):}
-$$E_{\text{trial}} = (1-w_{\text{DM}})\,E_{\text{noDM}} + w_{\text{DM}}\,E_{\text{DM}},\quad w_{\text{DM}}=0.10$$
+\textit{Baseline decomposition (preserves observed rate $c$):}
+$$c_N = c - w_D(0.15),\qquad c_D = c + (1-w_D)(0.15)$$
 
-\textit{Diabetes subgroup (DM-only):}
-$$E_{\text{trial}}^{\text{DM}} = E_{\text{DM}}$$
-
-\textit{Coverage scale-up to $C_{\text{target}}^{\text{DM}} = 0.80$:}
-$$C_t^{\text{DM}} = C_0^{\text{DM}} + \Delta C^{\text{DM}}\;\min\!\left[\frac{t-2026}{4},\,1\right]$$
+\textit{Diabetes coverage scale-up toward the 0.80 ceiling:}
+$$c_{D,t} = c_{D,0} + \Delta c_D\;\min\!\left[\tfrac{t-2026}{4},\,1\right]$$
 \end{column}
 
 \begin{column}{0.46\textwidth}
-\textbf{Effect ratios} (same structure as general HTN):
-$$\varepsilon_{IR,\text{DM}}(a,s,c,t) = \frac{IR^{\text{DM}}_{\text{new}}}{IR_{\text{original}}}$$
-$$\varepsilon_{CF,\text{DM}} = 1 - \rho_{CF,c} \times C_{\text{agg}}^{\Delta,\text{DM}}$$
+\textbf{Additive population mixture} ($w_D$ = diabetes share among hypertensives), \emph{one} composite BP effect --- no cross-term:
+$$\varepsilon_{IR,\text{BP}} = 1 - (1-w_D)\,e_{N,t} - w_D\,e_{D,t}$$
+$$\Delta c_t = (1-w_D)\,\Delta c_{N,t} + w_D\,\Delta c_{D,t}$$
 
-\begin{exampleblock}{Why a separate module?}
-\small People with diabetes have higher CVD risk at any BP level. DM-specific Ettehad effects are larger (especially for stroke) than blended effects at $w_{\text{DM}}=0.10$.
+\begin{exampleblock}{Why mutually exclusive?}
+\small People with diabetes have higher baseline control and larger DM-specific Ettehad effects. Counting each hypertensive once (diabetes \emph{or} not) avoids double-counting and lets the two subgroup additions sum to exactly 150 million.
 \end{exampleblock}
 
-\begin{alertblock}{When combined with general HTN}
-\small Effects multiply (no double-counting via incremental coverage formulation):
-$$\varepsilon_{IR,\text{BP,total}} = \varepsilon_{IR,\text{gen}} \times \varepsilon_{IR,\text{DM}}$$
+\begin{alertblock}{Combined with statins}
+\small The BP composite then combines multiplicatively with the (independent) statin effect:
+$$\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{stat}}$$
 \end{alertblock}
 \end{column}
 \end{columns}
