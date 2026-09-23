@@ -1,3 +1,19 @@
+Write a prompt to as claude code to : 
+Goal conduct a A Probabilistic Sensitivity Analysis (PSA) around intervention parameters as broad method used to evaluate parameter uncertainty in the model to derive uncertainty interval as a specific numerical range (like a 95% range) derived from that analysis to show the spread of plausible final outcomes in aim_1 report and executive slides estimates
+
+https://www.sciencedirect.com/science/article/pii/S1098301512016592#sec5
+1.	Create a new code/09_uncertainty_psa.R file to implement the psa. This should feed with inputs from 04 and 05 mimicing the model in 06_run_scenarios_multiple_optimized. R. i.e, the actual model is 06 so build the uncertainty intervals construction around it 
+2.	In creating 09 explit the data.table coding as much as possible to optimize data.table usage •  Modifying Execution Functions: Functions such as project.all are updated to dynamically accept probabilistic draws of data tables rather than fixed point estimates.
+3.	•  Implementing the Monte Carlo Simulation: The simulation is run multiple times (typically 1,000 to 10,000 draws). To reduce computational intensity, this can be vectorized by injecting a draw_id dimension into the data.table structures, which allows the processing of numerous draws simultaneously within a single model run.
+4.	09 must produce a .rds files to feed scenarios/scenarios_aim1/aim1_report_psa.Rmd and scenarios/scenarios_aim1/aim1_executive_slides.Rmd 
+5.	 Put all outputs and scenarios in new output_psa/ and scenarios_psa/ folders, now existing output or scenarios folders 
+6.	Create new scenarios/scenarios_aim1/aim1_report_psa.Rmd and scenarios/scenarios_aim1/aim1_executive_slides.Rmd that show same analysis (tables figures, scalara) as existing no psa versions.  /aim1_executive_slides_psa.Rmd cdooes not make calculations but consume from aim1_report_psa.Rmd those files feed from
+7.	 Test all pipeline with 10 random draws
+buil export the prompt as a MD file
+not modify any of the extintings .R or .Rmd or XLSX input files
+
+
+##############################################################################
 write a promt to ask claude to conduct this task You are going to modify the aim1_report.RMD file to add burden of disease results and a break down by who region and country income group according to World bank classification
 The file 07_output_dalys include the production of yll, yld and dalys by intervention, that is the file to use to report burden of disease
 # save RDS to compute deaths delayed and burden of disease averted in report
