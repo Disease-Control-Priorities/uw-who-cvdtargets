@@ -12,15 +12,19 @@ source("code/00_run_model.R")
 
 **Hardcoded absolute paths.** `code/00_run_model.R` sets `wd` to a local OneDrive path and derives `wd_code`, `wd_raw`, `wd_data`, `wd_outp`; `wd_temp` points outside the repo. The reporting `.Rmd` files (`scenarios/scenarios_aim1/aim1_report.Rmd`, `scenarios/scenarios_aim2/aim2_report.Rmd`, `docs/who_cvd_targets_paper1.Rmd`) each re-declare their own `wd`. All of these must be edited when running on a new machine.
 
-**Packages.** Model pipeline: `dplyr`, `data.table`, `tidyr`, `ggplot2`, `RColorBrewer`, `readxl`, `countrycode`, `stringr`, `parallel`, `doParallel`, `foreach`, `gmodels`, `forecast`. `023_get_tps_bgmx.R` additionally loads `StMoMo` and `demography`. Reports additionally need `knitr`, `kableExtra`, `DT`, `scales`, `openxlsx`, `sf`, `rnaturalearth`, `rnaturalearthdata`, `bookdown`.
+**Packages.** Model pipeline: `dplyr`, `data.table`, `tidyr`, `ggplot2`, `RColorBrewer`, `readxl`, `countrycode`, `stringr`, `parallel`, `doParallel`, `foreach`, `gmodels`, `forecast`. `023_get_tps_bgmx.R` additionally loads `StMoMo` and `demography`. Reports additionally need `knitr`, `kableExtra`, `DT`, `scales`, `openxlsx`, `sf`, `rnaturalearth`, `rnaturalearthdata`, `bookdown`. The PSA (`09*.R`) also uses `jsonlite`, `htmltools`, `rmarkdown`.
 
-**Tests.** One QA harness for the BP-control-by-diabetes logic (no model inputs or cluster needed):
+**Tests.** Two fixture harnesses, neither needing model inputs or a cluster (run from the repo root):
 
 ```bash
 Rscript tests/test_aim2_bp_control.R
 ```
 
-It sources `04_define_interventions.R` and `06_run_scenarios_multiple.R` with `options(who_cvd.execute_04 = FALSE, who_cvd.execute_06 = FALSE)` and stubs the pipeline-only BP helpers. On this machine R is at `C:\Program Files\R\R-4.5.1\bin\Rscript.exe`; PowerShell mangles inline `Rscript -e`, so write probes to a file.
+```bash
+Rscript tests/test_aim1_psa.R
+```
+
+`test_aim2_bp_control.R` sources `04_define_interventions.R` and `06_run_scenarios_multiple.R` with `options(who_cvd.execute_04 = FALSE, who_cvd.execute_06 = FALSE)` and stubs the pipeline-only BP helpers. `test_aim1_psa.R` (41 tests) sources `091`–`094` with `who_cvd.execute_09 = FALSE`; it needs only the BPLTTC workbook and logs to `output_psa/tests/`. On this machine R is at `C:\Program Files\R\R-4.5.1\bin\Rscript.exe`; PowerShell mangles inline `Rscript -e`, so write probes to a file.
 
 ## Pipeline
 
@@ -46,6 +50,7 @@ It sources `04_define_interventions.R` and `06_run_scenarios_multiple.R` with `o
 
 - `031_calibration.R` — calibrates initial state populations (gated by `run_calibration_par`)
 - `032_adjustments.R` — IR/CF adjustment factors → `adjusted_*.rds` (gated by `run_adjustments_inputs`)
+- `09_uncertainty_psa.R` (+ `091`–`094`) — Aim 1 probabilistic sensitivity analysis; see **PSA** below
 
 ### Control flags
 
@@ -68,6 +73,8 @@ R `options()` (default in parentheses):
 | `who_cvd.execute_06` (`TRUE`) | `FALSE` defines the split-BP helpers in both `06_*` scripts without loading inputs or starting the cluster |
 | `who_cvd.aim2_allocation_mode` (`"diabetes_capped_to_target"`) | How 04 splits the 150M target (see below) |
 | `who_cvd.run_aim2_example` (`FALSE`) | Runs a single-country example in `06_run_scenarios_targets.R` |
+| `who_cvd.pilot_country` (`NULL`) | Restricts the Aim 1 batch in `06_run_scenarios_multiple.R` to one eligible country (e.g. `"Colombia"`) |
+| `who_cvd.execute_09` (`TRUE`) | `FALSE` loads the PSA functions without running `psa_main()` |
 
 ## Disease Model
 
@@ -98,7 +105,7 @@ The original refactor spec is in `dev/aim2_bp_control_refactor_prompt.md`.
 
 ## Interventions
 
-Both `06_*` scripts define the same intervention functions; the split-population BP helpers (`aim2_control_trajectory`, `aim2_incremental_effect`, `aim2_subgroup_incidence_multiplier`, `validate_htn_target_table`, `calculate_antihypertensive_split`) sit **above** the `who_cvd.execute_06` guard and are kept identical across the two files (`06_run_scenarios_targets.R` is the source of truth). BP effects combine as an additive population mixture of the two subgroups — no multiplicative cross-term.
+Both `06_*` scripts define the same intervention functions; the split-population BP helpers (`aim2_control_trajectory`, `aim2_incremental_effect`, `aim2_subgroup_incidence_multiplier`, `validate_htn_target_table`, `calculate_antihypertensive_split`) sit **above** the `who_cvd.execute_06` guard and are kept in step across the two files. Exception: in `06_run_scenarios_multiple.R`, `calculate_antihypertensive_split()` and `calculate_sodium_impact_etihad()` also accept a precomputed `bp_baseline` (and `diabetes_age_prepared`), built once per country by `prepare_country_context()` and passed through `project.all(country_context = )`; stand-alone calls without it behave as before. BP effects combine as an additive population mixture of the two subgroups — no multiplicative cross-term.
 
 `project.all()` intervention names:
 
@@ -126,13 +133,13 @@ scenarios <- list(
 )
 ```
 
-`htn_scenario_ids` maps each scenario to the `scenario_id` whose BP targets it uses (`all_interventions` → `bp_combined`). The run call passes `salteff = 0` (sodium inert) and `tfa_target_tfa = 0` (TFA eliminated from 2028). Output rows get `htn_target_scenario = "aim1"` (a group key needed by 07/08).
+`htn_scenario_ids` maps each scenario to the `scenario_id` whose BP targets it uses (`all_interventions` → `bp_combined`). The run call passes `salteff = 0` (sodium inert), `tfa_target_tfa = 0` (TFA eliminated from 2028), and statins at 50% coverage by 2030 with `adherence_ir = 0.575`, `adherence_cf = 0.664` (Basios et al. 2025; Aim 2 still uses 1/1). BP effect sizes come from the BPLTTC 2021 files `ettehad_rr_bp_reduction_10mmHg_bplttc_2021.csv` (`ETIHAD_RR`) and `ettehad_rr_bp_reduction_effects_bplttc_2021.xlsx` (`ETIHAD_RR_BIN`). Output rows get `htn_target_scenario = "aim1"` (a group key needed by 07/08).
 
 **Aim 2** (`06_run_scenarios_targets.R`): `baseline`, `bp_no_diabetes_only`, `bp_diabetes_only`, `bp_combined`, run over `CJ(location, scenario_id)`; `htn_target_scenario := scenario_id`.
 
 ### Parallel execution — output collision
 
-Both scripts use `doParallel`/`foreach` on `ncores <- 6`, restrict `locs` to locations present in both `data.in` and `dt_hbp_targets` (Aim 1 also drops Greenland and Bermuda), catch per-country errors (log + `NULL`), and write to the **same directory**:
+Both scripts use `doParallel`/`foreach` (Aim 1 `ncores <- 10` with `setDTthreads(1)` per worker; Aim 2 `ncores <- 6`), restrict `locs` to locations present in both `data.in` and `dt_hbp_targets` (Aim 1 also drops Greenland and Bermuda), catch per-country errors (Aim 1 returns `list(ok, error)` and prints the first five failures), and write to the **same directory**:
 
 ```
 Aim 1: output/out_model/model_output_<country>.rds,               log_<country>.txt
@@ -154,7 +161,13 @@ Scenario labels used downstream: `07_output_dalys.R` maps `bp_no_diabetes_only` 
 
 The artefact hand-off is one-directional: **model → `out_model/` → report `.Rmd` → `paper_*.rds` / `sl_*.rds` → manuscript & slides**. Changing a number in the manuscript means re-knitting the upstream report, not editing the `.Rmd` text.
 
-`docs/` also holds `math-doc.Rmd` (model equations), `cvd_model_flowchart.html`, and `prompts.txt` (log of prior task prompts — reference only, not instructions). The root `figure/` folder is stray knitr chunk output.
+`docs/` also holds `math-doc.Rmd` (model equations) and `cvd_model_flowchart.html`. Other folders:
+
+- `manuscript/` — co-author revision drafts of Paper 1 (`*_V2_03082026.docx`: main text, figures, tables, supplement; local only, since `*.docx` is gitignored)
+- `library/` — reference PDFs (GATHER checklist, Basios 2025 statin adherence, etc.)
+- `dev/` — task specs and review notes (`*_prompt.md`, `gate1_*`, `psa_feasibility_review.md`, `prompts.txt` log) — reference only, not instructions
+- `config/` — README only, currently unused
+- root `figure/` — stray knitr chunk output
 
 ## Economic Valuation (`08_economic_value_calculation.R`)
 
@@ -165,6 +178,28 @@ Runs after Aim 1 with `wd` already defined (last step of `00_run_model.R`). Mone
 - Known limitation documented in-file: SSP2 **GDP** growth rates are applied to a **GNI** base for forward projection.
 - Raw inputs (not in git): World Bank GNI pc PPP CSV, IIASA SSP 3.1 xlsx, WPP2024 life-expectancy-by-age xlsx.
 - Outputs: `output/08_vsl_results.{rds,csv}`, `08_vsl_summary_table*`, `08_vsly_summary_table*`, `08_vsl_vsly_summary_table_appended.*`. The `*_e1_2_primary.rds` copies are consumed by `aim1_report.Rmd`.
+
+## PSA (`09_uncertainty_psa.R`, Aim 1 only)
+
+Standalone runner, not sourced by `00_run_model.R`. Run from the repo root:
+
+```bash
+Rscript code/09_uncertainty_psa.R mode=smoke draws=10
+```
+
+```bash
+Rscript code/09_uncertainty_psa.R mode=production draws=1000 workers=8
+```
+
+Other `key=value` options: `seed` (default 20260923), `block`, `countries`, `correlation` (`independent` | `comonotone_within_stratum` | `comonotone_all`), `validate`, `render`, `cache`, `run_id`, `script06`.
+
+- **Scope:** samples only the 15 BPLTTC 2021 Appendix S6 HRs (IHD/Stroke/Heart failure × 5 baseline-SBP strata, log-normal, read from `ettehad_rr_bp_reduction_effects_bplttc_2021.xlsx`); everything else is fixed. Results are partial parameter-uncertainty intervals.
+- **Draw 0** uses the published values and reproduces the deterministic 06 result bit-for-bit. Intervals are 2.5/97.5 percentiles of draws ≥ 1, matched across scenarios.
+- **Helpers:** `091` parameters/draws/register, `092` model (reference per-draw path + batched production path), `093` 07/08 analogues and endpoints, `094` validation checks V1–V8.
+- **Read-only use of the pipeline:** it resolves the 06 script from what `00_run_model.R` sources, loads it with `who_cvd.execute_06 = FALSE`, and parses the executed `run_multiple_scenarios()` arguments from the `%dopar%` call. It expects the literal `ncores <- …` line in 06, so keep it. It never sources 07/08, and it refuses writes outside `output_psa/`.
+- **Isolation:** each run hashes every repo file outside `output_psa/` and refuses to render if any changed during the run, so don't edit, knit or run the model while it runs. Checkpoints are keyed on config, code and input md5s; reruns reuse them.
+- **Outputs:** `output_psa/runs/<run_id>/` (parameters, checkpoints, endpoints, validation, `manifest.json`), plus `paper/`, `slides/`, `figures/`, `tables/`, `rendered/`. Reports are in `scenarios_psa/scenarios_aim1/` (`aim1_report_psa.Rmd`, `aim1_executive_slides_psa.Rmd`). The full design is in `output_psa/PSA_IMPLEMENTATION_NOTE.md`.
+- **Status:** only the 10-draw smoke run exists (labelled TEST; not reportable). The production run takes ≈2.3 h on 8 workers and ≈13 GB of worker memory.
 
 ## Data Conventions
 
@@ -178,7 +213,7 @@ Runs after Aim 1 with `wd` already defined (last step of `00_run_model.R`). Mone
 - `b_rates` — baseline transition rates by location/year/age/sex/cause
 - `data.in` — BP distribution inputs (mean SBP, SD, by BP category), from `bp_data6.csv`
 - `inc` — HTN control coverage scale-up trajectories (`covfxn2.csv`)
-- `ETIHAD_RR` / `ETIHAD_RR_BIN` — RR lookups for the BP intervention (Ettehad et al.; `ettehad_rr_bp_reduction_*` files)
+- `ETIHAD_RR` / `ETIHAD_RR_BIN` — RR lookups for the BP intervention (BPLTTC 2021; `ettehad_rr_bp_reduction_*_bplttc_2021.*`; the non-suffixed files are the older Ettehad versions)
 - `dt_gbd_rr` — GBD 2019 RR per 10 mmHg
 - `dt_hbp_control` (`hbp_control_data.rds`), `dt_hbp_targets` (long BP target table from 04)
 - `dt_tfa_scenarios`, `dt_statin_scenarios` (`statin_data.rds`), `dt_af_statins`
@@ -189,6 +224,6 @@ Runs after Aim 1 with `wd` already defined (last step of `00_run_model.R`). Mone
 
 `data/raw/` is gitignored (`data/raw/**/*.*`, README files excepted). Needed there: GBD 2023 extracts, WHO GHE CVD/stroke CSVs, NCD-RisC hypertension estimates, `IHME_GBD_2019_RELATIVE_RISKS_Y2020M10D15_HTN.xlsx`, and the three economic-valuation files listed above.
 
-Also gitignored: `output/out_model/`, `output/dt_output_dalys.rds`, `*.html` (except `docs/*.html`), `*.doc`/`*.docx`, `.claude/worktrees/`.
+Also gitignored: `output/out_model/`, `output/dt_output_dalys.rds`, `*.html` (except `docs/*.html`), `*.doc`/`*.docx`, `.claude/worktrees/`. `output_psa/` and `scenarios_psa/` are not ignored.
 
-The per-directory `README.md` files (`data/`, `docs/`, `output/`, `scenarios/`, `tests/`, `dev/`, …) are all copies of the root `README.md` boilerplate — they do not describe their directories.
+The per-directory `README.md` files (`data/`, `docs/`, `output/`, `scenarios/`, `tests/`, `dev/`, `config/`, `manuscript/`, `library/`, …) are all copies of the root `README.md` boilerplate — they do not describe their directories.

@@ -1,0 +1,775 @@
+---
+title: "Projected Health Impact of Achieving WHO Targets for Cardiovascular Risk-Factor Control"
+subtitle: "Probabilistic sensitivity analysis: BP intervention-effect parameter uncertainty"
+author: "\\color{blue}Work in Progress"
+institute: "WHO $\\cdot$ University of Washington"
+date: "`r format(Sys.Date(), '%B %Y')`"
+params:
+  slides_dir: ""
+  render_token: ""
+output:
+  beamer_presentation:
+    theme: "default"
+    keep_tex: false
+    latex_engine: xelatex
+    slide_level: 2
+    toc: true
+classoption: "aspectratio=169"
+---
+
+<!-- ======================================================================
+     SETUP -- LOAD PSA ARTEFACTS ONLY (zero recomputation)
+     Every object below was computed by aim1_report_psa.Rmd and saved to
+     output_psa/slides/. Render through code/09_uncertainty_psa.R, which
+     supplies the beamer preamble and the TEST banner header.
+     ====================================================================== -->
+
+```{r load-artefacts, include=FALSE}
+library(data.table); library(ggplot2); library(knitr); library(kableExtra); library(scales)
+if (!identical(params$render_token, "rendered-by-09_uncertainty_psa")) {
+  stop("Render through psa_render_documents() (code/09_uncertainty_psa.R) so outputs stay in output_psa/.")
+}
+slides_dir <- normalizePath(params$slides_dir, winslash = "/", mustWork = TRUE)
+required <- c("sl_psa_meta.rds", "sl_psa_params.rds", "sl_scalars.rds", "sl_tab_summary.rds", "sl_tab_region.rds",
+              "sl_dt_cause.rds", "sl_dt_age.rds", "sl_dt_asmr.rds", "sl_dt_annual.rds", "sl_bod_summary.rds",
+              "sl_control_summary.rds", "sl_control_scalars.rds", "sl_fig_baseline_trend.png",
+              "sl_econ_vsl_primary.rds", "sl_econ_vsly_primary.rds", "sl_econ_scalars.rds", "sl_econ_dotplot.png",
+              "sl_manifest.rds")
+missing <- required[!file.exists(file.path(slides_dir, required))]
+if (length(missing)) stop("PSA slide artefacts missing (knit aim1_report_psa.Rmd first): ", paste(missing, collapse = ", "))
+rd <- function(f) readRDS(file.path(slides_dir, f))
+meta <- rd("sl_psa_meta.rds"); sl <- rd("sl_scalars.rds")
+man_sl <- rd("sl_manifest.rds")
+if (!identical(unique(man_sl$run_id), meta$run_id)) stop("Slide artefacts come from different PSA runs.")
+sl_tab_summary <- rd("sl_tab_summary.rds"); sl_tab_region <- rd("sl_tab_region.rds")
+sl_dt_cause <- rd("sl_dt_cause.rds"); sl_dt_age <- rd("sl_dt_age.rds"); sl_dt_asmr <- rd("sl_dt_asmr.rds")
+sl_dt_annual <- rd("sl_dt_annual.rds"); sl_bod <- rd("sl_bod_summary.rds")
+sl_control_summary <- rd("sl_control_summary.rds"); sl_control_scalars <- rd("sl_control_scalars.rds")
+sl_econ_vsl_primary <- rd("sl_econ_vsl_primary.rds"); sl_econ_vsly_primary <- rd("sl_econ_vsly_primary.rds")
+sl_econ_scalars <- rd("sl_econ_scalars.rds")
+# LaTeX cannot read paths with spaces: use copies in the private render directory.
+local_png <- function(f) { stopifnot(file.copy(file.path(slides_dir, f), f, overwrite = TRUE)); f }
+png_trend <- local_png("sl_fig_baseline_trend.png")
+png_econ_dot <- local_png("sl_econ_dotplot.png")
+n_countries <- sl$n_countries; study_years <- sl$study_years
+sl_psa_params <- rd("sl_psa_params.rds")
+scal <- function(nm) { x <- sl$table[sl$table$name == nm]; if (nrow(x) != 1L) stop("Scalar missing: ", nm); x }
+int_lbl <- meta$interval_label
+DEG <- "$\\ddagger$"
+fmt_M <- function(x, digits = 1) formatC(round(x / 1e6, digits), format = "f", digits = digits, big.mark = ",")
+pi_tex <- function(point, lower, upper, degenerate, f = fmt_M) {
+  ifelse(degenerate, paste0(f(point), " ", DEG), paste0(f(point), " [", f(lower), "--", f(upper), "]"))
+}
+pi_scal <- function(nm, f = fmt_M) { x <- scal(nm); pi_tex(x$point, x$lower, x$upper, x$degenerate, f) }
+fmt_pct1 <- function(x) formatC(round(x * 100, 1), format = "f", digits = 1)
+fmt_T <- function(x) formatC(round(x / 1e12, 1), format = "f", digits = 1, big.mark = ",")
+int_order <- c("HTN Control (No Diabetes)", "HTN Control (Diabetes)", "Improved Statin Uptake", "All Interventions")
+int_cols <- c("HTN Control (No Diabetes)" = "#1f78b4", "HTN Control (Diabetes)" = "#a6cee3",
+              "Improved Statin Uptake" = "#e31a1c", "All Interventions" = "#6a3d9a", "Business-as-Usual" = "#999999")
+deg_note <- paste0("\\scriptsize ", int_lbl, ": 2.5th--97.5th percentiles of ", meta$n_mc_draws,
+                   " matched draws of the BPLTTC Appendix S6 BP-effect HRs; ", DEG,
+                   " = no sampled parameter enters (statins/BAU fixed; All Interventions loses the BP incidence effect, 06 defect D1).")
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.align = "center",
+                      fig.height = 3.6, fig.width = 8.5, out.width = "\\linewidth", dev = "cairo_pdf")
+```
+
+`r if (!isTRUE(meta$is_final)) paste0("\\begin{alertblock}{TEST --- ", meta$n_mc_draws, " draws; intervals not for reporting}\\small This deck is a software smoke test of the PSA pipeline (run ", gsub("_", "\\\\_", meta$run_id), "). The bracketed ranges are not reportable 95\\% intervals.\\end{alertblock}") else ""`
+
+# Study Overview
+
+## Aim 1: Research Questions
+
+\begin{block}{Central Question}
+What is the projected \textbf{burden-of-disease impact} of achieving the WHO cardiovascular risk-factor control targets by \textbf{2030}?
+\end{block}
+
+\textbf{Sub-questions driving the analysis:}
+
+\begin{enumerate}
+  \item How many \textbf{cardiovascular events} could be averted?
+  \item How many \textbf{CVD deaths} could be prevented by 2030 and beyond?
+  \item How would \textbf{life-years, YLLs, YLDs, and DALYs} change under joint achievement of:
+  \begin{itemize}
+      \item 150M additional people with controlled hypertension
+      \item $\geq$50\% lipid-lowering therapy coverage
+      \item 80\% BP control among people with diabetes
+      \item \alert{80\% validated BP device availability}
+  \end{itemize}
+\end{enumerate}
+
+\medskip
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\begin{exampleblock}{Scope}
+\small
+\textbf{`r n_countries` countries} $\cdot$ Ages 20--95 $\cdot$ 2026--2050 $\cdot$ Multiple CVD causes $\cdot$ WHO Target Scenarios
+\end{exampleblock}
+\end{column}
+\begin{column}{0.48\textwidth}
+\begin{alertblock}{Intervention start: 2026}
+\small
+Model calibrated to 2019 baseline. First year of target scale-up effects entering the projection is \textbf{2026}.
+\end{alertblock}
+\end{column}
+\end{columns}
+
+## Study Design at a Glance
+
+```{r design-table}
+design <- data.table(
+  Component = c("Model type", "Calibration data", "Population data", "Intervention start", "Scale-up period",
+                "Comparison", "Outcome", "Time horizon", "Uncertainty"),
+  Detail = c("Discrete-time multi-state model (Well $\\to$ Sick $\\to$ Dead)",
+             "GBD 2023: incidence, case fatality, prevalence; all-cause \\& CVD-specific",
+             "UNWPP 2024 single-year age/sex projections",
+             "\\textbf{2026} --- first year intervention effects enter the projection",
+             "Linear scale-up 2026 $\\to$ 2030; rates held constant 2030--2050",
+             "Business-as-usual: 2024 control rates, no additional scale-up",
+             "CVD deaths averted vs.~BAU; age-standardised mortality rate (ASMR)",
+             "2026--2050 (25-year horizon); model calibrated from 2019",
+             paste0("PSA of BP-effect parameters (", meta$n_mc_draws, " draws); ranges are partial parameter-uncertainty intervals")))
+kable(design, col.names = c("Component", "Detail"), align = "ll", escape = FALSE, booktabs = TRUE, format = "latex") |>
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 8, full_width = FALSE) |>
+  column_spec(1, bold = TRUE, width = "3.2cm") |> column_spec(2, width = "9.8cm") |> row_spec(4, background = "#dbeafe")
+```
+
+## Study Context
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Objective}
+\begin{itemize}
+  \item Quantify CVD deaths avertable by achieving WHO 2030 cardiovascular targets
+  \item Coverage: \textbf{`r n_countries` countries}, `r study_years`
+  \item Four causes: IHD, ischemic stroke, hemorrhagic stroke, hypertensive HD
+\end{itemize}
+\vspace{6pt}
+\textbf{Model}
+\begin{itemize}
+  \item Discrete-time state transition (Well $\to$ Sick $\to$ Dead)
+  \item Calibrated to GBD 2023; projected with UNWPP 2024 populations
+  \item 8 blood-pressure bins
+  \item Baseline treatment effects explicitly de-duplicated
+\end{itemize}
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{exampleblock}{Research Question}
+What are the projected deaths averted from achieving WHO hypertension control and lipid-lowering therapy targets across \textbf{`r n_countries` countries}, 2026--2050?
+\end{exampleblock}
+\begin{block}{Pending \textcolor{red!70!black}{$\bigtriangleup$}}
+Confirm primary metric: deaths averted vs.\ DALYs vs.\ LYG
+\end{block}
+\end{column}
+\end{columns}
+
+## Uncertainty Analysis: What the Ranges Mean
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Sampled (15 parameters)}
+\begin{itemize}\footnotesize
+  \item BPLTTC 2021 Appendix S6 HR per 5 mmHg: IHD, stroke, heart failure $\times$ baseline SBP 130--139 \ldots $\geq$170
+  \item $\log HR \sim N(\log \widehat{HR}, SE^2)$, $SE = (\log U - \log L)/3.92$; independent; one draw shared by all countries, years and scenarios
+\end{itemize}
+\textbf{Fixed}
+\begin{itemize}\footnotesize
+  \item BP case-fatality factors, all statin parameters, legacy TFA, baseline epidemiology, population, targets, DW, LE, economics
+  \item Structure: stratum HRs multiplied across traversed BP bins (alternatives are structural scenarios)
+\end{itemize}
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{exampleblock}{Reading the numbers}
+\footnotesize Point = deterministic model; brackets = 2.5th--97.5th percentile of `r meta$n_mc_draws` matched draws (`r int_lbl`). Partial parameter uncertainty only.
+\end{exampleblock}
+\begin{alertblock}{`r DEG` Degenerate ranges}
+\footnotesize All Interventions shows no range: in the current model its sodium step erases the BP incidence effect (defect D1), so the sampled HRs never reach it. Statins and BAU are fixed.
+\end{alertblock}
+\end{column}
+\end{columns}
+
+# Data Sources
+
+## Data Sources and Key Variables
+
+```{r data-sources-table}
+ds <- data.table(
+  Source = c("GBD 2023 (IHME)", "GBD 2019 (IHME)", "BPLTTC 2021 (Appendix S6)", "UNWPP 2024 (UN)", "NCD-RisC", "Country-specific"),
+  Variables = c("IR, CF, prevalence, background mortality (age/sex/country)",
+                "Relative risks per 10 mmHg SBP increase (IHD, stroke, HHD, by age)",
+                "Treatment HR per 5 mmHg by baseline SBP; diabetes-stratified products (sampled in the PSA)",
+                "Population projections 2019--2050 (single-year age, sex, country)",
+                "Baseline HTN control rates ($C_0$); BP distribution by country",
+                "HTN control targets 2030 (150M split by diabetes status)"),
+  Role = c("Baseline transition rates; initial states", "Anchor BP-bin incidence; normalisation factor $\\alpha$",
+           "Treatment effect sizes by BP bin $\\times$ cause", "Cohort sizes; rate denominators",
+           "$C_0$; $P(\\text{BP}_{\\text{cat}})$", "$C_{\\text{target}}$ per scenario"))
+kable(ds, align = "lll", escape = FALSE, booktabs = TRUE, format = "latex",
+      col.names = c("Source", "Variables extracted", "Role in model")) |>
+  kable_styling(latex_options = c("striped", "hold_position"), font_size = 8, full_width = FALSE) |>
+  column_spec(1, bold = TRUE, width = "2.8cm") |> column_spec(2, width = "6.8cm") |> column_spec(3, width = "3.4cm")
+```
+
+\scriptsize The original deck labels the BP-effect source "Ettehad 2016"; the model's effect workbook (and this PSA) uses BPLTTC 2021 Appendix S6.
+
+# Scenarios
+
+## Four WHO Priority Targets
+
+```{r scenario-table, results='asis'}
+add_nd_M <- fmt_M(sl_control_scalars$add_no_diabetes); add_d_M <- fmt_M(sl_control_scalars$add_diabetes)
+add_t_M <- fmt_M(sl_control_scalars$add_total)
+dt_scen <- data.table(N = 1:4,
+  WT = c("150M more with HTN controlled by 2030", "$\\geq$50\\% eligible adults on lipid-lowering therapy by 2030",
+         "80\\% BP control among diagnosed diabetics by 2030", "80\\% availability of validated BP devices"),
+  Sc = c(paste0("\\textbf{HTN Control (Combined)}: ", add_t_M, "M more controlled = ", add_nd_M, "M without + ", add_d_M,
+                "M with diabetes (mutually exclusive, additive)"),
+         "\\textbf{Improved Statin Uptake}: 50\\% coverage by 2030",
+         paste0("\\textbf{HTN Control (Diabetes)}: 0.80 aspirational ceiling by 2030 (", add_d_M, "M of the 150M)"),
+         "Operationally embedded in HTN scenarios (150M Target [1+3])"))
+kable(dt_scen, format = "latex", booktabs = TRUE, escape = FALSE, col.names = c("\\#", "WHO Target", "Modelled Scenario")) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 7) |>
+  column_spec(2, width = "4.5cm") |> column_spec(3, width = "5.5cm")
+```
+
+\vspace{4pt}
+\textbf{Combination rule:} the two BP subgroups combine \emph{additively} as a population mixture, $\varepsilon_{IR,\text{BP}} = 1-(1-w_D)e_N - w_D e_D$; the BP composite then combines multiplicatively with statins, $\varepsilon_{IR,\text{total}} = \varepsilon_{IR,\text{BP}} \times \varepsilon_{IR,\text{statin}}$.
+
+## The 150 Million Target --- Additional BP Control by Region and Diabetes Status
+
+```{r scenario-split-plot, fig.height=2.9}
+csr <- sl_control_summary[scenario_id == "bp_combined" & subgroup %in% c("htn_no_diabetes", "htn_diabetes") & region != "Global"]
+csr[, subgroup_lbl := factor(fifelse(subgroup == "htn_no_diabetes", "Without diabetes", "With diabetes"),
+                             levels = c("Without diabetes", "With diabetes"))]
+csr[, region := factor(region, levels = csr[, .(tot = sum(additional_2030)), by = region][order(tot), region])]
+ggplot(csr, aes(x = additional_2030 / 1e6, y = region, fill = subgroup_lbl)) + geom_col(width = 0.7) +
+  scale_fill_manual(values = c("Without diabetes" = "#1f78b4", "With diabetes" = "#a6cee3"), name = NULL) +
+  labs(title = "150 Million Additional People with BP Control by 2030",
+       subtitle = paste0("Fixed 2025 population | global total = ", add_t_M, "M (", add_nd_M, "M without + ", add_d_M, "M with diabetes) | fixed policy input"),
+       x = "Additional people controlled (millions)", y = NULL) +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+```
+
+## HTN Control Target: 150 Million by WHO Region
+
+```{r scenario-region-table, results='asis'}
+region_order <- c("Africa", "Americas", "Eastern Mediterranean", "Europe", "South-East Asia", "Western Pacific", "Global")
+rc <- sl_control_summary[scenario_id == "bp_combined" & subgroup == "total"]
+rc[, region := factor(region, levels = region_order)]; setorder(rc, region)
+rc_disp <- rc[, .(Region = as.character(region), `HTN pop 2025 (M)` = fmt_M(htn_pop_2025),
+                  `Controlled 2025 (M)` = fmt_M(controlled_2025),
+                  `Cov.\\ 2025` = paste0(formatC(coverage_2025 * 100, format = "f", digits = 1), "\\%"),
+                  `Controlled 2030 (M)` = fmt_M(controlled_2030),
+                  `Cov.\\ 2030` = paste0(formatC(coverage_2030 * 100, format = "f", digits = 1), "\\%"),
+                  `Added (M)` = fmt_M(additional_2030),
+                  `+\\%` = paste0(formatC(pct_increase, format = "f", digits = 1), "\\%"))]
+kable(rc_disp, format = "latex", booktabs = TRUE, escape = FALSE, align = c("l", rep("r", 7))) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 7) |> row_spec(0, bold = TRUE) |>
+  row_spec(which(rc_disp$Region == "Global"), bold = TRUE, color = "white", background = "#2166ac")
+```
+
+\footnotesize Coverage rates and 2030 counts use the fixed 2025 hypertensive population (fixed policy input; no PSA range).
+
+## HTN Control Target: 150 Million by WHO Region \emph{and} Diabetes Subgroup
+
+```{r scenario-region-subgroup-table, results='asis'}
+cs <- sl_control_summary[scenario_id == "bp_combined"]
+addw <- dcast(cs[subgroup %in% c("htn_no_diabetes", "htn_diabetes", "total")], region ~ subgroup, value.var = "additional_2030")
+m <- merge(addw, cs[subgroup == "total", .(region, coverage_2030, pct_increase)], by = "region")
+m[, region := factor(region, levels = region_order)]; setorder(m, region)
+rsw <- m[, .(Region = as.character(region), `No diabetes` = fmt_M(htn_no_diabetes), Diabetes = fmt_M(htn_diabetes),
+             Total = fmt_M(total), `Cov.\\ 2030` = paste0(formatC(coverage_2030 * 100, format = "f", digits = 1), "\\%"),
+             `+\\%` = paste0(formatC(pct_increase, format = "f", digits = 1), "\\%"))]
+kable(rsw, format = "latex", booktabs = TRUE, escape = FALSE, align = c("l", rep("r", 5))) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 8) |>
+  add_header_above(c(" " = 1, "Additional controlled 2030 (M)" = 3, " " = 2), bold = TRUE) |>
+  row_spec(0, bold = TRUE) |> row_spec(which(rsw$Region == "Global"), bold = TRUE, color = "white", background = "#2166ac")
+```
+
+# Mathematical Model
+
+## Model Architecture: Three Health States
+
+```{r state-diagram, fig.height=2.7}
+nodes <- data.table(x = c(1, 3.2, 5.4), y = c(1, 1, 1), label = c("Well\n(W)", "Sick\n(K)", "Dead\n(D)"),
+                    fill = c("#d4edda", "#fff3cd", "#f8d7da"))
+arr_main <- data.table(x1 = c(1.40, 3.60), y1 = c(1, 1), x2 = c(2.80, 5.00), y2 = c(1, 1),
+                       lbl = c("IR × ε_IR", "CF × ε_CF"))
+arr_bg <- data.table(x1 = c(1.0, 3.2, 3.0), y1 = c(1.25, 1.25, 1.0), x2 = c(1.0, 3.2, 5.0), y2 = c(0.62, 0.62, 0.62),
+                     lbl = c("BG.mx", "BG.mx", "BG.mx.all"))
+ggplot() +
+  geom_tile(data = nodes, aes(x = x, y = y, fill = fill), width = 0.75, height = 0.42, color = "grey30", linewidth = 0.8) +
+  scale_fill_identity() + geom_text(data = nodes, aes(x = x, y = y, label = label), size = 4, fontface = "bold") +
+  geom_segment(data = arr_main, aes(x = x1, y = y1, xend = x2, yend = y2), arrow = arrow(length = unit(0.22, "cm"), type = "closed"),
+               linewidth = 1.2, color = "#2171b5") +
+  geom_label(data = arr_main, aes(x = (x1 + x2) / 2, y = y1 + 0.22, label = lbl), size = 3.2, fill = "white", color = "#2171b5") +
+  geom_segment(data = arr_bg, aes(x = x1, y = y1, xend = x2, yend = y2), arrow = arrow(length = unit(0.16, "cm"), type = "closed"),
+               linewidth = 0.7, color = "grey55", linetype = "dashed") +
+  geom_label(data = arr_bg, aes(x = (x1 + x2) / 2 + 0.2, y = (y1 + y2) / 2, label = lbl), size = 2.6, fill = "white", color = "grey50") +
+  scale_x_continuous(limits = c(0.5, 6.0)) + scale_y_continuous(limits = c(0.28, 1.58)) + theme_void(base_size = 11) +
+  labs(title = "Multi-State Transition Model  |  Annual time step  |  Ages 20-95  |  4 CVD causes")
+```
+
+\small \textbf{Key:} $\varepsilon_{IR}$, $\varepsilon_{CF}$ = multiplicative effect ratios from the intervention module $\cdot$ BG.mx = background mortality $\cdot$ COVID-19 excess mortality applied 2020--2021 only
+
+## Modeling Assumptions
+
+\begin{columns}[T]
+\begin{column}{0.47\textwidth}
+\textbf{Model structure}
+\begin{itemize}\footnotesize
+  \item Discrete-time annual step (2019--2050); ages 20--95
+  \item Four causes modeled independently
+  \item COVID-19 excess mortality applied 2020--2021 only; no long-term effects
+\end{itemize}
+\medskip
+\textbf{Intervention mechanics}
+\begin{itemize}\footnotesize
+  \item Linear scale-up 2026 $\to$ 2030; held constant 2030--2050
+  \item Only incremental coverage above $C_0$ (or $U_{0,\ell}$) generates new effects (no double-counting)
+  \item `r if (isTRUE(all.equal(c(meta$adherence_ir, meta$adherence_cf), c(1, 1)))) "Full adherence in the executed run (statin adherence arguments = 1)" else sprintf("Statin adherence in the executed run: %s (incidence), %s (case fatality)", meta$adherence_ir, meta$adherence_cf)`
+  \item Statin effects restricted to ages $\geq 40$ and IHD \& ischemic stroke only
+\end{itemize}
+\end{column}
+\begin{column}{0.52\textwidth}
+\textbf{Blood pressure \& effect sizes}
+\begin{itemize}\footnotesize
+  \item Static BP distribution: no secular trend, no endogenous updating as coverage rises
+  \item Treatment eligibility: $\geq$140 mmHg (5 hypertensive bins)
+  \item GBD RRs anchor bin-level baseline incidence
+  \item \alert{Hypertensives split into mutually exclusive no-diabetes and diabetes subgroups}
+  \item \alert{Baseline control 15 percentage points higher with diabetes, preserving the observed overall rate}
+  \item \alert{Subgroup-specific BPLTTC effect products applied to each subgroup's own share, combined \emph{additively}}
+\end{itemize}
+\medskip
+\textbf{Combination of interventions}
+\begin{itemize}\footnotesize
+  \item BP subgroups combine \textbf{additively}; the BP composite combines \textbf{multiplicatively} with statins
+\end{itemize}
+\end{column}
+\end{columns}
+
+## Burden of Disease: Methods
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Three burden-of-disease metrics}
+\begin{itemize}\footnotesize
+  \item \textbf{YLL}: deaths $\times$ remaining life expectancy at age of death
+  \item \textbf{YLD}: prevalent CVD cases $\times$ disability weight
+  \item \textbf{DALY} $= YLL + YLD$
+\end{itemize}
+\medskip
+\textbf{DALYs averted} = $DALY_{\text{BAU}} - DALY_{\text{intervention}}$, formed within each PSA draw
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{exampleblock}{Reference standards}
+\footnotesize
+\textbf{Life table:} UNWPP 2024, medium variant\\
+\textbf{Disability weights:} GBD 2023 (YLD/Prevalence)\\
+\textbf{Discounting:} None; \textbf{Age weighting:} None
+\end{exampleblock}
+\end{column}
+\end{columns}
+
+# Results
+
+## Baseline Disease Trends (Business-as-Usual)
+
+```{r fig-baseline-trend, fig.height=3.4}
+knitr::include_graphics(png_trend)
+```
+
+\footnotesize Incident and prevalent CVD cases 2019--2050 (fixed reference series; identical in every draw).
+
+## Age-Standardised CVD Mortality Rate
+
+```{r fig-asmr, fig.height=3.0}
+ggplot(sl_dt_asmr, aes(x = year, y = point, color = int_lbl, fill = int_lbl)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper), alpha = 0.25, color = NA) +
+  geom_line(aes(linetype = year > 2019), linewidth = 1) +
+  scale_color_manual(values = int_cols, name = NULL) + scale_fill_manual(values = int_cols, name = NULL) +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"), guide = "none") +
+  labs(x = "Year", y = "ASMR (per 100,000)", subtitle = paste("Solid = calibration; dashed = projection; ribbons:", int_lbl)) +
+  theme_minimal(base_size = 10) + theme(legend.position = "bottom", legend.text = element_text(size = 7)) +
+  guides(color = guide_legend(nrow = 2), fill = guide_legend(nrow = 2))
+```
+
+## Summary: Cumulative Deaths Averted, 2026--2050
+
+```{r tab-summary, results='asis'}
+ts <- sl_tab_summary[, .(Scenario = intervention,
+  `Cumulative (M)` = pi_tex(point, lower, upper, degenerate),
+  `Avg./year (M)` = pi_tex(a_point, a_lower, a_upper, degenerate),
+  `\\% of BAU deaths` = pi_tex(pct_point / 100, pct_lower / 100, pct_upper / 100, degenerate, fmt_pct1))]
+kable(ts, format = "latex", booktabs = TRUE, escape = FALSE, align = "lrrr") |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) |>
+  row_spec(which(ts$Scenario == "All Interventions"), bold = TRUE, color = "white", background = "#6a3d9a")
+```
+
+\begin{exampleblock}{Headline}
+\textbf{All Interventions}: \textbf{`r pi_scal("total_all")` million deaths averted} globally, 2026--2050.
+HTN control (no diabetes): `r pi_scal("total_bp")` M; HTN control (diabetes): `r pi_scal("total_bpd")` M.
+\end{exampleblock}
+
+`r deg_note`
+
+## Annual Deaths Averted Over Time
+
+```{r fig-deaths-averted, fig.height=3.0}
+ggplot(sl_dt_annual[!intervention %in% c("All Interventions")], aes(x = year, y = point / 1e6, color = intervention, fill = intervention)) +
+  geom_ribbon(aes(ymin = lower / 1e6, ymax = upper / 1e6), alpha = 0.25, color = NA) + geom_line(linewidth = 1) +
+  scale_color_manual(values = int_cols, name = NULL) + scale_fill_manual(values = int_cols, name = NULL) +
+  scale_y_continuous(labels = comma) + labs(x = "Year", y = "Deaths averted (millions)") +
+  theme_minimal(base_size = 12) + theme(legend.position = "bottom")
+```
+
+\footnotesize Annual deaths averted vs.\ business-as-usual; ribbons: `r int_lbl`.
+
+## Cumulative Deaths Averted Over Time
+
+```{r fig-cum-averted, fig.height=3.0}
+ggplot(sl_dt_annual[!intervention %in% c("All Interventions")], aes(x = year, y = cum_point / 1e6, color = intervention, fill = intervention)) +
+  geom_ribbon(aes(ymin = cum_lower / 1e6, ymax = cum_upper / 1e6), alpha = 0.25, color = NA) + geom_line(linewidth = 1.1) +
+  scale_color_manual(values = int_cols, name = NULL) + scale_fill_manual(values = int_cols, name = NULL) +
+  scale_y_continuous(labels = comma) + labs(x = "Year", y = "Cumulative deaths averted (millions)") +
+  theme_minimal(base_size = 12) + theme(legend.position = "bottom")
+```
+
+\footnotesize Cumulative deaths averted per intervention; ribbons: `r int_lbl`.
+
+## Deaths Averted by Cause of Death
+
+```{r fig-by-cause, fig.height=3.0}
+ggplot(sl_dt_cause, aes(x = cause_lbl, y = point / 1e6, fill = intervention)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.75) +
+  geom_errorbar(aes(ymin = lower / 1e6, ymax = upper / 1e6), position = position_dodge(width = 0.8), width = 0.25) +
+  scale_fill_manual(values = int_cols[int_order], name = NULL) + scale_y_continuous(labels = comma) +
+  labs(x = NULL, y = "Deaths averted (millions)") + theme_minimal(base_size = 10) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 7)) + guides(fill = guide_legend(nrow = 2))
+```
+
+## Deaths Averted by Age Group
+
+```{r fig-by-age, fig.height=3.0}
+ggplot(sl_dt_age, aes(x = age_group, y = point / 1e6, fill = intervention)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.75) +
+  geom_errorbar(aes(ymin = lower / 1e6, ymax = upper / 1e6), position = position_dodge(width = 0.8), width = 0.25) +
+  scale_fill_manual(values = int_cols[int_order], name = NULL) + scale_y_continuous(labels = comma) +
+  labs(x = "Age group", y = "Deaths averted (millions)") + theme_minimal(base_size = 10) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 7)) + guides(fill = guide_legend(nrow = 2))
+```
+
+## Burden of Disease Averted: YLLs, YLDs, and DALYs
+
+\small
+- DALYs averted (All Interventions): `r pi_scal("total_dalys_all")` M
+- YLLs averted: `r pi_scal("total_ylls_all")` M $\cdot$ YLDs averted: `r pi_scal("total_ylds_all")` M
+
+```{r bod-table, results='asis'}
+bt <- copy(sl_bod)[, cell := pi_tex(point, lower, upper, degenerate)]
+bt <- dcast(bt, intervention ~ measure, value.var = "cell")
+setcolorder(bt, c("intervention", "Deaths", "YLLs", "YLDs", "DALYs"))
+setorder(bt, intervention)
+setnames(bt, c("intervention", "Deaths", "YLLs", "YLDs", "DALYs"),
+         c("Intervention", "Deaths averted (M)", "YLLs averted (M)", "YLDs averted (M)", "DALYs averted (M)"))
+kable(bt, format = "latex", booktabs = TRUE, escape = FALSE, align = "lrrrr") |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 8)
+```
+
+\begin{exampleblock}{Headline}
+\footnotesize
+The combined WHO target package generates large health gains, with most benefits coming through avoided premature CVD deaths rather than morbidity reduction alone.
+\end{exampleblock}
+
+## Regional Summary
+
+```{r tab-region, results='asis'}
+tr <- sl_tab_region[, .(Region = region, `BAU deaths (M)` = fmt_M(bau),
+                        `Averted (M)` = pi_tex(point, lower, upper, degenerate),
+                        `\\% averted` = pi_tex(pct_point / 100, pct_lower / 100, pct_upper / 100, degenerate, fmt_pct1))]
+kable(tr, format = "latex", booktabs = TRUE, escape = FALSE, align = "lrrr") |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) |> row_spec(0, bold = TRUE)
+```
+
+\vspace{4pt}
+\begin{block}{Observation}
+Absolute gains largest in high-burden regions; proportional gains reflect current coverage gaps.
+\end{block}
+
+`r deg_note`
+
+# Economic Value of Avoidable Mortality
+
+## Economic Valuation: Methods at a Glance
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Two complementary metrics}
+\begin{itemize}\footnotesize
+  \item \textbf{VSL} --- transferred from a U.S.\ reference using GNI per capita (PPP) and an income elasticity.
+  \item \textbf{VSLY} --- VSL divided by remaining life expectancy at the average adult age, applied to life-years gained from deaths averted.
+\end{itemize}
+\medskip
+\textbf{Headline framing}: VSLY as a \textbf{proportion of annual income} (discounted GNI); computed within each PSA draw.
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{exampleblock}{Reference-case parameters (fixed)}
+\footnotesize
+\textbf{Income elasticity (primary):} 0.8 (HIC) / 1.2 (LMIC)\\
+\textbf{Sensitivity:} uniform $e = 1.5$\\
+\textbf{Discount rate:} 3\%; \textbf{Horizon:} 2026--2050
+\end{exampleblock}
+\end{column}
+\end{columns}
+
+## Economic Value by WHO Region (Primary, Cumulative 2026--2050)
+
+```{r econ-headline, include=FALSE}
+e <- sl_econ_scalars
+vsly_share <- pi_tex(e$world_vsly_share_total$point, e$world_vsly_share_total$lower, e$world_vsly_share_total$upper,
+                     e$world_vsly_share_total$degenerate, function(x) paste0(fmt_pct1(x), "\\%"))
+vsly_val <- pi_tex(e$world_vsly_value_total$point, e$world_vsly_value_total$lower, e$world_vsly_value_total$upper,
+                   e$world_vsly_value_total$degenerate, function(x) paste0("\\$", fmt_T(x), " T"))
+```
+
+\begin{exampleblock}{World: All Interventions, 2026--2050 (primary, discounted at 3\%)}
+\textbf{VSLY} = \textbf{`r vsly_share`} of annual income PPP (cumulative \textbf{`r vsly_val`}).
+\end{exampleblock}
+
+```{r tab-econ-region, results='asis'}
+reg_order <- c("Africa", "Americas", "Eastern Mediterranean", "Europe", "South-East Asia", "Western Pacific", "World")
+ev <- sl_econ_vsly_primary[intervention == "All Interventions"]
+ev[, who_region := factor(who_region, levels = reg_order)]; setorder(ev, who_region)
+et <- ev[, .(Region = as.character(who_region),
+             `VSLY (USD T)` = pi_tex(point_metric_total, lower_metric_total, upper_metric_total, degenerate_metric_total,
+                                     function(x) paste0("\\$", fmt_T(x))),
+             `VSLY \\% GNI` = pi_tex(point_share_total, lower_share_total, upper_share_total, degenerate_share_total,
+                                     function(x) paste0(fmt_pct1(x), "\\%")))]
+kable(et, format = "latex", booktabs = TRUE, escape = FALSE, align = "lrr") |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 8) |> row_spec(0, bold = TRUE) |>
+  row_spec(which(et$Region == "World"), bold = TRUE, color = "white", background = "#2166ac")
+```
+
+`r deg_note`
+
+## Value of Avoidable Mortality as a Proportion of Income
+
+```{r fig-econ-dotplot, fig.height=3.2}
+knitr::include_graphics(png_econ_dot)
+```
+
+\scriptsize VSLY as a proportion of discounted GNI, by WHO region $\times$ year and cumulative 2026--2050. Blue = primary elasticity (e = 0.8 HIC / 1.2 LMIC); red = sensitivity (uniform e = 1.5); horizontal bars: `r int_lbl`.
+
+# Discussion
+
+## Interpretation
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Key findings}
+\begin{itemize}
+  \item \textbf{All Interventions} yields largest gains: HTN control + statins are complementary
+  \item \textbf{IHD} and \textbf{ischemic stroke} drive the majority of avertable deaths
+  \item Gains \textbf{accelerate after 2030} as coverage compounds
+  \item \textbf{Older adults (70+)} benefit most in absolute terms
+\end{itemize}
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{exampleblock}{Policy Implication}
+Combined WHO Targets 1 + 2 are synergistic --- neither alone captures the full benefit.
+\end{exampleblock}
+\vspace{6pt}
+\begin{alertblock}{Uncertainty}
+BP-effect parameter uncertainty is now propagated (ranges shown). All Interventions shows none because of 06 defect D1; other inputs remain fixed.
+\end{alertblock}
+\end{column}
+\end{columns}
+
+## Limitations
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Model structure \& assumptions}
+\begin{itemize}\footnotesize
+  \item Stable transition rates; no dynamic feedback between states
+  \item Static BP distribution; no endogenous updating as coverage increases
+  \item Newly HTN-covered individuals assumed fully adherent
+  \item COVID-19 excess mortality only for 2020--2021
+\end{itemize}
+\medskip
+\textbf{Data \& parameters}
+\begin{itemize}\footnotesize
+  \item Only the BP-effect HRs are sampled; case-fatality, statin, baseline and economic inputs are fixed
+  \item GBD 2023 uncertainty intervals not propagated
+  \item Baseline $C_0$ from NCD-RisC; measurement error unquantified
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Scenarios \& implementation realism}
+\begin{itemize}\footnotesize
+  \item Linear scale-up assumed (2026--2030)
+  \item No explicit health-system capacity constraints
+  \item All Interventions includes legacy sodium/TFA steps (defects D1, D2)
+\end{itemize}
+\end{column}
+\end{columns}
+
+## Next Steps
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{Analysis priorities}
+\begin{enumerate}
+  \item Production PSA ($\geq$1,000 draws) with convergence checks
+  \item Structural sensitivity: BP stratum construction, CF pathways, combined-scenario definition
+  \item Stratify by income group (World Bank)
+  \item Conduct Aim 2 scale-up scenarios
+\end{enumerate}
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{alertblock}{Pending Decisions \textcolor{red!70!black}{$\bigtriangleup$}}
+\begin{itemize}
+  \item Journal target?
+\end{itemize}
+\end{alertblock}
+\end{column}
+\end{columns}
+
+## Summary
+
+\begin{block}{\textbf{1. The health gains are large and achievable}}
+All Interventions: \textbf{`r pi_scal("total_all")` million deaths averted} globally, 2026--2050.
+\end{block}
+
+\begin{block}{\textbf{2. HTN control + statins compound risk reduction}}
+HTN control and statins have multiplicative risk reductions, producing larger combined effects.
+\end{block}
+
+\begin{block}{\textbf{3. Regional patterns reflect burden and coverage gaps}}
+Absolute gains largest in high-burden regions; proportional gains reflect current coverage gaps.
+\end{block}
+
+\begin{exampleblock}{\textbf{4. The economic value rivals annual income itself}}
+World, All Interventions, 2026--2050: avoidable CVD mortality is worth \textbf{`r vsly_share` of annual income} (VSLY, cumulative \textbf{`r vsly_val`}, discounted at 3\%).
+\end{exampleblock}
+
+`r deg_note`
+
+# Appendix
+
+## Appendix: PSA Parameter Distributions
+
+```{r psa-params, results='asis'}
+pp <- sl_psa_params[, .(Outcome = outcome, `Baseline SBP` = sub(">=", "$\\\\geq$", stratum),
+                        `HR per 5 mmHg (95\\% CI)` = sprintf("%.2f (%.2f--%.2f)", estimate, ci_lower, ci_upper),
+                        meanlog = sprintf("%.4f", meanlog), sdlog = sprintf("%.4f", sdlog))]
+kable(pp, format = "latex", booktabs = TRUE, escape = FALSE) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 7)
+```
+
+\scriptsize BPLTTC 2021 Appendix S6 (values read from the model workbook by the PSA code). $\log HR \sim N$ with $SE = (\log U - \log L)/3.92$; stroke $\to$ ischaemic and haemorrhagic stroke; heart failure $\to$ HHD; $\geq$170 $\to$ 170--179 and 180+.
+
+## Notation: Core Model
+
+\begin{center}{\small
+\begin{tabular}{ll}
+\toprule
+Symbol & Description \\
+\midrule
+$a, s, c, t, \ell$ & Age, sex, cause, year, location \\
+$W, K, D$ & Well, Sick, Dead populations \\
+$IR_{a,s,c}$, $CF_{a,s,c}$ & Baseline incidence \& case-fatality rates \\
+$\varepsilon_{IR,j}$, $\varepsilon_{CF,j}$ & Multiplicative effect ratios for intervention $j$ \\
+$BG.mx$, $BG.mx.all$ & Cause-specific \& all-cause background mortality \\
+$covid.mx$ & COVID-19 mortality (2020--2021 only) \\
+\bottomrule
+\end{tabular}
+}\end{center}
+
+## Notation: HTN Control
+
+\begin{center}{\small
+\begin{tabular}{ll}
+\toprule
+Symbol & Description \\
+\midrule
+$C_0$, $C_t$, $C_{\text{target}}$ & Baseline, time-$t$, and target control rates \\
+$P(\text{BP}_{\text{cat}})$ & BP category population distribution (8 bins) \\
+$RR_{\text{GBD}}$ & GBD relative risk per 10 mmHg SBP increase \\
+$E_{D}$, $E_{N}$ & BPLTTC effect products (diabetes, no-diabetes subgroups) \\
+$e_{g,t}$ & Baseline-adjusted incremental effect for subgroup $g\in\{N,D\}$ \\
+$w_{D}$ & Diabetes share among hypertensives (mixture weight) \\
+$\rho_{CF,c}$ & CF reduction factor per unit incremental coverage (fixed) \\
+\bottomrule
+\end{tabular}
+}\end{center}
+
+## HTN Control: Key Equations
+
+\footnotesize
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Incidence pathway}
+$$IR_{\text{bin}} = \frac{RR_{\text{GBD}} \times IR}{\alpha},\quad \alpha = \sum_{\text{cat}} P_{\text{cat}}\cdot RR_{\text{GBD}}$$
+$$e_{g,t} = \frac{E_g\,(c_{g,t} - c_{g,0})}{1 - E_g\,c_{g,0}}$$
+$$\varepsilon_{IR,\text{BP}} = \frac{\sum_{\text{bin}} IR_{\text{bin}}\,[1-(1-w_D)e_{N,t}-w_D e_{D,t}]\,P_{\text{cat}}}{IR}$$
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Case fatality pathway (fixed $\rho$)}
+$$\varepsilon_{CF} = 1 - \rho_{CF}\times C_{\text{agg}}^{\Delta}$$
+\small
+\begin{tabular}{@{}lc@{}}
+\toprule Cause & $\rho_{CF}$ \\ \midrule
+IHD & 0.24 \\ Ischemic stroke & 0.36 \\
+Hemorrhagic stroke & 0.76 \\ HHD & 0.20 \\
+\bottomrule
+\end{tabular}
+\end{column}
+\end{columns}
+
+## Statin Therapy: Key Equations
+
+\footnotesize
+\begin{columns}[T]
+\begin{column}{0.50\textwidth}
+\textbf{Scope:} IHD \& ischemic stroke; ages $\geq 40$ only
+$$\Delta U(t,\ell) = \Delta U_{\text{target},\ell}\;\min\!\left[\frac{t-T_{\text{stat,start}}+1}{T_{\text{stat,end}}-T_{\text{stat,start}}+1},1\right]$$
+\small
+\begin{tabular}{@{}lcc@{}}
+\toprule Cause & $RR^{IR}$ & $RR^{CF}$ \\ \midrule
+IHD & 0.74 & 0.80 \\
+Ischemic stroke & 0.80 & 0.96 \\
+\bottomrule
+\end{tabular}
+\end{column}
+\begin{column}{0.48\textwidth}
+$$E^{IR}_{c,\ell}(t) = \frac{AF_{c,\ell}\;\delta^{IR}_{c}\;\Delta U(t,\ell)}{1 - \delta^{IR}_{c}\;U_{0,\ell}}$$
+\small Statin parameters are fixed in this PSA (no endpoint-matched uncertainty source; see the parameter register).
+\end{column}
+\end{columns}
+
+## References {.allowframebreaks}
+
+\footnotesize
+
+- **BPLTTC (Blood Pressure Lowering Treatment Trialists' Collaboration)** (2021). Pharmacological blood pressure lowering for primary and secondary prevention of cardiovascular disease across different levels of blood pressure. *Lancet* 397:1625--1636 (Appendix S6).
+- **Briggs AH, et al.** (2012). Model parameter estimation and uncertainty: ISPOR--SMDM Modeling Good Research Practices Task Force-6. *Value in Health* 15:835--842.
+- \textbf{Ettehad D, et al.}\ Blood pressure lowering for prevention of CVD and death. \textit{Lancet.} 2016;387:957--967.
+- **GBD 2023 Collaborators** (2024). Global mortality for 371 causes. *Lancet*.
+- **Pickersgill SJ et al.** (2022). Modeling global 80-80-80 blood pressure targets and cardiovascular outcomes. *Nature Medicine*.
+- **Robinson LA, Hammitt JK, O'Keeffe L.** (2019). Valuing mortality risk reductions in global benefit-cost analysis. \textit{Journal of Benefit-Cost Analysis} 10(S1):15--50.
+- **UNWPP** (2024). World Population Prospects 2024. United Nations.
+- **Watkins D et al.** (2025). Global Impact of Single-Pill Combination Therapies on Cardiovascular Mortality and Events, 2023-2050. *JACC*.
+- **WHO** (2023). Global Hearts Initiative: HEARTS Technical Package. Geneva.
+
+---
+
+\begin{center}
+\vfill
+{\Large \textbf{Thank You}}\\[10pt]
+{\normalsize Questions \& Discussion}\\[16pt]
+\begin{beamercolorbox}[sep=6pt,center,rounded=true]{block body example}
+\small Contact: David Watkins \textbar{} davidaw@uw.edu \textbar{} University of Washington
+\end{beamercolorbox}
+\vfill
+\end{center}

@@ -1,4 +1,4 @@
-Write a prompt to as claude code to : 
+Write a prompt to as claude code to: 
 Goal conduct a A Probabilistic Sensitivity Analysis (PSA) around intervention parameters as broad method used to evaluate parameter uncertainty in the model to derive uncertainty interval as a specific numerical range (like a 95% range) derived from that analysis to show the spread of plausible final outcomes in aim_1 report and executive slides estimates
 
 https://www.sciencedirect.com/science/article/pii/S1098301512016592#sec5

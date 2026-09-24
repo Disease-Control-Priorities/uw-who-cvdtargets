@@ -92,7 +92,9 @@ calculate_antihypertensive_split <- function(intervention_rates,
                                              target_rows,
                                              active_no_diabetes = TRUE,
                                              active_diabetes = TRUE,
-                                             etihad_rr_table = ETIHAD_RR_BIN) {
+                                             etihad_rr_table = ETIHAD_RR_BIN,
+                                             bp_baseline = NULL,
+                                             diabetes_age_prepared = NULL) {
   cat(" - Calculating mutually exclusive antihypertensive subgroup impacts\n")
   validate_htn_target_table(target_rows)
   if (uniqueN(target_rows$location) != 1L ||
@@ -131,17 +133,26 @@ calculate_antihypertensive_split <- function(intervention_rates,
     targets_wide[, target_control_diabetes := baseline_control_diabetes]
   }
   
-  bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
-  dt_baseline <- calculate_baseline_incidence_gbd(
-    copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
-  )
+  if (is.null(bp_baseline)) {
+    bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
+    dt_baseline <- calculate_baseline_incidence_gbd(
+      copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
+    )
+  } else {
+    # All subsequent merges/updates are local to this scenario.
+    dt_baseline <- copy(bp_baseline)
+  }
   
-  diabetes_age <- expand_to_single_year_ages(DT.in)
-  diabetes_age <- unique(diabetes_age[, .(
-    location, Year, age, sex, bp_cat,
-    diabetes_share_among_htn_assumed_age_specific = diabetes
-  )])
-  setnames(diabetes_age, "Year", "year")
+  if (is.null(diabetes_age_prepared)) {
+    diabetes_age <- expand_to_single_year_ages(DT.in)
+    diabetes_age <- unique(diabetes_age[, .(
+      location, Year, age, sex, bp_cat,
+      diabetes_share_among_htn_assumed_age_specific = diabetes
+    )])
+    setnames(diabetes_age, "Year", "year")
+  } else {
+    diabetes_age <- diabetes_age_prepared
+  }
   if (anyNA(diabetes_age$diabetes_share_among_htn_assumed_age_specific) ||
       any(diabetes_age$diabetes_share_among_htn_assumed_age_specific < 0 |
           diabetes_age$diabetes_share_among_htn_assumed_age_specific > 1)) {
@@ -779,16 +790,19 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
                                              saltmet,
                                              saltyear1 = 2026,
                                              saltyear2 = 2050,
-                                             dt_gbd_rr) {
+                                             dt_gbd_rr,
+                                             bp_baseline = NULL) {
     cat(" - Calculating sodium impact using ETIHAD effect sizes\n")
     
-    # Step 1: Get baseline BP distribution (no sodium intervention)
-    bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
-    
-    # Step 2: Calculate baseline bin-specific incidence using GBD RRs
-    dt_baseline <- calculate_baseline_incidence_gbd(
-      copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
-    )
+    # Reuse the country-specific BP-bin baseline across scenarios when supplied.
+    if (is.null(bp_baseline)) {
+      bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
+      dt_baseline <- calculate_baseline_incidence_gbd(
+        copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
+      )
+    } else {
+      dt_baseline <- copy(bp_baseline)
+    }
     
     # Step 3: Calculate sodium reduction and BP shift over time
     # Merge salt data from DT.in
@@ -1294,6 +1308,38 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   # adherence <- 1
   # prop_athero_stroke <- 0.6
   
+  # Build immutable country inputs once for the six scenario projections.
+  prepare_country_context <- function(Country, make_bp_baseline = TRUE) {
+    base_rates <- b_rates[location == Country & year >= 2017]
+    DT <- unique(data.in[location == Country][, Year := 2017][,
+                                                              -c("Lower95", "Upper95")])
+    DT.in <- as.data.table(left_join(
+      DT[rep(seq_len(nrow(DT)), 34L)][, Year := repYear(.I)],
+      inc %>% select(-location),
+      by = c("iso3", "Year")
+    ))
+    DT.in[, c("aroc", "aroc2", "p_change", "p_change2", "a_change",
+              "a_change2", "ideal", "drugaroc") := 0]
+    bp_baseline <- diabetes_age <- NULL
+    if (make_bp_baseline) {
+      baseline_rates <- copy(base_rates)
+      baseline_rates[, `:=`(eff_ir = 1, eff_cf = 1,
+                            intervention = "baseline")]
+      bp_prob <- get.bp.prob(copy(DT.in), rx = 0, drugaroc = "baseline")
+      bp_baseline <- calculate_baseline_incidence_gbd(
+        copy(bp_prob), baseline_rates, Country, dt_gbd_rr
+      )
+      diabetes_age <- expand_to_single_year_ages(copy(DT.in))
+      diabetes_age <- unique(diabetes_age[, .(
+        location, Year, age, sex, bp_cat,
+        diabetes_share_among_htn_assumed_age_specific = diabetes
+      )])
+      setnames(diabetes_age, "Year", "year")
+    }
+    list(base_rates = base_rates, DT.in = DT.in,
+         bp_baseline = bp_baseline, diabetes_age = diabetes_age)
+  }
+  
   project.all <- function(Country,
                           interventions = c("antihypertensive_no_diabetes",
                                             "antihypertensive_diabetes",
@@ -1317,7 +1363,8 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
                           tfa_target_tfa        = 0,
                           tfa_policy_start_year = 2027,
                           # implicit statins parameter
-                          baseline_statin_coverage = NULL
+                          baseline_statin_coverage = NULL,
+                          country_context = NULL
   ) {
     
     cat("\n========================================\n")
@@ -1336,26 +1383,16 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
            paste(valid_interventions, collapse = ", "))
     }
     
-    # Preliminaries
-    base_rates <- b_rates[location == Country & year >= 2017]
-    
-    # Get BP distribution data
-    DT <- unique(data.in[location == Country][, Year := 2017][, -c("Lower95", "Upper95")])
-    DT.in <- as.data.table(left_join(
-      DT[rep(seq(1, nrow(DT)), 34)][, Year := repYear(.I)],
-      inc %>% select(-location),
-      by = c("iso3", "Year")
-    ))
-    
-    # Force all AROC-related variables in DT.in to zero (no checks)
-    DT.in[, c("aroc",
-              "aroc2",
-              "p_change",
-              "p_change2",
-              "a_change",
-              "a_change2",
-              "ideal",
-              "drugaroc") := 0]
+    # Accept a shared context for batch runs; preserve stand-alone calls.
+    if (is.null(country_context)) {
+      country_context <- prepare_country_context(
+        Country, make_bp_baseline = any(c(
+          "antihypertensive_no_diabetes", "antihypertensive_diabetes",
+          "sodium") %in% interventions)
+      )
+    }
+    base_rates <- country_context$base_rates
+    DT.in <- country_context$DT.in
     
     #...............................................................
     # Aim 2 BP-control subgroup targets (long scenario table, by scenario_id).
@@ -1377,10 +1414,6 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
       validate_htn_target_table(htn_target_rows)
       cat("  HTN scenario:", htn_scenario_id, "\n")
     }
-    
-    #...............................................................
-    # Baseline for sodium intervention
-    DT.in.sodium <- copy(DT.in)
     
     #...............................................................
     # Baseline for statins intervention
@@ -1428,6 +1461,8 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
         DT.in = DT.in,
         dt_gbd_rr = dt_gbd_rr,
         target_rows = htn_target_rows,
+        bp_baseline = country_context$bp_baseline,
+        diabetes_age_prepared = country_context$diabetes_age,
         active_no_diabetes =
           "antihypertensive_no_diabetes" %in% interventions,
         active_diabetes = "antihypertensive_diabetes" %in% interventions
@@ -1452,8 +1487,9 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
       cat("\n=== Applying Sodium Intervention ===\n")
       
       intervention_rates_sodium <- calculate_sodium_impact_etihad(
-        intervention_rates_bau, Country, DT.in.sodium, salteff, saltmet,
-        saltyear1, saltyear2, dt_gbd_rr)
+        intervention_rates_bau, Country, copy(DT.in), salteff, saltmet,
+        saltyear1, saltyear2, dt_gbd_rr,
+        bp_baseline = country_context$bp_baseline)
       
       intervention_effects[["sodium"]] <-
         intervention_rates_sodium[, .(age, sex, location, cause, year,
@@ -1717,7 +1753,14 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
                                      tfa_policy_start_year = 2027,
                                      baseline_statin_coverage = NULL) {
     
-    results <- list()
+    results <- vector("list", length(scenario_list))
+    names(results) <- names(scenario_list)
+    country_context <- prepare_country_context(
+      Country, make_bp_baseline = any(vapply(scenario_list, function(scenario) {
+        any(c("antihypertensive_no_diabetes",
+              "antihypertensive_diabetes", "sodium") %in% scenario)
+      }, logical(1)))
+    )
     
     for (scenario_name in names(scenario_list)) {
       cat("\n##########################################\n")
@@ -1740,7 +1783,8 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
         saltyear2 = saltyear2,
         tfa_target_tfa        = tfa_target_tfa,
         tfa_policy_start_year = tfa_policy_start_year,
-        baseline_statin_coverage = baseline_statin_coverage
+        baseline_statin_coverage = baseline_statin_coverage,
+        country_context = country_context
       )
     }
     
@@ -1959,11 +2003,14 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   tfa_policy_start_year <- 2028      # flexible start year (effect lagged two years)
   
   ## Statins explicit params (match calculate_statins_impact)
+  # Statins adherence from Basios et al 2025  
+  # https://academic.oup.com/eurjpc/advance-article/doi/10.1093/eurjpc/zwaf769/8381680
+  
   statin_target_coverage <- 0.50
   statin_start_year      <- 2026
   statin_target_year     <- 2050
   adherence_ir <-  0.575
-  adherence_cf <- 0.664
+  adherence_cf <- 0.644
   
   # Validate the long Aim 2 target table and confirm every BP scenario_id we need
   # is present. Targets come from 04_define_interventions.R; script 06 never
@@ -1977,7 +2024,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   }
   
   # 2. Detect and start cluster
-  ncores <- 6
+  ncores <- 10
   cl     <- makeCluster(ncores)
   registerDoParallel(cl)
   
@@ -1985,6 +2032,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     cl,
     varlist = c(
       "project.all",
+      "prepare_country_context",
       "run_multiple_scenarios",
       "get.bp.prob",
       "get_gbd_relative_risks",
@@ -2024,6 +2072,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   clusterEvalQ(cl, {
     library(data.table)
     library(dplyr)
+    setDTthreads(1L)  # one data.table thread per country worker
   })
   
   # 3. Model countries: intersect model inputs with the validated policy target
@@ -2034,6 +2083,15 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   locs <- intersect(model_locs, target_locs)
   locs <- locs[!locs %in% c("Greenland", "Bermuda")]  # legacy model exclusions
   excluded_from_jobs <- setdiff(model_locs, locs)
+  # Use options(who_cvd.pilot_country = "Colombia") to test one complete
+  # country before committing to the full batch; default runs every country.
+  pilot_country <- getOption("who_cvd.pilot_country", NULL)
+  if (!is.null(pilot_country)) {
+    if (length(pilot_country) != 1L || !pilot_country %in% locs) {
+      stop("who_cvd.pilot_country must identify one eligible country.")
+    }
+    locs <- pilot_country
+  }
   if (length(excluded_from_jobs)) {
     cat("Locations excluded from Aim 1 jobs (no BP target / legacy exclusion):",
         paste(excluded_from_jobs, collapse = ", "), "\n")
@@ -2063,6 +2121,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     cat("Time    :", as.character(Sys.time()), "\n")
     cat("==============================\n")
     
+    country_error <- NULL
     res <- tryCatch({
       run_multiple_scenarios(
         Country             = country,
@@ -2072,8 +2131,8 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
         statin_target_coverage   = 0.50,
         statin_start_year        = 2026,
         statin_target_year       = 2030,
-        adherence_ir             = 1,
-        adherence_cf             = 1,
+        adherence_ir             = 0.575,
+        adherence_cf             = 0.644,
         baseline_statin_coverage = NULL,
         saltmet   = "percent",
         salteff   = 0,                       # no sodium reduction (unchanged)
@@ -2083,7 +2142,8 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
         tfa_policy_start_year = 2028
       )
     }, error = function(e) {
-      cat("ERROR in", country, ":", e$message, "\n")
+      country_error <<- conditionMessage(e)
+      cat("ERROR in", country, ":", country_error, "\n")
       return(NULL)
     })
     
@@ -2104,7 +2164,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     }
     
     sink()
-    res
+    list(ok = !is.null(res), error = country_error)
   }
   
   time_end <- Sys.time()
@@ -2113,10 +2173,24 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   stopCluster(cl)
   
   # Check which countries succeeded
-  successful <- sapply(results_list, function(x) !is.null(x))
+  successful <- vapply(results_list, function(result) {
+    is.list(result) && isTRUE(result$ok)
+  }, logical(1))
   cat("\nSuccessful runs:", sum(successful), "out of", length(locs), "\n")
   if (any(!successful)) {
     cat("Failed countries:", paste(locs[!successful], collapse = ", "), "\n")
+    failed_indices <- which(!successful)
+    for (idx in head(failed_indices, 5L)) {
+      result <- results_list[[idx]]
+      message <- if (inherits(result, "error")) {
+        conditionMessage(result)
+      } else if (is.list(result) && !is.null(result$error)) {
+        result$error
+      } else {
+        "No error message returned; inspect the country log."
+      }
+      cat("  ", locs[idx], ": ", message, "\n", sep = "")
+    }
   }
   
   # Combine all results (if not too large)

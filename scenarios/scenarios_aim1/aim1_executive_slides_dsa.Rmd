@@ -1,0 +1,453 @@
+---
+title: "Projected Health Impact of Achieving WHO Targets for Cardiovascular Risk-Factor Control"
+subtitle: "Deterministic sensitivity analysis (one-way scenario analyses)"
+author: "\\color{blue}Work in Progress"
+institute: "WHO $\\cdot$ University of Washington"
+date: "`r format(Sys.Date(), '%B %Y')`"
+params:
+  slides_dir: ""
+  run_id: ""
+  render_token: ""
+knit: (function(inputFile, encoding, ...) { root <- normalizePath(file.path(dirname(normalizePath(inputFile)), "..", ".."), winslash = "/"); options(who_cvd.execute_10 = FALSE); e <- new.env(); sys.source(file.path(root, "code", "10_deterministic_dsa.R"), envir = e); e$dsa_render_documents(paths = e$dsa_paths(root), which = "slides") })
+output:
+  beamer_presentation:
+    theme: "default"
+    keep_tex: false
+    latex_engine: xelatex
+    slide_level: 2
+    toc: true
+    includes:
+      in_header: beamer_preamble.tex
+classoption: "aspectratio=169"
+---
+
+<!-- ======================================================================
+     SETUP -- LOAD DSA REPORT ARTEFACTS ONLY (zero recomputation)
+     Every table, scalar and figure below was produced by
+     aim1_report_dsa.Rmd and saved to output_dsa/slides/. This deck only
+     formats values and includes the report's PNGs. Render through
+     code/10_deterministic_dsa.R (render=only) or the Knit button.
+     ====================================================================== -->
+
+```{r load-artefacts, include=FALSE}
+library(data.table); library(knitr); library(kableExtra)
+if (!identical(params$render_token, "rendered-by-10_deterministic_dsa")) {
+  stop("Render through dsa_render_documents() in code/10_deterministic_dsa.R (render=only) or the Knit button.")
+}
+slides_dir <- normalizePath(params$slides_dir, winslash = "/", mustWork = FALSE)
+knit_first <- "Knit the DSA report first: Rscript code/10_deterministic_dsa.R render=only run_id=<run id> (renders aim1_report_dsa.Rmd, then this deck)."
+if (!dir.exists(slides_dir) || !file.exists(file.path(slides_dir, "sl_manifest.rds"))) {
+  stop("output_dsa/slides/ or its artefact manifest is missing. ", knit_first)
+}
+required <- c("sl_dsa_meta.rds", "sl_dsa_scenarios.rds", "sl_dsa_summary.rds", "sl_dsa_targets.rds",
+              "sl_dsa_endpoints.rds", "sl_dsa_income.rds", "sl_dsa_tableS8.rds", "sl_dsa_dalys.rds",
+              "sl_dsa_econ.rds", "sl_dsa_validation.rds", "sl_scalars.rds", "sl_tab_summary.rds",
+              "sl_tab_region.rds", "sl_tab_top15.rds", "sl_bod_summary.rds", "sl_control_summary.rds",
+              "sl_control_scalars.rds", "sl_econ_vsl_primary.rds", "sl_econ_vsly_primary.rds",
+              "sl_econ_scalars.rds", "sl_dsa_tornado.png", "sl_dsa_annual.png", "sl_dsa_trajectories.png",
+              "sl_dsa_trend_deaths.png", "sl_fig_baseline_trend.png", "sl_fig_asmr.png",
+              "sl_fig_deaths_averted.png", "sl_fig_cum_averted.png", "sl_fig_by_cause.png",
+              "sl_fig_by_age.png", "sl_fig_top15_countries.png", "sl_fig_control_split.png",
+              "sl_econ_dotplot.png")
+man_sl <- as.data.table(readRDS(file.path(slides_dir, "sl_manifest.rds")))
+miss <- setdiff(required, man_sl$file)
+if (length(miss)) stop("Slide artefacts missing from the report manifest: ", paste(miss, collapse = ", "), ". ", knit_first)
+if (!all(file.exists(file.path(slides_dir, man_sl$file)))) {
+  stop("Listed slide artefacts not found: ", paste(man_sl$file[!file.exists(file.path(slides_dir, man_sl$file))], collapse = ", "), ". ", knit_first)
+}
+if (uniqueN(man_sl$run_id) != 1L || (nzchar(params$run_id) && !identical(unique(man_sl$run_id), params$run_id))) {
+  stop("Slide artefacts belong to run ", paste(unique(man_sl$run_id), collapse = ", "), ", not ", params$run_id, ". ", knit_first)
+}
+md5_now <- unname(tools::md5sum(file.path(slides_dir, man_sl$file)))
+if (!identical(md5_now, man_sl$md5)) {
+  stop("Slide artefacts changed after the report wrote them: ", paste(man_sl$file[md5_now != man_sl$md5], collapse = ", "), ". ", knit_first)
+}
+rd <- function(f) { x <- readRDS(file.path(slides_dir, f)); if (is.data.frame(x)) setDT(x); x }
+meta <- rd("sl_dsa_meta.rds")
+if (!identical(meta$run_id, unique(man_sl$run_id))) stop("sl_dsa_meta.rds does not match the manifest. ", knit_first)
+sl <- rd("sl_scalars.rds"); sl_control_scalars <- rd("sl_control_scalars.rds"); sl_control_summary <- rd("sl_control_summary.rds")
+sl_tab_summary <- rd("sl_tab_summary.rds"); sl_tab_region <- rd("sl_tab_region.rds"); sl_bod <- rd("sl_bod_summary.rds")
+sl_econ_vsly <- rd("sl_econ_vsly_primary.rds"); sl_econ_vsl <- rd("sl_econ_vsl_primary.rds"); sl_econ <- rd("sl_econ_scalars.rds")
+dsa_scen <- rd("sl_dsa_scenarios.rds"); dsa_sum <- rd("sl_dsa_summary.rds"); dsa_tg <- rd("sl_dsa_targets.rds")
+dsa_ep <- rd("sl_dsa_endpoints.rds"); dsa_inc <- rd("sl_dsa_income.rds"); dsa_s8 <- rd("sl_dsa_tableS8.rds")
+dsa_daly <- rd("sl_dsa_dalys.rds"); dsa_econ <- rd("sl_dsa_econ.rds"); dsa_val <- rd("sl_dsa_validation.rds")
+# LaTeX cannot resolve the repository path (spaces), so PNGs are copied next to the deck.
+local_png <- function(f) { stopifnot(file.copy(file.path(slides_dir, f), f, overwrite = TRUE)); f }
+png <- setNames(lapply(grep("[.]png$", required, value = TRUE), local_png), grep("[.]png$", required, value = TRUE))
+
+fmt_M <- function(x, digits = 1) formatC(round(x / 1e6, digits), format = "f", digits = digits, big.mark = ",")
+fmt_pct <- function(x, digits = 1) {
+  if (is.null(x) || length(x) == 0 || is.na(x)) return("[n/a]")
+  paste0(formatC(round(x * 100, digits), format = "f", digits = digits), "\\%")
+}
+fmt_trillions <- function(x, digits = 1) {
+  if (is.null(x) || length(x) == 0 || is.na(x)) return("[n/a]")
+  paste0("\\$", formatC(round(x / 1e12, digits), format = "f", digits = digits, big.mark = ","), " T")
+}
+tex <- function(x) {
+  for (ch in c("&", "%", "_", "#", "$")) x <- gsub(ch, paste0("\\", ch), x, fixed = TRUE)
+  x
+}
+ktab <- function(d, fs = 7, align = NULL) {
+  kable(d, format = "latex", booktabs = TRUE, escape = TRUE, align = align) |>
+    kable_styling(latex_options = c("hold_position", "scale_down"), font_size = fs) |> row_spec(0, bold = TRUE)
+}
+digits <- if (sl$total_all < 5e6) 3 else 1
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.align = "center",
+                      out.width = "\\linewidth")
+```
+
+# Study Overview
+
+## Aim 1 Deterministic Sensitivity Analysis
+
+`r if (isTRUE(meta$is_pilot)) paste0("\\begin{alertblock}{PILOT RUN (", tex(meta$run_id), ")}\\small ", meta$n_countries, " of ", meta$n_eligible, " countries (", tex(paste(meta$countries, collapse = ", ")), "). Software-verification results only: \\textbf{not global estimates}.\\end{alertblock}") else ""`
+
+\begin{block}{Question}
+How robust are the projected deaths averted by the WHO cardiovascular targets to \textbf{achievement}, \textbf{timing}, \textbf{statin adherence} and \textbf{CVD mortality-trend} assumptions?
+\end{block}
+
+\begin{columns}[T]
+\begin{column}{0.5\textwidth}
+\textbf{Design} (Briggs et al., ISPOR-SMDM 2012)
+\begin{itemize}\footnotesize
+  \item One-way deterministic scenarios around the \textbf{active base case}
+  \item Every setting re-runs the country-level model (`r meta$n_countries` countr`r ifelse(meta$n_countries == 1, "y", "ies")`, 6 scenarios, 2017--2050)
+  \item Chosen scenario values, \alert{not} probability distributions: ranges are \textbf{not} confidence intervals
+\end{itemize}
+\end{column}
+\begin{column}{0.46\textwidth}
+\begin{exampleblock}{Reference = active base case}
+\footnotesize BP: 150M additional controlled by 2030 $\cdot$ statins `r tex(meta$ref_statin)` $\cdot$ statin adherence IR/CF \textbf{`r tex(meta$ref_adherence)`} (not 1.0) $\cdot$ CVD CF trend at 80\% $\cdot$ background trend on
+\end{exampleblock}
+\end{column}
+\end{columns}
+
+## DSA Settings
+
+```{r dsa-scenarios, results='asis'}
+ktab(dsa_scen[, .(Setting, Family, `What changes`)], fs = 7)
+```
+
+\footnotesize Income-group adherence (L 0.50/0.65, LM 0.60/0.70, UM 0.70/0.80, H 0.80/0.90) is an \textbf{illustrative assumption}. Perfect adherence (1.00/1.00) is an extra reference, never the anchor.
+
+# Scenarios
+
+## Four WHO Priority Targets (Reference)
+
+```{r scenario-table, results='asis'}
+dt_scen <- data.table(
+  N = 1:4,
+  WT = c("150M more with HTN controlled by 2030", "$\\geq$50\\% eligible adults on lipid-lowering therapy by 2030",
+         "80\\% BP control among diagnosed diabetics by 2030", "80\\% availability of validated BP devices"),
+  Sc = c(paste0("\\textbf{HTN Control (Combined)}: ", fmt_M(sl_control_scalars$add_total, digits), "M = ",
+                fmt_M(sl_control_scalars$add_no_diabetes, digits), "M without + ", fmt_M(sl_control_scalars$add_diabetes, digits), "M with diabetes"),
+         "\\textbf{Improved Statin Uptake}: 50\\% coverage by 2030", "\\textbf{HTN Control (Diabetes)}: 0.80 ceiling (full target only)",
+         "Embedded in HTN scenarios"))
+kable(dt_scen, format = "latex", booktabs = TRUE, escape = FALSE, col.names = c("\\#", "WHO Target", "Modelled Scenario")) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 7) |> column_spec(2, width = "4.5cm") |> column_spec(3, width = "6cm")
+```
+
+\vspace{4pt}\footnotesize The two BP subgroups combine additively; the BP composite combines multiplicatively with statins.
+
+## The 150 Million Split by WHO Region and Diabetes Status
+
+```{r fig-split, out.width="0.95\\linewidth"}
+knitr::include_graphics(png[["sl_fig_control_split.png"]])
+```
+
+```{r split-region, results='asis'}
+rc <- sl_control_summary[scenario_id == "bp_combined" & subgroup == "total"]
+rc[, region := factor(region, levels = c("Africa", "Americas", "Eastern Mediterranean", "Europe", "South-East Asia", "Western Pacific", "Global"))]
+setorder(rc, region)
+ktab(rc[, .(Region = as.character(region), `HTN pop 2025 (M)` = fmt_M(htn_pop_2025, digits), `Cov. 2025` = sprintf("%.1f%%", coverage_2025 * 100),
+            `Cov. 2030` = sprintf("%.1f%%", coverage_2030 * 100), `Added (M)` = fmt_M(additional_2030, digits))], fs = 7)
+```
+
+# Reference Results
+
+## Baseline Disease Trends and ASMR (Business-as-Usual)
+
+\begin{columns}[T]
+\begin{column}{0.5\textwidth}
+```{r fig-trend}
+knitr::include_graphics(png[["sl_fig_baseline_trend.png"]])
+```
+\end{column}
+\begin{column}{0.5\textwidth}
+```{r fig-asmr}
+knitr::include_graphics(png[["sl_fig_asmr.png"]])
+```
+\end{column}
+\end{columns}
+
+\footnotesize Reference trend regime; solid = calibration, dashed = projection.
+
+## Summary: Cumulative Deaths Averted, 2025--2050 (Reference)
+
+```{r tab-summary, results='asis'}
+kable(sl_tab_summary[, .(Scenario = as.character(intervention), `Cumulative (M)` = paste0(fmt_M(deaths_delayed, digits), " M"),
+                          `Avg./year (M)` = paste0(fmt_M(deaths_delayed / 25, digits), " M"), `% of BAU deaths` = paste0(round(pct, 1), "%"))],
+      format = "latex", booktabs = TRUE) |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 9) |>
+  row_spec(which(sl_tab_summary$intervention == "All Interventions"), bold = TRUE, color = "white", background = "#6a3d9a")
+```
+
+\begin{exampleblock}{Headline (reference)}
+\textbf{All Interventions}: \textbf{`r fmt_M(sl$total_all, digits)` million deaths averted}, 2025--2050 ($\approx$ `r fmt_M(sl$total_all / 25, digits)` M/year).
+\end{exampleblock}
+
+## Annual and Cumulative Deaths Averted (Reference)
+
+\begin{columns}[T]
+\begin{column}{0.5\textwidth}
+```{r fig-annual}
+knitr::include_graphics(png[["sl_fig_deaths_averted.png"]])
+```
+\end{column}
+\begin{column}{0.5\textwidth}
+```{r fig-cum}
+knitr::include_graphics(png[["sl_fig_cum_averted.png"]])
+```
+\end{column}
+\end{columns}
+
+## Deaths Averted by Cause and Age (Reference)
+
+\begin{columns}[T]
+\begin{column}{0.5\textwidth}
+```{r fig-cause}
+knitr::include_graphics(png[["sl_fig_by_cause.png"]])
+```
+\end{column}
+\begin{column}{0.5\textwidth}
+```{r fig-age}
+knitr::include_graphics(png[["sl_fig_by_age.png"]])
+```
+\end{column}
+\end{columns}
+
+## Burden of Disease Averted and Regional Summary (Reference)
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+```{r tab-bod, results='asis'}
+ktab(sl_bod[, .(Intervention = as.character(intervention), `Deaths (M)` = fmt_M(Deaths, digits), `YLLs (M)` = fmt_M(YLLs, digits),
+                `YLDs (M)` = fmt_M(YLDs, digits), `DALYs (M)` = fmt_M(DALYs, digits))], fs = 8)
+```
+\end{column}
+\begin{column}{0.43\textwidth}
+```{r tab-region, results='asis'}
+ktab(sl_tab_region[, .(Region = region, `BAU (M)` = fmt_M(bau, digits), `Averted (M)` = fmt_M(averted, digits), `% averted` = sprintf("%.1f%%", pct))], fs = 8)
+```
+\end{column}
+\end{columns}
+
+\footnotesize DALYs 2026--2050 (YLL: WPP 2024 life expectancy; YLD: GBD 2023 disability weights); regions 2025--2050, All Interventions.
+
+## Top Countries by Projected Impact (Reference)
+
+```{r fig-top15, out.width="0.85\\linewidth"}
+knitr::include_graphics(png[["sl_fig_top15_countries.png"]])
+```
+
+# Deterministic Sensitivity Analysis
+
+## Coverage Trajectories: Partial Achievement and Delayed Implementation
+
+```{r fig-traj}
+knitr::include_graphics(png[["sl_dsa_trajectories.png"]])
+```
+
+\footnotesize Adherence and trend settings share the reference trajectories. Additional controlled people use the fixed 2025 population of script 04.
+
+## Achieved BP Control and Statin Inputs
+
+```{r tab-targets, results='asis'}
+ktab(dsa_tg[family_id %in% c("reference", "target_achievement", "implementation_timing"),
+            .(`DSA setting`, `BP endpoint`, `Added 2030 (M)` = `Additional controlled 2030 (M)`, `2035 (M)`, `2040 (M)`,
+              `At endpoint (M)`, `Share of full target`, `Diabetes control at endpoint`, `Statin endpoint`,
+              `Mean statin baseline / endpoint`)], fs = 7)
+```
+
+\footnotesize Partial settings do not reach 150 million: they reach the stated share of the full increment. The diabetic 0.80 figure is the full-target ceiling; the achieved population-weighted diabetes control is shown.
+
+## One-Way Results: Change in Deaths Averted vs Reference
+
+```{r fig-tornado}
+knitr::include_graphics(png[["sl_dsa_tornado.png"]])
+```
+
+\footnotesize Cumulative 2026--2050; deterministic scenario differences, \textbf{not} intervals. Trend settings are compared with their own BAU.
+
+## One-Way Results: All Interventions
+
+```{r tab-dsa-summary, results='asis'}
+ktab(dsa_sum, fs = 7)
+```
+
+\begin{block}{Range across one-way settings (All Interventions, 2026--2050)}
+\small `r fmt_M(meta$one_way_min, digits)` M (`r tex(meta$one_way_min_id)`) to `r fmt_M(meta$one_way_max, digits)` M (`r tex(meta$one_way_max_id)`) vs `r fmt_M(meta$all_ref_2026, digits)` M in the reference --- a deterministic spread, not a confidence interval.
+\end{block}
+
+## Annual Deaths Averted by DSA Setting
+
+```{r fig-dsa-annual, out.width="0.92\\linewidth"}
+knitr::include_graphics(png[["sl_dsa_annual.png"]])
+```
+
+## Endpoints: 2030, 2035, 2040, 2050 (All Interventions)
+
+```{r tab-endpoints, results='asis'}
+ktab(dsa_ep[, !"Intervention"], fs = 6)
+```
+
+\footnotesize Deaths averted (millions): annual in the endpoint year and cumulative from 2026.
+
+## Statin Adherence by World Bank Income Group (Illustrative)
+
+```{r tab-income, results='asis'}
+ktab(dsa_inc, fs = 7)
+```
+
+\footnotesize Adherence changes statin incidence (IR) and case-fatality (CF) effects only; BP-only scenarios are unchanged (verified for every country).
+
+## Alternative CVD Mortality Trends (Structural)
+
+```{r tab-s8, results='asis'}
+ktab(dsa_s8[, !"Switches (bg / CF / 80% / IHME)"], fs = 5.5)
+```
+
+\footnotesize Background trend on in every regime; each regime compared with its own BAU. Layout after Table S8 of the related RTSL draft.
+
+## CVD Deaths by Trend Regime: BAU and All Interventions
+
+```{r fig-trend-deaths, out.width="0.92\\linewidth"}
+knitr::include_graphics(png[["sl_dsa_trend_deaths.png"]])
+```
+
+## Burden of Disease Averted by DSA Setting
+
+```{r tab-dsa-daly, results='asis'}
+ktab(dsa_daly, fs = 7)
+```
+
+\footnotesize All Interventions, 2026--2050, each setting against its own BAU. Negative YLDs averted: people kept alive live longer with CVD (as in the ordinary report).
+
+## Economic Value by DSA Setting
+
+```{r tab-dsa-econ, results='asis'}
+ktab(dsa_econ[, !"Intervention"], fs = 7)
+```
+
+\footnotesize All Interventions, World, cumulative 2026--2050; VSL/VSLY primary elasticity (0.8/1.2), discounted at 3\% to 2026; recomputed from each setting's own deaths averted.
+
+# Economic Value of Avoidable Mortality (Reference)
+
+## Economic Value by WHO Region (Primary, Cumulative 2026--2050)
+
+\begin{exampleblock}{World: All Interventions (reference, primary, 3\%)}
+\textbf{VSLY} = \textbf{`r fmt_pct(sl_econ$world_vsly_share_total)`} of annual income PPP (cumulative \textbf{`r fmt_trillions(sl_econ$world_vsly_value_total)`}).
+\end{exampleblock}
+
+```{r tab-econ, results='asis'}
+ev <- merge(sl_econ_vsl[intervention == "All Interventions", .(who_region, vsl = metric_total, vsl_share = share_total)],
+            sl_econ_vsly[intervention == "All Interventions", .(who_region, vsly = metric_total, vsly_share = share_total)], by = "who_region")
+ktab(ev[, .(Region = who_region, `VSL (USD T)` = sprintf("%.2f", vsl / 1e12), `VSL % GNI` = sprintf("%.1f%%", vsl_share * 100),
+            `VSLY (USD T)` = sprintf("%.2f", vsly / 1e12), `VSLY % GNI` = sprintf("%.1f%%", vsly_share * 100))], fs = 8)
+```
+
+## Value of Avoidable Mortality as a Proportion of Income (Reference)
+
+```{r fig-econ-dot, out.width="0.9\\linewidth"}
+knitr::include_graphics(png[["sl_econ_dotplot.png"]])
+```
+
+# Discussion
+
+## Interpretation
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{What the one-way settings show}
+\begin{itemize}\footnotesize
+  \item Target achievement (50\%/75\% of the increment) scales benefits roughly in proportion to the achieved increment
+  \item Delaying the full endpoint to 2035/2040 loses early benefits; effects converge once the endpoint is reached
+  \item Statin adherence moves statin-driven benefits only; BP benefits are unchanged
+  \item The CVD case-fatality trend regime changes both BAU and intervention deaths; compare within regimes
+\end{itemize}
+\end{column}
+\begin{column}{0.43\textwidth}
+\begin{alertblock}{Interpretation rule}
+\footnotesize Deterministic scenario spreads describe the consequences of named assumptions; they are not probability statements or confidence intervals.
+\end{alertblock}
+\end{column}
+\end{columns}
+
+## Limitations of the DSA
+
+\begin{itemize}\footnotesize
+  \item One-way settings only; no multi-way stress tests or probability weights
+  \item Income-group statin adherence values are illustrative (no sourced income-specific estimate in the repository)
+  \item No separate BP-medication adherence: BP targets are achieved control, which already embodies adherence
+  \item The cause-specific background-mortality trend input has no post-2019 values, so only the all-cause envelope (BG.mx.all) trends, in every regime alike
+  \item The reference CVD trend series starts above the 2019 level for IHD and ischemic stroke; the IHME Foresight trend is global, cause-level and age-standardised
+  \item Active statin CF adherence 0.664 vs 64.4\% reported for secondary prevention by Basios et al.\ 2025 (kept to reproduce the pipeline)
+\end{itemize}
+
+## Validation
+
+```{r tab-validation, results='asis'}
+ktab(dsa_val, fs = 9)
+```
+
+\footnotesize Checks by code/10\_deterministic\_dsa.R (run `r tex(meta$run_id)`): DSA reference bit-identical to the live 06 functions and to the ordinary 06 output; 05 reproduced for every trend regime; trajectories, targets, adherence and trend formulas recomputed independently.
+
+# Appendix
+
+## Notation: Core Model and HTN Control
+
+\begin{center}{\scriptsize
+\begin{tabular}{ll}
+\toprule
+Symbol & Description \\
+\midrule
+$W, K, D$ & Well, Sick, Dead populations \\
+$IR$, $CF$ & Baseline incidence \& case-fatality rates \\
+$\varepsilon_{IR,j}$, $\varepsilon_{CF,j}$ & Multiplicative effect ratios for intervention $j$ \\
+$BG.mx$, $BG.mx.all$ & Cause-specific \& all-cause background mortality \\
+$c_{g,0}$, $c_{g,t}$, $c_{g,\text{target}}$ & Baseline, time-$t$, target control, subgroup $g\in\{N,D\}$ \\
+$f$ & DSA fraction of the increment: $c^{DSA}_{\text{target}} = c_0 + f\,(c_{\text{target}} - c_0)$ \\
+$T$ & Endpoint year: $c_t = c_0 + (c_{\text{target}} - c_0)\min[\max(0, (t-2025)/(T-2025)), 1]$ \\
+$e_{g,t}$ & $E_g (c_{g,t} - c_{g,0}) / (1 - E_g c_{g,0})$ \\
+$w_D$ & Diabetes share among hypertensives; $\varepsilon_{IR,\text{BP}} = 1 - (1-w_D) e_{N,t} - w_D e_{D,t}$ \\
+\bottomrule
+\end{tabular}
+}\end{center}
+
+## Statin Therapy and Adherence
+
+\footnotesize
+\begin{columns}[T]
+\begin{column}{0.5\textwidth}
+\textit{Incremental coverage above baseline $U_{0,\ell}$ (DSA endpoint $T$):}
+$$\Delta U(t,\ell) = \Delta U_{\text{target},\ell}\,\min\!\left[\frac{t-2026+1}{T-2026+1},1\right]$$
+$\Delta U_{\text{target},\ell} = \max(U^{DSA}_{\text{target}} - U_{0,\ell}, 0)$, $U^{DSA}_{\text{target}} = U_0 + f\,(0.50 - U_0)$
+\end{column}
+\begin{column}{0.48\textwidth}
+\textit{Adherence $a_{IR}$, $a_{CF}$ enter both numerator and baseline denominator:}
+$$E^{IR} = \frac{AF\,\delta^{IR}\,\Delta U\,a_{IR}}{1 - \delta^{IR}\,U_0\,a_{IR}},\quad E^{CF} = \frac{\delta^{CF}\,\Delta U\,a_{CF}}{1 - \delta^{CF}\,U_0\,a_{CF}}$$
+Reference $a_{IR} = `r ifelse(is.null(meta$ref_adherence), "", sub(" / ", "$, $a_{CF} = ", meta$ref_adherence))`$.
+\end{column}
+\end{columns}
+
+## References
+
+\footnotesize
+- **Briggs AH, Weinstein MC, Fenwick EAL, et al.** Model parameter estimation and uncertainty: ISPOR-SMDM Modeling Good Research Practices Task Force-6. *Value Health* 2012;15:835--842.
+- **Basios et al.** (2025). Prevalence and determinants of adherence to statin therapy. *Eur J Prev Cardiol*.
+- **Ettehad D, et al.** Blood pressure lowering for prevention of CVD and death. *Lancet* 2016;387:957--967.
+- **GBD 2023 Collaborators** (2024). Global mortality for 371 causes. *Lancet*.
+- **IHME.** GBD Foresight Data Visualization (reference scenario), accessed 2025.
+- **Robinson LA, Hammitt JK, O'Keeffe L.** (2019). Valuing mortality risk reductions in global benefit-cost analysis. *J Benefit-Cost Anal* 10(S1):15--50.
+- **UNWPP** (2024). World Population Prospects 2024. United Nations.

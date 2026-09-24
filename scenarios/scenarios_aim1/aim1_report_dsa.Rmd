@@ -1,0 +1,1168 @@
+---
+title: "Projected Health Outcomes of Achieving WHO Targets for Cardiovascular Risk-Factor Control: Deterministic Sensitivity Analysis"
+date: "`r Sys.Date()`"
+author: "University of Washington"
+params:
+  run_dir: ""
+  repo_root: ""
+  render_token: ""
+knit: (function(inputFile, encoding, ...) { root <- normalizePath(file.path(dirname(normalizePath(inputFile)), "..", ".."), winslash = "/"); options(who_cvd.execute_10 = FALSE); e <- new.env(); sys.source(file.path(root, "code", "10_deterministic_dsa.R"), envir = e); e$dsa_render_documents(paths = e$dsa_paths(root), which = "report") })
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: hide
+---
+
+<!-- ======================================================================
+     Aim 1 deterministic sensitivity analysis (DSA) report.
+     Reads ONLY the DSA run artefacts written by code/10_deterministic_dsa.R
+     (output_dsa/runs/RUN_ID/). Writes report/slide artefacts ONLY to
+     output_dsa/paper/ and output_dsa/slides/, and the Excel tables to
+     scenarios_dsa/. Render through code/10_deterministic_dsa.R
+     (render=only) or the Knit button (the knit: hook above calls it), so
+     nothing is written next to this file.
+     ====================================================================== -->
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = FALSE, message = FALSE, warning = FALSE,
+                      fig.height = 5, fig.width = 9, fig.align = "center")
+if (!identical(params$render_token, "rendered-by-10_deterministic_dsa")) {
+  stop("Render through dsa_render_documents() in code/10_deterministic_dsa.R ",
+       "(Rscript code/10_deterministic_dsa.R render=only) or the Knit button, so outputs stay in output_dsa/ and scenarios_dsa/.")
+}
+```
+
+```{r libraries, message=FALSE, warning=FALSE, echo=FALSE}
+library(data.table)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(DT)
+library(scales)
+library(openxlsx)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+```
+
+```{r paths, message=FALSE, warning=FALSE, echo=FALSE}
+run_dir    <- normalizePath(params$run_dir, winslash = "/", mustWork = TRUE)
+repo_root  <- normalizePath(params$repo_root, winslash = "/", mustWork = TRUE)
+dsa_root   <- file.path(repo_root, "output_dsa")
+res_dir    <- file.path(run_dir, "results")
+paper_dir  <- file.path(dsa_root, "paper")
+slides_dir <- file.path(dsa_root, "slides")
+scen_dir   <- file.path(repo_root, "scenarios_dsa")
+run_man    <- readRDS(file.path(run_dir, "run_manifest.rds"))
+if (!identical(run_man$status, "COMPLETE")) stop("DSA run ", run_man$run_id, " is not COMPLETE (", run_man$status, ").")
+run_id     <- run_man$run_id
+is_pilot   <- identical(run_man$mode, "pilot")
+```
+
+```{r helpers, message=FALSE, warning=FALSE, echo=FALSE}
+# ---- Guarded, OneDrive-resilient writers (output_dsa/ and scenarios_dsa/ only)
+.norm <- function(p) tolower(normalizePath(p, winslash = "/", mustWork = FALSE))
+.within <- function(p, d) startsWith(.norm(p), paste0(sub("/+$", "", .norm(d)), "/"))
+.assert_out <- function(p) {
+  if (!(.within(p, dsa_root) || .within(p, scen_dir))) stop("Refusing to write outside output_dsa/ and scenarios_dsa/: ", p)
+  dir.create(dirname(p), recursive = TRUE, showWarnings = FALSE)
+}
+.retry <- function(fun, tries = 8, wait = 0.6) {
+  for (i in seq_len(tries)) {
+    ok <- tryCatch({ fun(); TRUE }, error = function(e) conditionMessage(e))
+    if (isTRUE(ok)) return(invisible(NULL))
+    if (i == tries) stop(ok, call. = FALSE)
+    Sys.sleep(wait)
+  }
+}
+artefacts <- new.env(); artefacts$list <- list()
+wsave <- function(object, file, kind = "rds") {
+  .assert_out(file); .retry(function() base::saveRDS(object, file))
+  artefacts$list[[length(artefacts$list) + 1]] <- data.table(file = file, type = kind)
+  invisible(file)
+}
+wggsave <- function(file, plot, ...) {
+  .assert_out(file); .retry(function() ggplot2::ggsave(file, plot = plot, ...))
+  artefacts$list[[length(artefacts$list) + 1]] <- data.table(file = file, type = "png")
+  invisible(file)
+}
+# Start from clean artefact folders (only files this report writes).
+for (d in c(paper_dir, slides_dir)) {
+  .assert_out(file.path(d, "x"))
+  old <- list.files(d, pattern = "^(paper_|sl_|dsa_).*[.](rds|png)$", full.names = TRUE)
+  if (length(old)) unlink(old)
+}
+
+# ---- Formatters (as aim1_report.Rmd) ----------------------------------------
+fmt_m <- function(x, digits = 1) formatC(round(x / 1e6, digits), format = "f", digits = digits, big.mark = ",")
+fmt_k <- function(x, digits = 0) formatC(round(x / 1e3, digits), format = "f", digits = digits, big.mark = ",")
+fmt_M <- fmt_m
+fmt_pct <- function(x, digits = 1) ifelse(is.na(x), "–", paste0(formatC(x * 100, format = "f", digits = digits), "%"))
+fmt_d  <- function(x, digits = 2) ifelse(is.na(x), "–", sprintf(paste0("%+.", digits, "f"), x / 1e6))
+fmt_dp <- function(x, digits = 1) ifelse(is.na(x), "–", sprintf(paste0("%+.", digits, "f%%"), x * 100))
+
+# ---- Labels and palettes (as aim1_report.Rmd) -------------------------------
+cause_map <- c(ihd = "Ischemic heart disease", istroke = "Ischemic stroke",
+               hstroke = "Intracerebral hemorrhage", hhd = "Hypertensive heart disease")
+cause_map_full <- cause_map
+cause_labels_plot <- cause_map
+scen_to_int <- c(baseline = "b.a.u", bp_no_diabetes_only = "HTN Control (No Diabetes)",
+                 bp_diabetes_only = "HTN Control (Diabetes)", bp_combined = "HTN Control (Combined, 150M)",
+                 statins_only = "Improved Statin Uptake", all_interventions = "All Interventions")
+int_order <- c("HTN Control (No Diabetes)", "HTN Control (Diabetes)", "Improved Statin Uptake", "All Interventions")
+int_order_dsa <- c("HTN Control (No Diabetes)", "HTN Control (Diabetes)", "HTN Control (Combined, 150M)",
+                   "Improved Statin Uptake", "All Interventions")
+int_cols <- c("HTN Control (No Diabetes)" = "#1f78b4", "HTN Control (Diabetes)" = "#a6cee3",
+              "HTN Control (Combined, 150M)" = "#33a02c", "Improved Statin Uptake" = "#e31a1c",
+              "All Interventions" = "#6a3d9a", "Business-as-Usual" = "#999999")
+cause_cols <- c(ihd = "#56B4E9", istroke = "#CC79A7", hstroke = "#F0E442", hhd = "#E69F00")
+who_region_levels <- c("Africa", "Americas", "Eastern Mediterranean", "Europe", "South-East Asia", "Western Pacific")
+income_order <- c("Low income", "Lower-middle income", "Upper-middle income", "High income")
+kstyle <- function(k, fs = 13, full = TRUE) kable_styling(k, bootstrap_options = c("striped", "hover", "condensed"),
+                                                          full_width = full, font_size = fs)
+
+# ---- WHO standard population and ASMR (as aim1_report.Rmd) ------------------
+full_who_std <- data.table(age = 0:100, weight = c(rep(0.013, 10), rep(0.014, 10), rep(0.013, 10), rep(0.012, 10),
+                                                   rep(0.011, 10), rep(0.009, 10), rep(0.007, 10), rep(0.005, 10),
+                                                   rep(0.003, 10), rep(0.001, 10), 0.001))
+who_std <- full_who_std[age >= 20 & age <= 94]
+who_std <- rbind(who_std, data.table(age = 95, weight = full_who_std[age >= 95, sum(weight)]))
+who_std[, weight := weight / sum(weight)]
+calculate_asmr <- function(dt, std_pop = who_std, deaths_col = "deaths_dx", population_col = "Nx",
+                           disagg_var = "intervention") {
+  dt <- copy(dt)
+  dt[, age := as.integer(gsub("\\+", "", age))]
+  dt <- merge(dt, std_pop, by = "age", all.x = TRUE)
+  dt[, rate := get(deaths_col) / get(population_col)]
+  dt[, weighted_rate := rate * weight]
+  dt[, .(ASMR = sum(weighted_rate, na.rm = TRUE) * 1e5), by = c("year", disagg_var)]
+}
+```
+
+```{r load-dsa, message=FALSE, warning=FALSE, echo=FALSE}
+rd <- function(f) { x <- readRDS(file.path(res_dir, f)); if (is.data.frame(x)) setDT(x); x }
+man       <- rd("manifest.rds")
+meta      <- rd("country_metadata.rds")
+res_year  <- rd("res_year.rds")
+res_demo  <- rd("res_demo.rds")
+res_daly  <- rd("res_daly.rds")
+res_asmr  <- rd("res_asmr.rds")
+econ      <- rd("econ.rds")
+econ_sum  <- rd("econ_summary.rds")
+targets   <- rd("htn_targets_dsa.rds")
+traj      <- rd("trajectories.rds")
+statin_cfg <- rd("statin_config.rds")
+trend_diag <- rd("trend_diagnostics.rds")
+regimes   <- rd("trend_regimes.rds")
+income_map <- rd("income_adherence_map.rds")
+ref_args  <- rd("reference_run_args.rds")
+pop20     <- rd("pop20_2019.rds")
+validation <- as.data.table(readRDS(file.path(run_dir, "validation", "validation.rds")))
+stopifnot("reference" %in% man$dsa_id, setequal(unique(res_year$dsa_id), man$dsa_id))
+
+dsa_lab   <- setNames(man$short_label, man$dsa_id)
+dsa_long  <- setNames(man$label, man$dsa_id)
+dsa_levels <- man[order(order), dsa_id]
+fam_cols <- c(reference = "#000000", target_achievement = "#2166ac", implementation_timing = "#e08214",
+              statin_adherence = "#b2182b", statin_adherence_income = "#8c510a", mortality_trend = "#1b7837",
+              extra_reference = "#878787")
+add_int <- function(dt) { dt[, intervention := scen_to_int[scenario]]; dt }
+for (x in list(res_year, res_demo, res_daly, res_asmr)) add_int(x)
+n_countries <- uniqueN(res_year$location)
+study_years <- "2025–2050"
+ra <- ref_args
+ref_adh <- sprintf("%.3f / %.3f", ra$adherence_ir, ra$adherence_cf)
+```
+
+`r if (is_pilot) paste0('<div style="border:3px solid #b2182b;padding:10px;background:#fdecea;"><b>PILOT RUN (', run_id, ') &mdash; ', n_countries, ' countr', ifelse(n_countries == 1, 'y', 'ies'), ': ', paste(run_man$countries, collapse = ", "), '.</b> These are software-verification results for a subset of countries, <b>not global estimates</b>. Global totals require the full run (all ', run_man$n_eligible_countries, ' eligible countries).</div>') else paste0('<div style="border:2px solid #1b7837;padding:10px;background:#eef7ee;"><b>Full run (', run_id, ')</b>: ', n_countries, ' countries, ', nrow(man), ' DSA settings, completed ', run_man$finished, '.</div>')`
+
+---
+
+# Background
+
+This report presents a **deterministic sensitivity analysis (DSA)** of the Aim 1 projections of
+cardiovascular disease (CVD) mortality under WHO risk-factor control targets. Every analysis
+re-runs the country-level Aim 1 state-transition model (`06_run_scenarios_multiple.R`, the script
+`00_run_model.R` sources) for `r if (n_countries == 1) "the one modelled country" else paste("all", n_countries, "modelled countries")`,
+six intervention scenarios, ages 20--95, both sexes and four causes (ischemic heart disease,
+ischemic stroke, intracerebral hemorrhage, hypertensive heart disease), 2017--2050. Nothing is
+obtained by rescaling a saved result.
+
+Following Briggs et al. (*Model Parameter Estimation and Uncertainty*, ISPOR-SMDM Task Force-6,
+*Value in Health* 2012;15:835--842), the DSA settings are **deliberately chosen scenario values**,
+not probability distributions: the spreads below are deterministic ranges and are **never
+confidence or credible intervals**. Each one-way analysis changes one assumption and holds every
+other input at the **active base case** (the reference). Illustrative assumptions are labelled as
+such, and every scenario's assumptions are reported next to its results.
+
+## The reference (active base case)
+
+The reference reproduces the executed 06 country call (parsed from its `%dopar%` body) and the
+`00_run_model.R` switches:
+
+```{r reference-table, echo=FALSE}
+ref_tab <- data.table(
+  Component = c("BP control target", "BP trajectory", "Statin endpoint", "Statin adherence (active call)",
+                "Sodium", "Trans-fat", "Background mortality trend", "CVD case-fatality trend", "Horizon"),
+  `Reference value` = c(
+    "150 million additional controlled hypertensives vs 2025 (04 target table, fixed 2025 population), split into mutually exclusive no-diabetes / diabetes subgroups",
+    "Baseline 2025, scale-up from 2026, full target 2030, held to 2050",
+    sprintf("%.0f%% coverage by %d (start %d), from each country's 2024 baseline", ra$statin_target_coverage * 100,
+            as.integer(ra$statin_target_year), as.integer(ra$statin_start_year)),
+    sprintf("IR (primary prevention) %.3f, CF (secondary prevention) %.3f", ra$adherence_ir, ra$adherence_cf),
+    sprintf("Inactive (salteff = %s)", ra$salteff),
+    sprintf("Eliminated (target %s %%E) from %d", ra$tfa_target_tfa, as.integer(ra$tfa_policy_start_year)),
+    "run_bgmx_trend = TRUE (BG.mx and all-cause envelope BG.mx.all)",
+    "run_CF_trend = TRUE, run_CF_trend_80 = TRUE, run_CF_trend_ihme = FALSE: CF x (1 + 0.8 percent_diff) after 2019",
+    "Projection 2017--2050; results 2025/2026--2050"))
+kable(ref_tab, caption = "Reference (active base case) settings.") |> kstyle(12) |> column_spec(1, bold = TRUE, width = "5cm")
+```
+
+**Statin adherence.** The active call passes `adherence_ir = `r ra$adherence_ir``,
+`adherence_cf = `r ra$adherence_cf`` (Basios et al. 2025). The function default of 1.00/1.00 is **not**
+the base case; it appears below only as an extra reference. The source reports 57.5% good adherence
+in primary prevention and **64.4%** (95% CI 59.6--69.2%) in secondary prevention, whereas the active
+call uses 0.664 for CF; the DSA keeps 0.664 so the reference reproduces the pipeline. Statin
+adherence enters only statin incidence (IR) and case-fatality (CF) effects; it does **not** change
+blood-pressure effects.
+
+## Scenario manifest
+
+```{r manifest-table, echo=FALSE}
+mdisp <- man[order(order), .(`DSA id` = dsa_id, Family = family_label, Type = analysis, Scenario = label,
+                             `Fraction of increment` = target_fraction,
+                             `BP / statin endpoint` = paste(bp_target_year, statin_target_year, sep = " / "),
+                             `Statin adherence IR / CF` = fifelse(adherence_mode == "income_group", "income-group map",
+                                                                  sprintf("%.3f / %.3f", adherence_ir, adherence_cf)),
+                             `CVD trend regime` = trend_regime, Assumption = assumption,
+                             Illustrative = fifelse(illustrative, "yes", ""))]
+kable(mdisp, caption = "DSA settings (single source of truth: dsa_manifest() in code/10_deterministic_dsa.R; also scenarios_dsa/dsa_scenario_manifest.csv).") |>
+  kstyle(11) |> column_spec(9, width = "12cm")
+```
+
+* **Partial target achievement** (one-way): for every BP scenario/location/sex/subgroup row,
+  `target = baseline + f x (target_original - baseline)`, f = 0.50 or 0.75, reached in 2030; statins
+  `baseline + f x (0.50 - baseline)` (countries already at or above 0.50 keep no increment). Baseline
+  control, subgroup shares and the 04 allocation are unchanged, so these runs do **not** reach
+  150 million (achieved numbers below). The diabetic 0.80 figure is the full-target ceiling, not the
+  endpoint of a 50%/75% scenario.
+* **Delayed implementation** (one-way): the **original full** BP and statin endpoints reached in
+  2035 or 2040 (baseline 2025, scale-up from 2026), then held to 2050.
+* **Statin adherence** (one-way): low IR 0.50 / CF 0.65; moderate IR 0.70 / CF 0.80. Interpreted as
+  assumed effective persistence/adherence over the horizon, not as a measured 25-year persistence.
+* **Statin adherence by World Bank income group** (one-way, illustrative): see the map below.
+* **CVD mortality trends** (one-way, structural): four CVD case-fatality regimes, background
+  mortality trend on in every regime; each regime has its own BAU.
+
+```{r regime-table, echo=FALSE}
+kable(regimes[, .(Regime = trend_regime, run_bgmx_trend, run_CF_trend,
+                  run_CF_trend_80 = fifelse(run_CF_trend_80_used, as.character(run_CF_trend_80), "irrelevant (not read)"),
+                  run_CF_trend_ihme, `CVD trend input` = cvd_trend_input, Formula = cvd_trend_formula)],
+      caption = "CVD mortality trend regimes (05_build_baseline.R switches).") |> kstyle(11)
+kable(merge(income_map, meta[, .N, by = .(income_code)], by = "income_code", all.x = TRUE)[
+        match(c("L", "LM", "UM", "H"), income_code),
+        .(Code = income_code, `Income group` = income_group, `Adherence IR` = adherence_ir, `Adherence CF` = adherence_cf,
+          `Countries modelled` = fifelse(is.na(N), 0L, N), Status = status)],
+      caption = "Illustrative income-group statin adherence map (World Bank income group, not WHO region).") |> kstyle(12)
+fb <- meta[income_source != "World Bank 2026"]
+```
+
+Income groups come from `data/raw/World Bank Income Group 2026.csv`; every modelled country has one
+explicit code. `r if (nrow(fb)) paste0("Resolved without a direct 2026 code: ", paste0(fb$location, " = ", fb$income_code, " (", fb$income_source, ")", collapse = "; "), ". The ordinary aim1_report.Rmd instead assigns blank codes to Low income and leaves South Sudan (iso3 SDS) unmatched, so income-group tables here can differ from it for these countries.") else ""`
+
+**Trend inputs.** `r validation[check_id == "V11", detail][1]`. `r validation[check_id == "V12", detail][1]`
+
+---
+
+# WHO Priority Targets and the 150 Million Split
+
+```{r control-summary, message=FALSE, warning=FALSE, echo=FALSE}
+htn_tg <- targets[dsa_id == "reference"]
+scenario_lbl <- c(baseline = "Baseline (business-as-usual)", bp_no_diabetes_only = "HTN Control (No Diabetes)",
+                  bp_diabetes_only = "HTN Control (Diabetes)", bp_combined = "HTN Control (Combined, 150M target)")
+subgroup_lbl <- c(htn_no_diabetes = "Without diabetes", htn_diabetes = "With diabetes", total = "All hypertensives")
+agg_control <- function(dt, add_col = "additional_controlled_2030", ctl_col = "controlled_2030") {
+  dt <- copy(dt); dt[, `:=`(add_ = get(add_col), ctl_ = get(ctl_col))]
+  base <- dt[, .(htn_pop_2025 = sum(htn_population_2025), controlled_2025 = sum(controlled_2025),
+                 controlled_2030 = sum(ctl_), additional_2030 = sum(add_)), by = .(region, scenario_id, subgroup)]
+  tot <- dt[, .(subgroup = "total", htn_pop_2025 = sum(htn_population_2025), controlled_2025 = sum(controlled_2025),
+                controlled_2030 = sum(ctl_), additional_2030 = sum(add_)), by = .(region, scenario_id)]
+  rbind(base, tot)
+}
+control_summary <- rbind(agg_control(htn_tg[!is.na(region)]), agg_control(copy(htn_tg)[, region := "Global"]))
+control_summary[, `:=`(coverage_2025 = controlled_2025 / htn_pop_2025, coverage_2030 = controlled_2030 / htn_pop_2025,
+                       pct_increase = fifelse(controlled_2025 > 0, additional_2030 / controlled_2025 * 100, NA_real_),
+                       scenario_label = scenario_lbl[scenario_id], subgroup_label = subgroup_lbl[subgroup])]
+gcomb <- control_summary[region == "Global" & scenario_id == "bp_combined"]
+add_no_diabetes <- gcomb[subgroup == "htn_no_diabetes", additional_2030]
+add_diabetes    <- gcomb[subgroup == "htn_diabetes", additional_2030]
+add_total       <- gcomb[subgroup == "total", additional_2030]
+if (!is_pilot) stopifnot(abs(add_total - 150e6) <= 1)
+wsave(control_summary, file.path(slides_dir, "sl_control_summary.rds"))
+sl_control_scalars <- list(target_total = 150e6, add_total = add_total, add_no_diabetes = add_no_diabetes,
+                           add_diabetes = add_diabetes, share_no_diabetes = add_no_diabetes / add_total,
+                           share_diabetes = add_diabetes / add_total, n_region_unmapped = 0L)
+wsave(sl_control_scalars, file.path(slides_dir, "sl_control_scalars.rds"))
+control_disp <- function(dt, group_col, group_name) {
+  d <- copy(dt); setnames(d, group_col, "Group")
+  out <- d[, .(Group, `Target population 2025` = comma(htn_pop_2025, accuracy = 1),
+               `Controlled 2025 (n)` = comma(controlled_2025, accuracy = 1), `Coverage 2025` = percent(coverage_2025, accuracy = 0.1),
+               `Controlled 2030 (n)` = comma(controlled_2030, accuracy = 1), `Coverage 2030` = percent(coverage_2030, accuracy = 0.1),
+               `Additional controlled 2030` = comma(additional_2030, accuracy = 1),
+               `% increase vs baseline` = ifelse(is.na(pct_increase), "—", percent(pct_increase / 100, accuracy = 0.1)))]
+  setnames(out, "Group", group_name); out[]
+}
+```
+
+The reference allocates the **150 million** additional controlled people by 2030 (fixed 2025
+population) between mutually exclusive subgroups: `r comma(add_no_diabetes, accuracy = 1)` without
+and `r comma(add_diabetes, accuracy = 1)` with diabetes`r if (is_pilot) " (pilot: modelled countries only, so the total is a subset of 150 million)" else ""`.
+
+```{r control-tables, echo=FALSE}
+glob_by_scen <- control_summary[region == "Global" & subgroup == "total"]
+glob_by_scen[, scenario_label := factor(scenario_label, levels = scenario_lbl)]; setorder(glob_by_scen, scenario_label)
+kable(control_disp(glob_by_scen, "scenario_label", "Scenario"),
+      caption = "Reference HTN control targets, totals by scenario, fixed 2025 hypertensive population.", align = c("l", rep("r", 7))) |>
+  kstyle(12, FALSE) |> row_spec(which(glob_by_scen$scenario_id == "bp_combined"), bold = TRUE, background = "#eef3fb")
+region_order <- c(who_region_levels, "Global")
+reg_comb <- control_summary[scenario_id == "bp_combined" & subgroup == "total"]
+reg_comb[, region := factor(region, levels = region_order)]; setorder(reg_comb, region)
+kable(control_disp(reg_comb, "region", "WHO region"), caption = "Reference HTN Control (Combined) by WHO region.",
+      align = c("l", rep("r", 7))) |> kstyle(12, FALSE)
+```
+
+```{r control-fig, echo=FALSE, fig.width=11, fig.height=5.5}
+fig_dat <- control_summary[scenario_id == "bp_combined" & subgroup %in% c("htn_no_diabetes", "htn_diabetes") & region != "Global"]
+fig_dat[, subgroup_lbl := factor(fifelse(subgroup == "htn_no_diabetes", "Without diabetes", "With diabetes"),
+                                 levels = c("Without diabetes", "With diabetes"))]
+fig_dat[, region := factor(region, levels = fig_dat[, .(t = sum(additional_2030)), by = region][order(t), region])]
+g_split <- ggplot(fig_dat, aes(x = additional_2030 / 1e6, y = region, fill = subgroup_lbl)) + geom_col(width = 0.7) +
+  scale_fill_manual(values = c("Without diabetes" = "#1f78b4", "With diabetes" = "#a6cee3"), name = NULL) +
+  labs(title = "Additional BP-Controlled by 2030 (reference), by WHO Region and Diabetes Status",
+       subtitle = paste0("Fixed 2025 population | total ", fmt_m(add_total), " M"), x = "Additional people controlled (millions)", y = NULL) +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g_split)
+wggsave(file.path(paper_dir, "dsa_ref_control_region_split.png"), g_split, width = 11, height = 5.5, dpi = 300)
+wggsave(file.path(slides_dir, "sl_fig_control_split.png"), g_split + labs(title = NULL), width = 8, height = 3.2, dpi = 200)
+```
+
+## Achieved BP control and statin coverage under each DSA setting
+
+Additional controlled hypertensives use the **fixed 2025 population** of script 04:
+`additional_t = htn_population_2025 x (control_t - baseline_control)`.
+
+**Timing convention.** BP control follows 06's `aim2_control_trajectory()`:
+`control_t = baseline + (target - baseline) x min(max((t - 2025) / (T - 2025), 0), 1)`. Statins follow
+06's `calculate_coverage_by_year()` ("no delay" branch, start 2026):
+`increment_t = increment x min((t - 2026 + 1) / (T - 2026 + 1), 1)`, and exactly the full increment
+after `T`. The two conventions are algebraically identical, so for the reference (T = 2030) and
+the delayed settings (T = 2035, 2040) coverage is at baseline in 2025, one step of `1/(T - 2025)` in
+2026, the full endpoint in year `T`, and held to 2050. No change to the active convention was
+needed; only 06's target-year check (which accepts 2030 only) is wrapped for the delayed settings,
+with every other 06 check unchanged. (In year `T`, 06's statin interpolation can differ from the
+endpoint by one floating-point ulp.)
+
+```{r dsa-targets, echo=FALSE}
+tg_sum <- targets[scenario_id == "bp_combined", .(
+  end_year = target_year[1],
+  add_2030 = sum(additional_2030), add_2035 = sum(additional_2035), add_2040 = sum(additional_2040),
+  add_end = sum(additional_dsa_endpoint), add_full = sum(additional_full_endpoint),
+  add_nd_end = sum(additional_dsa_endpoint[subgroup == "htn_no_diabetes"]),
+  add_d_end = sum(additional_dsa_endpoint[subgroup == "htn_diabetes"]),
+  ctl_d_end = sum(target_control[subgroup == "htn_diabetes"] * htn_population_2025[subgroup == "htn_diabetes"]) /
+    sum(htn_population_2025[subgroup == "htn_diabetes"])), by = dsa_id]
+st_sum <- statin_cfg[, .(stat_base = mean(statin_baseline), stat_target = mean(statin_target_coverage),
+                         stat_incr = mean(statin_increment), n_no_incr = sum(statin_increment == 0),
+                         adh = if (uniqueN(paste(adherence_ir, adherence_cf)) == 1) sprintf("%.3f / %.3f", adherence_ir[1], adherence_cf[1]) else "by income group",
+                         stat_end = statin_target_year[1]), by = dsa_id]
+dsa_targets <- merge(man[, .(dsa_id, order, label, family)], merge(tg_sum, st_sum, by = "dsa_id"), by = "dsa_id")[order(order)]
+wsave(dsa_targets, file.path(paper_dir, "paper_dsa_targets.rds"))
+dsa_targets_disp <- dsa_targets[, .(`DSA setting` = label, `BP endpoint` = end_year,
+  `Additional controlled 2030 (M)` = fmt_m(add_2030, 2), `2035 (M)` = fmt_m(add_2035, 2), `2040 (M)` = fmt_m(add_2040, 2),
+  `At endpoint (M)` = fmt_m(add_end, 2), `of which no diabetes / diabetes (M)` = paste(fmt_m(add_nd_end, 1), fmt_m(add_d_end, 1), sep = " / "),
+  `Share of full target` = fmt_pct(add_end / add_full), `Diabetes control at endpoint` = fmt_pct(ctl_d_end),
+  `Statin endpoint` = stat_end, `Mean statin baseline / endpoint` = paste(fmt_pct(stat_base), fmt_pct(stat_target), sep = " / "),
+  `Countries without statin increment` = n_no_incr, `Statin adherence IR / CF` = adh)]
+sl_tg <- cbind(dsa_targets_disp, family_id = dsa_targets$family)
+sl_tg[, `DSA setting` := dsa_lab[dsa_targets$dsa_id]]   # short labels for the slide
+wsave(sl_tg, file.path(slides_dir, "sl_dsa_targets.rds"))
+kable(dsa_targets_disp, caption = "BP control (HTN Control Combined, fixed 2025 population) and statin inputs by DSA setting. Statin means are unweighted across countries.") |> kstyle(11)
+```
+
+```{r dsa-trajectories, echo=FALSE, fig.width=11, fig.height=4.5}
+bpg <- traj$bp_global[scenario_id == "bp_combined" & subgroup == "total"]
+stg <- traj$statin_global
+tr <- rbind(bpg[, .(dsa_id, year, value = control_t, what = "BP control among hypertensives (HTN Control Combined)")],
+            stg[, .(dsa_id, year, value = coverage_t, what = "Statin coverage (40+ population-weighted)")])
+tr <- merge(tr, man[, .(dsa_id, family, short_label)], by = "dsa_id")
+tr_keep <- tr[family %in% c("reference", "target_achievement", "implementation_timing")]
+g_traj <- ggplot(tr_keep, aes(year, value, colour = short_label)) + geom_line(linewidth = 1) +
+  facet_wrap(~what, scales = "free_y") + scale_y_continuous(labels = percent_format(accuracy = 1)) +
+  labs(title = "Coverage trajectories by DSA setting (2025 baseline, scale-up from 2026)", x = NULL, y = NULL, colour = NULL,
+       caption = "Adherence and trend settings share the reference trajectories.") +
+  theme_minimal(base_size = 12) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g_traj)
+wggsave(file.path(paper_dir, "dsa_fig_trajectories.png"), g_traj, width = 11, height = 4.5, dpi = 300)
+wggsave(file.path(slides_dir, "sl_dsa_trajectories.png"), g_traj + labs(title = NULL), width = 8.5, height = 3.3, dpi = 200)
+kt <- dcast(tr_keep[year %in% c(2025, 2026, 2030, 2035, 2040, 2050)], what + short_label ~ year, value.var = "value")
+for (cc in setdiff(names(kt), c("what", "short_label"))) kt[, (cc) := percent(get(cc), accuracy = 0.1)]
+kable(kt, caption = "Trajectory values at key years (validated in code: 2025 = baseline, 2026 = one step, endpoint year = full endpoint, 2050 = endpoint).") |> kstyle(11)
+```
+
+---
+
+# Disease Trends (Business-as-Usual)
+
+```{r disease-trends, echo=FALSE, fig.width=10, fig.height=5}
+dt_trend <- res_year[dsa_id == "reference" & scenario == "baseline",
+                     .(new_cases = sum(newcases), sick = sum(sick)), by = year]
+dt_melt <- melt(dt_trend, id.vars = "year", measure.vars = c("new_cases", "sick"), variable.name = "metric", value.name = "count")
+dt_melt[, metric_lbl := fifelse(metric == "new_cases", "Incident cases", "Prevalent cases")]
+g_trend <- ggplot(dt_melt, aes(year, count / 1e6, color = metric_lbl, linetype = year > 2019)) + geom_line(linewidth = 1) +
+  scale_color_manual(values = c("Incident cases" = "steelblue", "Prevalent cases" = "tomato"), name = NULL) +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"), guide = "none") + scale_y_continuous(labels = comma) +
+  labs(title = "Incident and Prevalent CVD Cases — Business-as-Usual (reference trend regime)",
+       subtitle = "Solid = observed, dashed = projected", x = "Year", y = "Persons (millions)") +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g_trend)
+wggsave(file.path(paper_dir, "dsa_ref_disease_trend.png"), g_trend, width = 11, height = 5, dpi = 300)
+wggsave(file.path(slides_dir, "sl_fig_baseline_trend.png"), g_trend + labs(title = NULL), width = 8, height = 4, dpi = 200)
+```
+
+```{r asmr-cause, echo=FALSE, fig.width=11, fig.height=6}
+dt_asmr_in <- res_asmr[dsa_id == "reference" & scenario == "baseline",
+                       .(deaths_dx = sum(dead), well = sum(well), sick = sum(sick)), by = .(cause, age, year)]
+dt_asmr_in[, Nx := well + sick]
+asmr_cause <- calculate_asmr(dt_asmr_in, deaths_col = "deaths_dx", population_col = "Nx", disagg_var = "cause")
+asmr_cause <- merge(asmr_cause, asmr_cause[year == 2019, .(cause, ASMR_base = ASMR)], by = "cause")
+asmr_cause[, `:=`(index = ASMR / ASMR_base * 100, cause_lbl = cause_map[cause])]
+g <- ggplot(asmr_cause, aes(year, index, color = cause_lbl, linetype = year > 2019)) + geom_line(linewidth = 1) +
+  geom_hline(yintercept = 100, linetype = "dotted", color = "grey50") +
+  scale_color_manual(values = setNames(cause_cols, cause_map), name = "Cause of death") +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"), guide = "none") +
+  labs(title = "Age-Standardised CVD Mortality Rate Index — BAU (reference)", subtitle = "Index: 2019 = 100",
+       x = "Year", y = "ASMR index (2019 = 100)", caption = "WHO World Standard Population, rescaled to ages 20–95+") +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g)
+wggsave(file.path(paper_dir, "dsa_ref_asmr_cause.png"), g, width = 11, height = 5, dpi = 300)
+```
+
+---
+
+# Projected Deaths Averted: Reference (2025--2050)
+
+The tables and figures in this section replicate `aim1_report.Rmd` for the DSA reference (same
+2025--2050 window; deaths averted in 2025 are zero to machine precision).
+
+```{r compute-deaths-averted, echo=FALSE}
+ry <- res_year[year >= 2025]
+base_y <- ry[scenario == "baseline", .(dsa_id, location, year, cause, baseline_deaths = dead, bau_new = newcases)]
+dt_merged_all <- merge(ry[scenario != "baseline"], base_y, by = c("dsa_id", "location", "year", "cause"))
+dt_merged_all[, deaths_delayed := baseline_deaths - dead]
+dt_merged_all <- merge(dt_merged_all, meta[, .(location, region, location_income)], by = "location")
+dt_merged <- dt_merged_all[dsa_id == "reference" & intervention %in% int_order]
+dt_cumul <- dt_merged[, .(deaths_delayed = sum(deaths_delayed)), by = intervention]
+dt_annual <- dt_merged[, .(deaths_delayed = sum(deaths_delayed)), by = .(intervention, year)]
+dt_annual[, intervention := factor(intervention, levels = int_order)]
+setorder(dt_annual, intervention, year)
+dt_annual[, cum_deaths_delayed := cumsum(deaths_delayed), by = intervention]
+total_all  <- dt_cumul[intervention == "All Interventions", deaths_delayed]
+total_bp   <- dt_cumul[intervention == "HTN Control (No Diabetes)", deaths_delayed]
+total_bpd  <- dt_cumul[intervention == "HTN Control (Diabetes)", deaths_delayed]
+total_stat <- dt_cumul[intervention == "Improved Statin Uptake", deaths_delayed]
+bau_total_deaths <- res_year[dsa_id == "reference" & scenario == "baseline" & year >= 2025, sum(dead)]
+```
+
+Between 2025 and 2050 the reference projects **`r fmt_m(total_all, 2)` million deaths averted** under
+all interventions (`r n_countries` countr`r ifelse(n_countries == 1, "y", "ies")`): `r fmt_m(total_bp, 2)` M
+from HTN control without diabetes, `r fmt_m(total_bpd, 2)` M with diabetes, and `r fmt_m(total_stat, 2)` M
+from statins.
+
+```{r table1, echo=FALSE}
+tab1 <- copy(dt_cumul)[, intervention := factor(intervention, levels = int_order)][order(intervention)]
+tab1[, `:=`(deaths_M = round(deaths_delayed / 1e6, 2), deaths_annual = round(deaths_delayed / 25 / 1e3, 1))]
+tab1_fmt <- tab1[, .(Intervention = intervention, `Deaths averted (M, 2025–2050)` = comma(deaths_M, accuracy = 0.01),
+                     `Average per year (thousands)` = comma(deaths_annual, accuracy = 0.1))]
+kable(tab1_fmt, caption = "Table 1 (reference). Cumulative deaths averted, 2025–2050.", align = "lrr") |> kstyle()
+dt_excel_tab1 <- copy(tab1_fmt)
+```
+
+```{r figure1, echo=FALSE, fig.width=9, fig.height=5}
+g <- ggplot(tab1, aes(deaths_delayed / 1e6, factor(intervention, levels = rev(int_order)), fill = as.character(intervention))) +
+  geom_col(width = 0.65) + scale_fill_manual(values = int_cols, guide = "none") + scale_x_continuous(expand = c(0, 0), labels = comma) +
+  labs(title = "Projected Deaths Averted by Intervention, 2025–2050 (reference)", x = "Deaths averted (millions)", y = NULL) +
+  theme_minimal(base_size = 13) + theme(plot.title = element_text(face = "bold"), panel.grid.major.y = element_blank())
+print(g)
+wggsave(file.path(paper_dir, "dsa_ref_fig1_deaths_intervention.png"), g, width = 9, height = 5, dpi = 300)
+```
+
+```{r table2, echo=FALSE}
+dt_tab2 <- dt_merged[, .(deaths_delayed = sum(deaths_delayed)), by = .(intervention, cause)]
+dt_tab2 <- dt_tab2[!(cause %in% c("hstroke", "hhd") & intervention == "Improved Statin Uptake")]
+dt_tab2[, cause_lbl := cause_map[cause]]
+dt_tab2_wide <- dcast(dt_tab2, intervention ~ cause_lbl, value.var = "deaths_delayed", fill = NA)
+dt_tab2_wide[, intervention := factor(intervention, levels = int_order)]; setorder(dt_tab2_wide, intervention)
+for (col in setdiff(names(dt_tab2_wide), "intervention")) {
+  dt_tab2_wide[, (col) := fifelse(is.na(get(col)), "–", comma(round(get(col) / 1e6, 2), accuracy = 0.01))]
+}
+kable(dt_tab2_wide, caption = "Table 2 (reference). Cumulative deaths averted (millions, 2025–2050) by intervention and cause.",
+      align = c("l", rep("r", ncol(dt_tab2_wide) - 1))) |> kstyle()
+dt_excel_tab2 <- copy(dt_tab2_wide)
+```
+
+```{r figure2-3-4, echo=FALSE, fig.width=10, fig.height=5}
+dt_fig2 <- dt_merged[cause %in% names(cause_map), .(deaths_delayed = sum(deaths_delayed)), by = .(intervention, cause)]
+dt_fig2[, `:=`(intervention = factor(intervention, levels = int_order), cause_lbl = factor(cause_map[cause], levels = unname(cause_map)))]
+g2 <- ggplot(dt_fig2, aes(deaths_delayed / 1e6, intervention, fill = cause_lbl)) + geom_col(width = 0.65) +
+  scale_fill_manual(values = setNames(cause_cols, cause_map), name = "Cause of death") +
+  labs(title = "Deaths Averted by Cause and Intervention, 2025–2050 (reference)", x = "Deaths averted (millions)", y = NULL) +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g2)
+wggsave(file.path(paper_dir, "dsa_ref_fig2_deaths_cause.png"), g2, width = 9, height = 5, dpi = 300)
+g3 <- ggplot(dt_annual[intervention != "All Interventions"], aes(year, deaths_delayed / 1e6, fill = intervention)) +
+  geom_area(position = "stack", alpha = 0.7, color = "grey20", linewidth = 0.15) + scale_fill_manual(values = int_cols, name = NULL) +
+  labs(title = "Annual Deaths Averted by Intervention, 2026–2050 (reference)", x = "Year", y = "Deaths averted (millions)") +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g3)
+wggsave(file.path(paper_dir, "dsa_ref_fig3_annual_averted.png"), g3, width = 11, height = 5, dpi = 300)
+wggsave(file.path(slides_dir, "sl_fig_deaths_averted.png"), g3 + labs(title = NULL), width = 8, height = 3.6, dpi = 200)
+g4 <- ggplot(dt_annual, aes(year, cum_deaths_delayed / 1e6, color = intervention)) + geom_line(linewidth = 1.1) +
+  scale_color_manual(values = int_cols, name = NULL) + scale_y_continuous(labels = comma) +
+  labs(title = "Cumulative Deaths Averted by Intervention, 2026–2050 (reference)", x = "Year", y = "Cumulative deaths averted (millions)") +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g4)
+wggsave(file.path(paper_dir, "dsa_ref_fig4_cum_averted.png"), g4, width = 11, height = 5, dpi = 300)
+g4s <- ggplot(dt_annual[intervention != "All Interventions"], aes(year, cum_deaths_delayed / 1e6, color = intervention)) +
+  geom_line(linewidth = 1.1) + scale_color_manual(values = int_cols, name = NULL) +
+  labs(x = "Year", y = "Cumulative deaths averted (millions)") + theme_minimal(base_size = 13) + theme(legend.position = "bottom")
+wggsave(file.path(slides_dir, "sl_fig_cum_averted.png"), g4s, width = 11, height = 5, dpi = 300)
+reg_ann <- dt_merged[intervention == "All Interventions", .(deaths_delayed = sum(deaths_delayed)), by = .(region, year)]
+setorder(reg_ann, region, year); reg_ann[, cum := cumsum(deaths_delayed), by = region]
+g4b <- ggplot(reg_ann, aes(year, cum / 1e6, color = factor(region, levels = who_region_levels))) + geom_line(linewidth = 1.1) +
+  scale_color_brewer(palette = "Dark2", name = NULL) +
+  labs(title = "Cumulative Deaths Averted by WHO Region, All Interventions (reference)", x = "Year", y = "Cumulative deaths averted (millions)") +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g4b)
+wggsave(file.path(paper_dir, "dsa_ref_fig7_cum_region.png"), g4b, width = 11, height = 5, dpi = 300)
+```
+
+---
+
+# Deterministic Sensitivity Analysis Results
+
+All DSA comparisons use **cumulative 2026--2050** values. Each setting is compared with the
+reference; **mortality-trend settings are compared within their own regime** (averted = that
+regime's BAU deaths minus that regime's intervention deaths).
+
+```{r dsa-summary, echo=FALSE}
+dm <- dt_merged_all[year >= 2026]
+dsa_cum <- dm[, .(averted = sum(deaths_delayed), int_deaths = sum(dead), bau = sum(baseline_deaths)), by = .(dsa_id, intervention)]
+ref_cum <- dsa_cum[dsa_id == "reference", .(intervention, ref_averted = averted)]
+dsa_cum <- merge(dsa_cum, ref_cum, by = "intervention")
+dsa_cum[, `:=`(diff = averted - ref_averted, diff_pct = (averted - ref_averted) / ref_averted, pct_bau = averted / bau)]
+dsa_cum <- merge(dsa_cum, man[, .(dsa_id, order, family, family_label, analysis, label, short_label, in_tornado, illustrative)], by = "dsa_id")
+dsa_cum[, intervention := factor(intervention, levels = int_order_dsa)]
+setorder(dsa_cum, order, intervention)
+wsave(dsa_cum, file.path(paper_dir, "paper_dsa_cumulative.rds"))
+disp_sum <- dsa_cum[intervention %in% c("HTN Control (Combined, 150M)", "Improved Statin Uptake", "All Interventions"),
+  .(`DSA setting` = label, Intervention = as.character(intervention), `Deaths averted (M)` = fmt_m(averted, 2),
+    `% of own BAU` = fmt_pct(pct_bau), `Δ vs reference (M)` = fifelse(dsa_id == "reference", "—", fmt_d(diff)),
+    `Δ vs reference (%)` = fifelse(dsa_id == "reference", "—", fmt_dp(diff_pct)))]
+kable(disp_sum, caption = paste0("Cumulative deaths averted 2026–2050 by DSA setting (", n_countries,
+                                 " countr", ifelse(n_countries == 1, "y", "ies"), "). Deterministic scenario values, not intervals."),
+      align = c("l", "l", rep("r", 4))) |> kstyle(12) |> collapse_rows(columns = 1, valign = "top")
+sl_dsa_summary <- dsa_cum[intervention == "All Interventions", .(Setting = short_label, Family = family_label,
+  `Averted (M)` = fmt_m(averted, 2), `Δ vs ref. (M)` = fifelse(dsa_id == "reference", "—", fmt_d(diff)),
+  `Δ (%)` = fifelse(dsa_id == "reference", "—", fmt_dp(diff_pct)), `% of BAU` = fmt_pct(pct_bau))]
+wsave(sl_dsa_summary, file.path(slides_dir, "sl_dsa_summary.rds"))
+```
+
+## One-way difference (tornado) chart
+
+```{r dsa-tornado, echo=FALSE, fig.width=11, fig.height=6.5}
+tor <- dsa_cum[in_tornado == TRUE & intervention %in% c("HTN Control (Combined, 150M)", "Improved Statin Uptake", "All Interventions")]
+ord <- tor[intervention == "All Interventions"][order(abs(diff)), short_label]
+tor[, short_label := factor(short_label, levels = ord)]
+u <- if (max(abs(tor$diff)) < 1e6) 1e3 else 1e6
+u_s <- if (u == 1e3) "k" else "M"; u_l <- if (u == 1e3) "thousands" else "millions"
+tor[, lab := sprintf("%+.1f%s (%+.1f%%)", diff / u, u_s, diff_pct * 100)]
+g_tor <- ggplot(tor, aes(x = diff / u, y = short_label, fill = family_label)) + geom_col(width = 0.7) +
+  geom_vline(xintercept = 0, linewidth = 0.6) +
+  geom_text(aes(label = lab, hjust = ifelse(diff < 0, 1.05, -0.05)), size = 2.8) +
+  facet_wrap(~intervention, scales = "free_x", nrow = 1) +
+  scale_fill_manual(values = setNames(fam_cols[man$family], man$family_label), name = NULL) +
+  scale_x_continuous(expand = expansion(mult = c(0.6, 0.6))) + coord_cartesian(clip = "off") +
+  labs(title = "One-way DSA: change in cumulative deaths averted vs the reference, 2026–2050",
+       subtitle = paste0("Reference = active base case. Bars are deterministic scenario differences, not intervals. ",
+                         "Perfect statin adherence (extra reference) is excluded."),
+       x = paste0("Difference in deaths averted vs reference (", u_l, ")"), y = NULL) +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"),
+                                        panel.grid.major.y = element_blank(), panel.spacing.x = unit(2.2, "lines"))
+print(g_tor)
+wggsave(file.path(paper_dir, "dsa_fig_tornado.png"), g_tor, width = 12, height = 6.5, dpi = 300)
+wggsave(file.path(slides_dir, "sl_dsa_tornado.png"), g_tor + labs(title = NULL, subtitle = NULL), width = 11, height = 5, dpi = 200)
+```
+
+## Annual deaths averted by DSA setting
+
+```{r dsa-annual, echo=FALSE, fig.width=11, fig.height=6}
+dsa_ann <- dm[intervention == "All Interventions", .(averted = sum(deaths_delayed)), by = .(dsa_id, year)]
+dsa_ann <- merge(dsa_ann, man[, .(dsa_id, family, family_label, short_label)], by = "dsa_id")
+ref_line <- dsa_ann[dsa_id == "reference", .(year, averted)]
+g_ann <- ggplot(dsa_ann[dsa_id != "reference"], aes(year, averted / 1e6, colour = short_label)) +
+  geom_line(data = ref_line, aes(year, averted / 1e6), inherit.aes = FALSE, colour = "black", linewidth = 1.2) +
+  geom_line(linewidth = 0.9) + facet_wrap(~family_label) +
+  labs(title = "Annual deaths averted, All Interventions: DSA settings (colour) vs reference (black)",
+       x = NULL, y = "Deaths averted (millions)", colour = NULL) +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g_ann)
+wggsave(file.path(paper_dir, "dsa_fig_annual.png"), g_ann, width = 11, height = 6, dpi = 300)
+wggsave(file.path(slides_dir, "sl_dsa_annual.png"), g_ann + labs(title = NULL), width = 10, height = 5, dpi = 200)
+wsave(dsa_ann, file.path(paper_dir, "paper_dsa_annual.rds"))
+```
+
+## Endpoints: 2030, 2035, 2040 and 2050
+
+```{r dsa-endpoints, echo=FALSE}
+yrs <- c(2030, 2035, 2040, 2050)
+ep <- rbindlist(lapply(yrs, function(y) dm[intervention %in% c("HTN Control (Combined, 150M)", "Improved Statin Uptake", "All Interventions"),
+  .(year_end = y, annual = sum(deaths_delayed[year == y]), cumulative = sum(deaths_delayed[year <= y])), by = .(dsa_id, intervention)]))
+ep <- merge(ep, man[, .(dsa_id, order, short_label)], by = "dsa_id")
+ep_w <- dcast(ep, order + short_label + intervention ~ year_end, value.var = c("annual", "cumulative"))
+setorder(ep_w, intervention, order)
+ep_disp <- ep_w[, c(list(Intervention = as.character(intervention), `DSA setting` = short_label),
+                    lapply(.SD, function(x) fmt_m(x, 3))), .SDcols = patterns("^annual|^cumulative")]
+setnames(ep_disp, gsub("annual_", "Annual ", gsub("cumulative_", "Cumulative 2026–", names(ep_disp))))
+kable(ep_disp, caption = "Deaths averted (millions): annual in the endpoint year and cumulative from 2026 to the endpoint year.") |>
+  kstyle(11) |> collapse_rows(columns = 1, valign = "top")
+wsave(ep, file.path(paper_dir, "paper_dsa_endpoints.rds"))
+wsave(ep_disp[Intervention == "All Interventions"], file.path(slides_dir, "sl_dsa_endpoints.rds"))
+```
+
+## Statin adherence settings
+
+Statin adherence changes only the statin-active scenarios; BP-only scenarios are identical to the
+reference (validated for every country: check C5).
+
+```{r dsa-adherence, echo=FALSE}
+adh <- dsa_cum[family %in% c("reference", "statin_adherence", "statin_adherence_income", "extra_reference") &
+                 intervention %in% c("HTN Control (Combined, 150M)", "Improved Statin Uptake", "All Interventions")]
+adh_disp <- dcast(adh, order + label ~ intervention, value.var = "averted")
+for (cc in setdiff(names(adh_disp), c("order", "label"))) adh_disp[, (cc) := fmt_m(get(cc), 3)]
+setorder(adh_disp, order); adh_disp[, order := NULL]; setnames(adh_disp, "label", "Setting")
+kable(adh_disp, caption = "Cumulative deaths averted (millions, 2026–2050) under statin adherence settings. The perfect-adherence row is an extra reference, not the base case.") |> kstyle(12)
+c5 <- validation[check_id == "V24", detail]
+```
+
+## Statin adherence by income group
+
+```{r dsa-income, echo=FALSE}
+inc_ids <- intersect(c("reference", "adherence_income"), man$dsa_id)
+inc <- dm[dsa_id %in% inc_ids & intervention %in% c("Improved Statin Uptake", "All Interventions"),
+          .(averted = sum(deaths_delayed), bau = sum(baseline_deaths)), by = .(dsa_id, intervention, location_income)]
+inc <- rbind(inc, inc[, .(location_income = "Global", averted = sum(averted), bau = sum(bau)), by = .(dsa_id, intervention)])
+inc_w <- dcast(inc, intervention + location_income ~ dsa_id, value.var = "averted")
+if (all(inc_ids %in% names(inc_w)) && length(inc_ids) == 2) {
+  inc_w[, `:=`(diff = adherence_income - reference, diff_pct = (adherence_income - reference) / reference)]
+}
+inc_w[, location_income := factor(location_income, levels = c(income_order, "Global"))]; setorder(inc_w, intervention, location_income)
+inc_disp <- inc_w[, c(list(Intervention = as.character(intervention), `Income group` = as.character(location_income),
+                           Reference = fmt_m(reference, 3)),
+                      if ("adherence_income" %in% names(inc_w)) list(`Income-group adherence` = fmt_m(adherence_income, 3),
+                                                                      `Δ (M)` = fmt_d(diff, 3), `Δ (%)` = fmt_dp(diff_pct)))]
+kable(inc_disp, caption = "Deaths averted (millions, 2026–2050) by World Bank income group: reference adherence vs the illustrative income-group map.") |>
+  kstyle(12) |> collapse_rows(columns = 1, valign = "top")
+wsave(inc_disp, file.path(slides_dir, "sl_dsa_income.rds"))
+wsave(inc, file.path(paper_dir, "paper_dsa_income.rds"))
+```
+
+## Alternative CVD mortality trends (structural)
+
+Background mortality trends (`BG.mx`, `BG.mx.all`) are identical in every regime (check V04); only
+the CVD case-fatality (`CF`) trend changes. Each regime's intervention deaths are compared with
+**its own** BAU. These are structural scenario analyses, not intervals around a forecast, and do not
+show that any one trend is correct. Layout after Table S8 of the related RTSL manuscript draft
+(its no-background-trend row is outside the scope here; its numbers are not reproduced).
+
+```{r table-s8, echo=FALSE}
+tr_ids <- man[family %in% c("reference", "mortality_trend"), dsa_id]
+s8 <- dsa_cum[dsa_id %in% tr_ids & intervention %in% int_order_dsa]
+s8 <- merge(s8, man[, .(dsa_id, trend_regime)], by = "dsa_id")
+s8 <- merge(s8, regimes[, .(trend_regime, run_bgmx_trend, run_CF_trend, run_CF_trend_80, run_CF_trend_80_used, run_CF_trend_ihme)], by = "trend_regime")
+setorder(s8, order, intervention)
+s8_disp <- s8[, .(`Mortality trend` = short_label,
+                  `Switches (bg / CF / 80% / IHME)` = paste(run_bgmx_trend, run_CF_trend,
+                                                            fifelse(run_CF_trend_80_used, as.character(run_CF_trend_80), "n/a"),
+                                                            run_CF_trend_ihme, sep = " / "),
+                  Intervention = as.character(intervention), `Projected deaths (M)` = fmt_m(int_deaths, 2),
+                  `BAU deaths (M)` = fmt_m(bau, 2), `Deaths averted (M)` = fmt_m(averted, 2),
+                  `Averted per year (M)` = fmt_m(averted / 25, 3), `Averted (% of BAU)` = fmt_pct(pct_bau),
+                  `Δ averted vs reference (M)` = fifelse(dsa_id == "reference", "—", fmt_d(diff)),
+                  `Δ (%)` = fifelse(dsa_id == "reference", "—", fmt_dp(diff_pct)))]
+kable(s8_disp, caption = "Table S8-style comparison: cumulative 2026–2050 deaths under alternative CVD case-fatality trend regimes (background trend on in all).",
+      align = c("l", "l", "l", rep("r", 7))) |> kstyle(11) |> collapse_rows(columns = 1:2, valign = "top")
+wsave(s8, file.path(paper_dir, "paper_dsa_tableS8.rds"))
+wsave(s8_disp[Intervention %in% c("HTN Control (Combined, 150M)", "Improved Statin Uptake", "All Interventions")],
+      file.path(slides_dir, "sl_dsa_tableS8.rds"))
+```
+
+```{r trend-figs, echo=FALSE, fig.width=11, fig.height=5}
+tb <- res_year[dsa_id %in% tr_ids & scenario %in% c("baseline", "all_interventions"),
+               .(dead = sum(dead)), by = .(dsa_id, scenario, year)]
+tb <- merge(tb, man[, .(dsa_id, short_label)], by = "dsa_id")
+tb[, what := fifelse(scenario == "baseline", "Business-as-usual", "All Interventions")]
+g_tb <- ggplot(tb, aes(year, dead / 1e6, colour = short_label, linetype = what)) + geom_line(linewidth = 0.9) +
+  geom_vline(xintercept = 2019.5, linetype = "dotted") +
+  labs(title = "Annual CVD deaths by trend regime: BAU and All Interventions (each regime with its own BAU)",
+       x = NULL, y = "Deaths (millions)", colour = "Trend regime", linetype = NULL) +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g_tb)
+wggsave(file.path(paper_dir, "dsa_fig_trend_deaths.png"), g_tb, width = 11, height = 5, dpi = 300)
+wggsave(file.path(slides_dir, "sl_dsa_trend_deaths.png"), g_tb + labs(title = NULL), width = 10, height = 4.4, dpi = 200)
+tdg <- merge(trend_diag[year >= 2019], man[family %in% c("reference", "mortality_trend"), .(trend_regime, short_label)], by = "trend_regime")
+cf20 <- tdg[year == 2020 & trend_regime == "reference", setNames(CF_ratio_to_pre, cause)]
+cf50 <- tdg[year == 2050 & trend_regime == "reference", setNames(CF_ratio_to_pre, cause)]
+g_cf <- ggplot(tdg, aes(year, CF_ratio_to_pre, colour = short_label)) + geom_line(linewidth = 0.9) + facet_wrap(~cause_map[cause]) +
+  geom_hline(yintercept = 1, linetype = "dotted") +
+  labs(title = "Input check: CVD case-fatality multiplier relative to the common pre-trend state (Nx-weighted)",
+       x = NULL, y = "CF / pre-trend CF", colour = NULL) +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g_cf)
+wggsave(file.path(paper_dir, "dsa_fig_trend_cf_inputs.png"), g_cf, width = 11, height = 5, dpi = 300)
+```
+
+**Reading the trend regimes.** The reference series (`tps_bgmx_cvd_forecasted.rds`, 80% applied)
+does not start from the observed 2019 level: its Nx-weighted CF multiplier is
+`r paste0(cause_map[names(cf20)], " ", sprintf("%.3f", cf20), collapse = ", ")` in 2020 and
+`r paste0(cause_map[names(cf50)], " ", sprintf("%.3f", cf50), collapse = ", ")` in 2050 relative to
+the pre-trend state. Where the multiplier stays above 1, removing the CVD trend (`trend_no_cvd`)
+*lowers* BAU deaths and applying it at 100% (`trend_full_cvd`) raises them. The IHME Foresight
+regime declines steadily for IHD and stroke. These are properties of the supplied input series, shown
+here as input checks; the DSA does not alter them.
+
+---
+
+# Outputs by Demographics
+
+```{r demo-age-sex, echo=FALSE, fig.width=10, fig.height=5}
+rdm <- res_demo[, .(dead = sum(dead_2025_2050)), by = .(dsa_id, intervention, sex, age_group)]
+rdm_b <- rdm[intervention == "b.a.u", .(dsa_id, sex, age_group, baseline_deaths = dead)]
+rdm <- merge(rdm[intervention != "b.a.u"], rdm_b, by = c("dsa_id", "sex", "age_group"))
+rdm[, deaths_delayed := baseline_deaths - dead]
+dt_age_sex <- rdm[dsa_id == "reference" & intervention %in% int_order, .(deaths_delayed = sum(deaths_delayed)), by = .(intervention, age_group, sex)]
+dt_age_sex[, intervention := factor(intervention, levels = dt_age_sex[, .(t = sum(deaths_delayed)), by = intervention][order(t), intervention])]
+g <- ggplot(dt_age_sex, aes(deaths_delayed / 1e6, intervention, fill = age_group)) + geom_col(width = 0.7) + facet_wrap(~sex, nrow = 1) +
+  labs(title = "Deaths Averted by Age Group, Sex and Intervention (reference, 2025–2050)", x = "Deaths averted (millions)", y = NULL, fill = "Age group") +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g)
+wggsave(file.path(paper_dir, "dsa_ref_fig5_demo_age.png"), g, width = 10, height = 5, dpi = 300)
+dt_tab3 <- rdm[dsa_id == "reference" & intervention %in% int_order, .(deaths_projected = sum(dead), baseline_deaths = sum(baseline_deaths)),
+               by = .(age_group, intervention)]
+dt_tab3[, `:=`(deaths_delayed = baseline_deaths - deaths_projected)][, `:=`(deaths_delayed_ave = deaths_delayed / 25,
+                                                                            deaths_delayed_pct = deaths_delayed / baseline_deaths)]
+dt_tab3[, intervention := factor(intervention, levels = int_order)]; setorder(dt_tab3, age_group, intervention)
+dt_tab3_fmt <- dt_tab3[, .(`Age group` = age_group, Intervention = intervention, `Projected deaths` = comma(deaths_projected, accuracy = 1),
+                           `Baseline deaths` = comma(baseline_deaths, accuracy = 1), `Deaths averted` = comma(deaths_delayed, accuracy = 1),
+                           `Deaths averted/year` = comma(deaths_delayed_ave, accuracy = 1), `% averted` = percent(deaths_delayed_pct, accuracy = 0.1))]
+kable(dt_tab3_fmt, caption = "Table 3 (reference). Cumulative deaths averted (2025–2050) by age group and intervention.") |> kstyle(12)
+dt_excel_tab3 <- copy(dt_tab3_fmt)
+sl_dt_age <- rdm[dsa_id == "reference" & intervention %in% int_order, .(averted = sum(deaths_delayed)), by = .(age_group, intervention)]
+sl_dt_age[, intervention := factor(intervention, levels = int_order)]
+g_age_sl <- ggplot(sl_dt_age, aes(age_group, averted / 1e6, fill = intervention)) + geom_col(position = "dodge", width = 0.7) +
+  scale_fill_manual(values = int_cols[int_order], name = NULL) + labs(x = "Age group", y = "Deaths averted (millions)") +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom", legend.text = element_text(size = 7)) + guides(fill = guide_legend(nrow = 2))
+wggsave(file.path(slides_dir, "sl_fig_by_age.png"), g_age_sl, width = 8, height = 4, dpi = 200)
+```
+
+```{r dsa-age, echo=FALSE}
+age_d <- rdm[intervention == "All Interventions", .(averted = sum(deaths_delayed)), by = .(dsa_id, age_group)]
+age_d <- merge(age_d, man[, .(dsa_id, order, short_label)], by = "dsa_id")
+age_w <- dcast(age_d, order + short_label ~ age_group, value.var = "averted"); setorder(age_w, order); age_w[, order := NULL]
+for (cc in setdiff(names(age_w), "short_label")) age_w[, (cc) := fmt_m(get(cc), 3)]
+setnames(age_w, "short_label", "DSA setting")
+kable(age_w, caption = "Deaths averted (millions, 2025–2050), All Interventions, by age group and DSA setting.") |> kstyle(12)
+```
+
+---
+
+# Outputs by Geography
+
+```{r table4-country, echo=FALSE}
+geo <- res_year[year >= 2025 & scenario %in% c("baseline", "all_interventions"), .(dead = sum(dead)), by = .(dsa_id, scenario, location)]
+geo <- dcast(geo, dsa_id + location ~ scenario, value.var = "dead")
+geo[, `:=`(deaths_delayed = baseline - all_interventions)]
+geo <- merge(geo, meta[, .(location, region, location_income, iso3)], by = "location")
+dt_tab4 <- geo[dsa_id == "reference", .(region, location, deaths_projected = all_interventions, baseline_deaths = baseline, deaths_delayed)]
+dt_tab4[, `:=`(deaths_delayed_ave = deaths_delayed / 25, deaths_delayed_pct = deaths_delayed / baseline_deaths)]
+setorder(dt_tab4, region, -deaths_delayed)
+dt_tab4_fmt <- dt_tab4[, .(Region = region, Country = location, `Projected deaths` = comma(deaths_projected, accuracy = 1),
+                           `Baseline deaths` = comma(baseline_deaths, accuracy = 1), `Deaths averted` = comma(deaths_delayed, accuracy = 1),
+                           `Deaths averted/year` = comma(deaths_delayed_ave, accuracy = 1), `% averted` = percent(deaths_delayed_pct, accuracy = 0.1))]
+datatable(dt_tab4_fmt, caption = "Table 4 (reference). Country-level deaths averted, All Interventions, 2025–2050.",
+          filter = "top", rownames = FALSE, options = list(pageLength = 15, scrollX = TRUE))
+dt_excel_tab4 <- copy(dt_tab4_fmt)
+```
+
+```{r figure5-top20-map, echo=FALSE, fig.width=10, fig.height=7}
+dt_top20 <- dt_tab4[order(-deaths_delayed)][1:min(20, .N)]
+dt_top20[, location := factor(location, levels = rev(location))]
+g <- ggplot(dt_top20, aes(deaths_delayed / 1e6, location, fill = region)) + geom_col(width = 0.7) +
+  labs(title = "Top Countries by Projected Deaths Averted (All Interventions, 2025–2050, reference)", x = "Deaths averted (millions)", y = NULL, fill = "Region") +
+  theme_minimal(base_size = 13) + theme(plot.title = element_text(face = "bold"), panel.grid.major.y = element_blank())
+print(g)
+wggsave(file.path(paper_dir, "dsa_ref_fig5_top20_countries.png"), g, width = 10, height = 7, dpi = 300)
+sl_tab_top15 <- dt_tab4[order(-deaths_delayed)][1:min(15, .N), .(location, int_dead = deaths_projected, region, bau = baseline_deaths, averted = deaths_delayed)]
+wsave(sl_tab_top15, file.path(slides_dir, "sl_tab_top15.rds"))
+t15 <- copy(sl_tab_top15)[, location := factor(location, levels = rev(location))]
+g15 <- ggplot(t15, aes(averted / 1e6, location, fill = region)) + geom_col(width = 0.7) + labs(x = "Deaths averted (millions)", y = NULL, fill = "Region") +
+  theme_minimal(base_size = 10) + theme(panel.grid.major.y = element_blank())
+wggsave(file.path(slides_dir, "sl_fig_top15_countries.png"), g15, width = 8, height = 5, dpi = 200)
+dt_map <- merge(dt_tab4, pop20, by = "location", all.x = TRUE)
+dt_map[, da_per100k := deaths_delayed / pop * 1e5]
+world <- ne_countries(scale = "medium", returnclass = "sf")
+world_dt <- merge(world, merge(dt_map, meta[, .(location, iso3)], by = "location"), by.x = "adm0_a3", by.y = "iso3", all.x = TRUE)
+gm <- ggplot(world_dt) + geom_sf(aes(fill = da_per100k), color = "grey80", linewidth = 0.1) +
+  scale_fill_viridis_c(name = "per 100,000", na.value = "grey90", option = "C", direction = -1) +
+  labs(title = "Deaths Averted per 100,000 Population, 2025–2050 (All Interventions, reference)",
+       caption = "Denominator = UNWPP 2024 age 20+ population, 2019") + theme_void(base_size = 12) + theme(plot.title = element_text(face = "bold"))
+print(gm)
+wggsave(file.path(paper_dir, "dsa_ref_fig6_map.png"), gm, width = 11, height = 5, dpi = 300)
+```
+
+```{r table5-region, echo=FALSE}
+dt_tab5 <- geo[dsa_id == "reference", .(deaths_projected = sum(all_interventions), baseline_deaths = sum(baseline)), by = region]
+dt_tab5[, `:=`(deaths_delayed = baseline_deaths - deaths_projected)][, `:=`(deaths_delayed_ave = deaths_delayed / 25,
+                                                                            deaths_delayed_pct = deaths_delayed / baseline_deaths)]
+setorder(dt_tab5, -deaths_delayed)
+dt_tab5_fmt <- dt_tab5[, .(Region = region, `Projected deaths` = comma(deaths_projected, accuracy = 1), `Baseline deaths` = comma(baseline_deaths, accuracy = 1),
+                           `Deaths averted` = comma(deaths_delayed, accuracy = 1), `Deaths averted/year` = comma(deaths_delayed_ave, accuracy = 1),
+                           `% averted` = percent(deaths_delayed_pct, accuracy = 0.1))]
+kable(dt_tab5_fmt, caption = "Table 5 (reference). Deaths averted by WHO region, All Interventions, 2025–2050.") |> kstyle(13, FALSE)
+dt_excel_tab5 <- copy(dt_tab5_fmt)
+sl_tab_region <- dt_tab5[, .(region, int = deaths_projected, bau = baseline_deaths, averted = deaths_delayed, pct = deaths_delayed_pct * 100)]
+wsave(sl_tab_region, file.path(slides_dir, "sl_tab_region.rds"))
+reg_dsa <- dm[intervention == "All Interventions", .(averted = sum(deaths_delayed)), by = .(dsa_id, region)]
+reg_dsa <- merge(reg_dsa, man[, .(dsa_id, order, short_label)], by = "dsa_id")
+reg_w <- dcast(reg_dsa, order + short_label ~ region, value.var = "averted"); setorder(reg_w, order); reg_w[, order := NULL]
+for (cc in setdiff(names(reg_w), "short_label")) reg_w[, (cc) := fmt_m(get(cc), 3)]
+setnames(reg_w, "short_label", "DSA setting")
+kable(reg_w, caption = "Deaths averted (millions, 2026–2050), All Interventions, by WHO region and DSA setting.") |> kstyle(11)
+wsave(reg_dsa, file.path(paper_dir, "paper_dsa_region.rds"))
+inc_dsa <- dm[intervention == "All Interventions", .(averted = sum(deaths_delayed)), by = .(dsa_id, location_income)]
+inc_dsa <- merge(inc_dsa, man[, .(dsa_id, order, short_label)], by = "dsa_id")
+inc_w2 <- dcast(inc_dsa, order + short_label ~ factor(location_income, levels = income_order), value.var = "averted")
+setorder(inc_w2, order); inc_w2[, order := NULL]
+for (cc in setdiff(names(inc_w2), "short_label")) inc_w2[, (cc) := fmt_m(get(cc), 3)]
+setnames(inc_w2, "short_label", "DSA setting")
+kable(inc_w2, caption = "Deaths averted (millions, 2026–2050), All Interventions, by World Bank income group and DSA setting.") |> kstyle(11)
+```
+
+---
+
+# ASMR Under Intervention Scenarios
+
+```{r asmr-interventions, echo=FALSE, fig.width=12, fig.height=7}
+a2 <- res_asmr[intervention %in% c("b.a.u", int_order_dsa), .(dead = sum(dead), well = sum(well), sick = sum(sick)),
+               by = .(dsa_id, intervention, age, year)]
+a2[, Nx := well + sick]
+asmr_all <- a2[, calculate_asmr(.SD, deaths_col = "dead", population_col = "Nx", disagg_var = "intervention"), by = dsa_id]
+asmr_int <- asmr_all[dsa_id == "reference" & intervention %in% c("b.a.u", int_order)][, dsa_id := NULL]
+asmr_int[, intervention := factor(intervention, levels = c("b.a.u", int_order))]
+asmr_int[, int_lbl := fifelse(intervention == "b.a.u", "Business-as-Usual", as.character(intervention))]
+g_asmr <- ggplot(asmr_int, aes(year, ASMR, color = int_lbl, linetype = year > 2019)) + geom_line(linewidth = 1.1) +
+  scale_color_manual(values = c("Business-as-Usual" = "#999999", int_cols), name = NULL) +
+  scale_linetype_manual(values = c(`FALSE` = "solid", `TRUE` = "dashed"), guide = "none") +
+  labs(title = "Age-Standardised CVD Mortality Rate by Intervention Scenario (reference)", x = "Year", y = "ASMR (per 100,000 population)",
+       caption = "As aim1_report.Rmd: deaths summed over causes divided by well + sick summed over causes (so the level is about one quarter of a per-capita rate).") +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g_asmr)
+wggsave(file.path(paper_dir, "dsa_ref_asmr_interventions.png"), g_asmr, width = 12, height = 6, dpi = 300)
+wggsave(file.path(slides_dir, "sl_fig_asmr.png"), g_asmr + labs(title = NULL, caption = NULL) + theme_minimal(base_size = 11) +
+          theme(legend.position = "bottom", legend.text = element_text(size = 7)), width = 8, height = 4, dpi = 200)
+asmr50 <- dcast(merge(asmr_all[year %in% c(2030, 2050)], man[, .(dsa_id, order, short_label)], by = "dsa_id"),
+                order + short_label + year ~ intervention, value.var = "ASMR")
+setorder(asmr50, year, order); asmr50[, order := NULL]
+for (cc in setdiff(names(asmr50), c("short_label", "year"))) asmr50[, (cc) := round(get(cc), 2)]
+kable(asmr50, caption = "ASMR (per 100,000, report convention) in 2030 and 2050 by DSA setting and scenario.") |> kstyle(11)
+```
+
+---
+
+# Burden of Disease Results
+
+YLL = deaths x WPP 2024 remaining life expectancy; YLD = prevalent cases x GBD 2023 disability weight;
+DALY = YLL + YLD (07_output_dalys.R formulas), 2026--2050, averted relative to each setting's own BAU.
+
+```{r bod, echo=FALSE}
+db <- res_daly[intervention != "b.a.u"]
+bb <- res_daly[intervention == "b.a.u", .(dsa_id, location, cause, year, base_deaths = dead, base_yll = yll, base_yld = yld, base_daly = daly)]
+dt_bod_all <- merge(db, bb, by = c("dsa_id", "location", "cause", "year"))
+dt_bod_all[, `:=`(deaths_averted = base_deaths - dead, yll_averted = base_yll - yll, yld_averted = base_yld - yld, daly_averted = base_daly - daly)]
+dt_bod_all <- merge(dt_bod_all, meta[, .(location, region, location_income)], by = "location")
+dt_bod <- dt_bod_all[dsa_id == "reference" & intervention %in% int_order]
+sumb <- function(d, by) d[, .(Deaths = sum(deaths_averted), YLLs = sum(yll_averted), YLDs = sum(yld_averted), DALYs = sum(daly_averted)), by = by]
+bod_tab1 <- sumb(dt_bod, "intervention")[, intervention := factor(intervention, levels = int_order)][order(intervention)]
+bod_tab2 <- sumb(dt_bod, c("intervention", "cause"))[, intervention := factor(intervention, levels = int_order)]
+bod_tab2[, `:=`(pct_deaths = Deaths / sum(Deaths) * 100, pct_dalys = DALYs / sum(DALYs) * 100), by = intervention]
+bod_tab2[, cause_lbl := cause_map[cause]]; setorder(bod_tab2, intervention, cause)
+bod_tab3 <- sumb(dt_bod, c("region", "intervention"))[, intervention := factor(intervention, levels = int_order)][order(region, intervention)]
+bod_tab4 <- sumb(dt_bod, c("location_income", "intervention"))[, `:=`(intervention = factor(intervention, levels = int_order),
+                                                                       location_income = factor(location_income, levels = income_order))][order(location_income, intervention)]
+f4 <- function(d) { d <- copy(d); for (cc in c("Deaths", "YLLs", "YLDs", "DALYs")) d[, (cc) := fmt_m(get(cc), 2)]; d }
+kable(f4(bod_tab1), caption = "Burden of disease averted (millions, 2026–2050), reference, by intervention.") |> kstyle()
+kable(f4(bod_tab2)[, .(Intervention = intervention, Cause = cause_lbl, Deaths, YLLs, YLDs, DALYs,
+                       `% Deaths` = paste0(round(pct_deaths, 1), "%"), `% DALYs` = paste0(round(pct_dalys, 1), "%"))],
+      caption = "Burden of disease averted (millions, 2026–2050), reference, by intervention and cause.") |> kstyle(12)
+kable(f4(bod_tab3), caption = "Burden of disease averted (millions, 2026–2050), reference, by WHO region.") |> kstyle(12)
+kable(f4(bod_tab4), caption = "Burden of disease averted (millions, 2026–2050), reference, by World Bank income group.") |> kstyle(12)
+dsa_bod <- sumb(dt_bod_all[intervention %in% int_order_dsa], c("dsa_id", "intervention"))
+dsa_bod <- merge(dsa_bod, man[, .(dsa_id, order, short_label)], by = "dsa_id")
+dsa_bod <- merge(dsa_bod, dsa_bod[dsa_id == "reference", .(intervention, ref_dalys = DALYs)], by = "intervention")
+dsa_bod[, `:=`(diff = DALYs - ref_dalys, diff_pct = (DALYs - ref_dalys) / ref_dalys)]
+setorder(dsa_bod, order)
+dsa_bod_disp <- dsa_bod[intervention == "All Interventions", .(`DSA setting` = short_label, `Deaths (M)` = fmt_m(Deaths, 2),
+  `YLLs (M)` = fmt_m(YLLs, 2), `YLDs (M)` = fmt_m(YLDs, 2), `DALYs (M)` = fmt_m(DALYs, 2),
+  `Δ DALYs vs ref. (M)` = fifelse(dsa_id == "reference", "—", fmt_d(diff)),
+  `Δ (%)` = fifelse(dsa_id == "reference", "—", fmt_dp(diff_pct)))]
+kable(dsa_bod_disp, caption = "Burden of disease averted (millions, 2026–2050), All Interventions, by DSA setting (own-regime BAU).") |> kstyle(12)
+wsave(dsa_bod, file.path(paper_dir, "paper_dsa_bod.rds"))
+wsave(dsa_bod_disp, file.path(slides_dir, "sl_dsa_dalys.rds"))
+```
+
+```{r bod-figs, echo=FALSE, fig.width=10, fig.height=5}
+bod_annual <- dt_bod[, .(daly_averted = sum(daly_averted)), by = .(intervention, year)]
+bod_annual[, intervention := factor(intervention, levels = int_order)]; setorder(bod_annual, intervention, year)
+bod_annual[, cum := cumsum(daly_averted), by = intervention]
+g <- ggplot(bod_annual, aes(year, cum / 1e6, color = intervention)) + geom_line(linewidth = 1.1) + scale_color_manual(values = int_cols, name = NULL) +
+  labs(title = "Cumulative DALYs Averted by Intervention, 2026–2050 (reference)", x = "Year", y = "Cumulative DALYs averted (millions)") +
+  theme_minimal(base_size = 13) + theme(legend.position = "bottom", plot.title = element_text(face = "bold"))
+print(g)
+wggsave(file.path(paper_dir, "dsa_ref_bod_fig1_dalys_ts.png"), g, width = 10, height = 5, dpi = 300)
+```
+
+---
+
+# Economic Value of Avoidable Mortality
+
+VSL/VSLY per `08_economic_value_calculation.R` (primary differential elasticity e = 0.8/1.2,
+discounted at 3% to 2026; sensitivity e = 1.5), recomputed from each DSA setting's own model output.
+
+```{r econ, echo=FALSE, fig.width=11, fig.height=6.2}
+econ_scen_lbl <- c(bp_no_diabetes_only = "HTN Control (No Diabetes)", bp_diabetes_only = "HTN Control (Diabetes)",
+                   bp_combined = "HTN Control (Combined, 150M)", statins_only = "Improved Statin Uptake", all_interventions = "All Interventions")
+es <- copy(econ_sum)[scenario %in% names(econ_scen_lbl)]
+es[, intervention := factor(econ_scen_lbl[scenario], levels = int_order_dsa)]
+build_econ_tab <- function(vt) {
+  d <- es[dsa_id == "reference" & valuation_type == vt & elasticity_case == "e1_2_primary" & intervention %in% int_order][, dsa_id := NULL]
+  d[, intervention := factor(as.character(intervention), levels = int_order)]; setorder(d, intervention, who_region); d
+}
+sl_econ_vsl_primary <- build_econ_tab("VSL"); sl_econ_vsly_primary <- build_econ_tab("VSLY")
+wsave(sl_econ_vsl_primary, file.path(slides_dir, "sl_econ_vsl_primary.rds"))
+wsave(sl_econ_vsly_primary, file.path(slides_dir, "sl_econ_vsly_primary.rds"))
+wv <- sl_econ_vsly_primary[who_region == "World" & intervention == "All Interventions"]
+wl <- sl_econ_vsl_primary[who_region == "World" & intervention == "All Interventions"]
+sl_econ_scalars <- list(world_vsly_share_total = if (nrow(wv)) wv$share_total else NA_real_,
+                        world_vsl_share_total = if (nrow(wl)) wl$share_total else NA_real_,
+                        world_vsly_value_total = if (nrow(wv)) wv$metric_total else NA_real_,
+                        world_vsl_value_total = if (nrow(wl)) wl$metric_total else NA_real_,
+                        base_year = 2026L, horizon_end = 2050L,
+                        elasticity_primary = "Differential (e=0.8 HIC / 1.2 LMIC), Robinson et al. 2019", discount_rate = 0.03)
+wsave(sl_econ_scalars, file.path(slides_dir, "sl_econ_scalars.rds"))
+et <- merge(sl_econ_vsl_primary[intervention == "All Interventions", .(who_region, vsl = metric_total, vsl_share = share_total)],
+            sl_econ_vsly_primary[intervention == "All Interventions", .(who_region, vsly = metric_total, vsly_share = share_total)], by = "who_region")
+kable(et[, .(Region = who_region, `VSL (USD T)` = sprintf("%.2f", vsl / 1e12), `VSL % GNI` = fmt_pct(vsl_share),
+             `VSLY (USD T)` = sprintf("%.2f", vsly / 1e12), `VSLY % GNI` = fmt_pct(vsly_share))],
+      caption = "Reference economic value, All Interventions, cumulative 2026–2050 (primary elasticity, 3%).") |> kstyle(12, FALSE)
+dd <- es[dsa_id == "reference" & intervention %in% int_order]
+share_cols <- grep("^share_", names(dd), value = TRUE)
+dot <- melt(dd, id.vars = c("valuation_type", "elasticity_case", "who_region", "scenario", "intervention"), measure.vars = share_cols,
+            variable.name = "period", value.name = "share_income")
+dot[, period := factor(fcase(period == "share_2026", "2026", period == "share_2030", "2030", period == "share_2040", "2040",
+                             period == "share_2050", "2050", period == "share_total", "2026–2050\n(cumulative)"),
+                       levels = c("2026", "2030", "2040", "2050", "2026–2050\n(cumulative)"))]
+dot[, elasticity_label := fifelse(elasticity_case == "e1_2_primary", "Primary (e = 0.8/1.2)", "Sensitivity (e = 1.5)")]
+g_dot <- ggplot(dot[valuation_type == "VSLY"], aes(share_income, intervention, colour = elasticity_label)) +
+  geom_point(size = 2.5, alpha = 0.85, position = position_dodge(width = 0.55)) + facet_grid(who_region ~ period, scales = "free_x") +
+  scale_x_continuous(labels = percent_format(accuracy = 0.1), expand = expansion(mult = c(0.05, 0.15))) +
+  scale_colour_manual(name = "Elasticity case", values = c("Primary (e = 0.8/1.2)" = "#2166ac", "Sensitivity (e = 1.5)" = "#d6604d")) +
+  labs(title = "Economic value of avoidable CVD mortality, proportion of regional income (reference)",
+       subtitle = "VSLY only | Discounted at r = 3%", x = "Proportion of discounted GNI", y = NULL) +
+  theme_bw(base_size = 9) + theme(strip.text.y = element_text(angle = 0, hjust = 0, face = "bold"), legend.position = "bottom",
+                                  panel.grid.minor = element_blank())
+print(g_dot)
+wggsave(file.path(slides_dir, "sl_econ_dotplot.png"), g_dot, width = 11, height = 6.2, dpi = 220)
+ed <- es[who_region == "World" & elasticity_case == "e1_2_primary" & intervention %in% c("HTN Control (Combined, 150M)", "Improved Statin Uptake", "All Interventions"),
+         .(dsa_id, valuation_type, intervention, metric_total, share_total)]
+ed <- dcast(ed, dsa_id + intervention ~ valuation_type, value.var = c("metric_total", "share_total"))
+ed <- merge(ed, man[, .(dsa_id, order, short_label)], by = "dsa_id")
+ed <- merge(ed, ed[dsa_id == "reference", .(intervention, ref_vsly = metric_total_VSLY)], by = "intervention")
+ed[, diff_pct := (metric_total_VSLY - ref_vsly) / ref_vsly]
+setorder(ed, intervention, order)
+ed_disp <- ed[, .(Intervention = as.character(intervention), `DSA setting` = short_label,
+                  `VSL (USD T)` = sprintf("%.2f", metric_total_VSL / 1e12), `VSL % GNI` = fmt_pct(share_total_VSL),
+                  `VSLY (USD T)` = sprintf("%.2f", metric_total_VSLY / 1e12), `VSLY % GNI` = fmt_pct(share_total_VSLY),
+                  `Δ VSLY vs ref.` = fifelse(dsa_id == "reference", "—", fmt_dp(diff_pct)))]
+kable(ed_disp, caption = "World economic value by DSA setting (cumulative 2026–2050, primary elasticity, 3%). Computed from each setting's own deaths averted.") |>
+  kstyle(11) |> collapse_rows(columns = 1, valign = "top")
+wsave(ed, file.path(paper_dir, "paper_dsa_econ.rds"))
+wsave(ed_disp[Intervention == "All Interventions"], file.path(slides_dir, "sl_dsa_econ.rds"))
+n_na_econ <- econ[dsa_id == "reference" & scenario == "all_interventions" & year >= 2026, sum(is.na(economic_value_e1_2_disc_r3))]
+```
+
+`r if (n_na_econ > 0) paste0("Note: ", n_na_econ, " reference country-years have no GNI and contribute no economic value (as in 08; e.g. iso3 SDS for South Sudan has no World Bank GNI row).") else ""`
+
+---
+
+# Validation
+
+```{r validation, echo=FALSE}
+vs <- validation[, .(Result = fifelse(is.na(pass), "informational", fifelse(pass, "pass", "FAIL"))), by = .(check_id, group, detail)]
+kable(vs[, .(Check = check_id, Description = group, Result, Detail = detail)],
+      caption = paste0("Checks recorded by code/10_deterministic_dsa.R for run ", run_id, " (", validation[pass %in% TRUE, .N], " pass, ",
+                       validation[pass %in% FALSE, .N], " fail, ", validation[is.na(pass), .N], " informational).")) |>
+  kstyle(10) |> column_spec(4, width = "14cm")
+sl_dsa_validation <- validation[, .(n = .N), by = .(Result = fifelse(is.na(pass), "informational", fifelse(pass, "pass", "fail")))]
+wsave(sl_dsa_validation, file.path(slides_dir, "sl_dsa_validation.rds"))
+```
+
+# Limitations
+
+* One-way deterministic scenarios only (no probability weights); the ranges are not uncertainty
+  intervals, and combinations of settings (multi-way stress tests) are not run here.
+* Income-group statin adherence values are illustrative assumptions; no sourced income-specific
+  adherence estimate exists in the repository (Basios et al. 2025 could not assess income).
+* Statin adherence settings do not model BP-medication adherence: BP control targets are
+  achieved control, which already embodies adherence; no separate BP adherence factor is applied.
+* The cause-specific background-mortality trend file (`tps_bgmx_forecasted.rds`) has no
+  post-2019 `percent_diff` values, so in 05 only the all-cause envelope `BG.mx.all` carries a
+  background trend, in the reference and in every regime alike (check V11).
+* The IHME series is a global, cause-level, age-standardised trend applied to every country, age
+  and sex; its GBD round cannot be confirmed from the downloaded files (check V12).
+* Inherited from the ordinary pipeline: 06's BP scenarios carry machine-precision noise
+  (|eff - 1| ~ 2e-16) before 2026; 06's initial states give a few negative `well` (2017) and
+  `newcases` (2018) values at ages 94--95 where PREVt0 + BG.mx > 1 (check V25b; identical in the
+  ordinary output, none after 2018); 06 caps CF at 0.99; the report's ASMR divides by well + sick
+  summed over causes; countries without World Bank GNI (South Sudan's iso3 SDS) contribute no
+  economic value.
+`r if (is_pilot) "* **Pilot run**: results cover the listed countries only and are not global estimates." else ""`
+
+---
+
+# Excel Export
+
+```{r excel-export, echo=FALSE}
+wb <- createWorkbook()
+add_sheet <- function(wb, sheet_name, dat, title_str) {
+  addWorksheet(wb, sheet_name)
+  writeData(wb, sheet_name, title_str, startRow = 1, startCol = 1)
+  writeData(wb, sheet_name, as.data.frame(dat), startRow = 3, startCol = 1,
+            headerStyle = createStyle(textDecoration = "bold", fgFill = "#2E75B6", fontColour = "white", border = "Bottom"))
+  setColWidths(wb, sheet_name, cols = seq_len(ncol(dat)), widths = "auto")
+}
+add_sheet(wb, "DSA_manifest", mdisp, paste("DSA scenario manifest, run", run_id))
+add_sheet(wb, "DSA_summary", disp_sum, "Cumulative deaths averted 2026-2050 by DSA setting (deterministic scenario values, not intervals).")
+add_sheet(wb, "DSA_tableS8", s8_disp, "Mortality-trend regimes, cumulative 2026-2050.")
+add_sheet(wb, "DSA_endpoints", ep_disp, "Deaths averted at 2030/2035/2040/2050.")
+add_sheet(wb, "DSA_targets", dsa_targets_disp, "Achieved BP control and statin inputs by DSA setting.")
+add_sheet(wb, "DSA_income", inc_disp, "Deaths averted by income group: income-group statin adherence.")
+add_sheet(wb, "DSA_DALYs", dsa_bod_disp, "DALYs averted by DSA setting.")
+add_sheet(wb, "DSA_econ", ed_disp, "World economic value by DSA setting.")
+add_sheet(wb, "Ref_T1", dt_excel_tab1, "Reference Table 1.")
+add_sheet(wb, "Ref_T2", dt_excel_tab2, "Reference Table 2.")
+add_sheet(wb, "Ref_T3", dt_excel_tab3, "Reference Table 3.")
+add_sheet(wb, "Ref_T4", dt_excel_tab4, "Reference Table 4.")
+add_sheet(wb, "Ref_T5", dt_excel_tab5, "Reference Table 5.")
+add_sheet(wb, "Validation", vs, paste("Validation checks, run", run_id))
+out_xlsx <- file.path(scen_dir, paste0("aim1_dsa_results_tables_", run_id, ".xlsx"))
+.assert_out(out_xlsx)
+.retry(function() saveWorkbook(wb, out_xlsx, overwrite = TRUE))
+```
+
+Tables exported to `scenarios_dsa/`\``r basename(out_xlsx)`\`.
+
+```{r paper-slide-artefacts, echo=FALSE}
+# Reference paper scalars (same names as aim1_report.Rmd's paper_scalars.rds).
+cause_averted <- function(int) dt_merged[intervention == int, .(averted = sum(deaths_delayed)), by = cause]
+ca_all <- cause_averted("All Interventions"); ca_bp <- cause_averted("HTN Control (No Diabetes)"); ca_st <- cause_averted("Improved Statin Uptake")
+age_all <- sl_dt_age[intervention == "All Interventions"]
+sex_all <- rdm[dsa_id == "reference" & intervention == "All Interventions", .(averted = sum(deaths_delayed)), by = sex]
+ann <- function(int, y) dt_annual[intervention == int & year == y, deaths_delayed]
+paper_scalars <- list(
+  n_countries = n_countries, study_years = study_years, bau_total_deaths = bau_total_deaths,
+  total_all = total_all, total_bp = total_bp, total_bpd = total_bpd, total_stat = total_stat,
+  pct_all = round(total_all / bau_total_deaths * 100, 1), pct_bp = round(total_bp / bau_total_deaths * 100, 1),
+  pct_bpd = round(total_bpd / bau_total_deaths * 100, 1), pct_stat = round(total_stat / bau_total_deaths * 100, 1),
+  annual_2030_all = ann("All Interventions", 2030), annual_2050_all = ann("All Interventions", 2050),
+  annual_2030_bp = ann("HTN Control (No Diabetes)", 2030), annual_2050_bp = ann("HTN Control (No Diabetes)", 2050),
+  annual_2030_stat = ann("Improved Statin Uptake", 2030), annual_2050_stat = ann("Improved Statin Uptake", 2050),
+  averted_ihd_all = ca_all[cause == "ihd", averted], averted_istroke_all = ca_all[cause == "istroke", averted],
+  averted_hstroke_all = ca_all[cause == "hstroke", averted], averted_hhd_all = ca_all[cause == "hhd", averted],
+  averted_ihd_bp = ca_bp[cause == "ihd", averted], averted_istroke_bp = ca_bp[cause == "istroke", averted],
+  averted_hstroke_bp = ca_bp[cause == "hstroke", averted], averted_hhd_bp = ca_bp[cause == "hhd", averted],
+  averted_ihd_stat = ca_st[cause == "ihd", averted], averted_istroke_stat = ca_st[cause == "istroke", averted],
+  averted_lt70 = age_all[age_group == "<70", averted], averted_70_79 = age_all[age_group == "70-79", averted],
+  averted_80_89 = age_all[age_group == "80-89", averted], averted_90p = age_all[age_group == "90+", averted],
+  averted_male = sex_all[sex == "Male", averted], averted_female = sex_all[sex == "Female", averted],
+  total_ylls_all = bod_tab1[intervention == "All Interventions", YLLs], total_ylds_all = bod_tab1[intervention == "All Interventions", YLDs],
+  total_dalys_all = bod_tab1[intervention == "All Interventions", DALYs], total_dalys_bp = bod_tab1[intervention == "HTN Control (No Diabetes)", DALYs],
+  total_dalys_stat = bod_tab1[intervention == "Improved Statin Uptake", DALYs], total_dalys_bpd = bod_tab1[intervention == "HTN Control (Diabetes)", DALYs],
+  top5_names = dt_tab4[order(-deaths_delayed)][1:min(5, .N), location], top5_averted = dt_tab4[order(-deaths_delayed)][1:min(5, .N), deaths_delayed],
+  region_tab = dt_tab5[, .(region, deaths_delayed, deaths_delayed_pct)])
+wsave(paper_scalars, file.path(paper_dir, "paper_scalars_reference.rds"))
+for (nm in c("dt_cumul", "dt_tab2", "dt_tab5", "dt_tab4", "bod_tab1", "bod_tab2", "bod_tab3", "bod_tab4", "dt_annual", "dt_age_sex")) {
+  wsave(copy(get(nm)), file.path(paper_dir, paste0("paper_ref_", nm, ".rds")))
+}
+# Slide artefacts (reference).
+sl_scalars <- list(n_countries = n_countries, study_years = study_years, total_all = total_all, total_bp = total_bp,
+                   total_bpd = total_bpd, total_stat = total_stat, bau_total_deaths = bau_total_deaths,
+                   total_dalys_all = paper_scalars$total_dalys_all, total_ylls_all = paper_scalars$total_ylls_all,
+                   total_ylds_all = paper_scalars$total_ylds_all, total_dalys_bp = paper_scalars$total_dalys_bp,
+                   total_dalys_bpd = paper_scalars$total_dalys_bpd, total_dalys_stat = paper_scalars$total_dalys_stat)
+wsave(sl_scalars, file.path(slides_dir, "sl_scalars.rds"))
+sl_tab_summary <- copy(dt_cumul)[, pct := deaths_delayed / bau_total_deaths * 100]
+sl_tab_summary[, `:=`(cum_M = paste0(fmt_M(deaths_delayed), " M"), avg_yr = paste0(fmt_M(deaths_delayed / 25), " M"), pct_s = paste0(round(pct, 1), "%"))]
+sl_tab_summary[, intervention := factor(intervention, levels = int_order)]; setorder(sl_tab_summary, intervention)
+wsave(sl_tab_summary, file.path(slides_dir, "sl_tab_summary.rds"))
+wsave(copy(bod_tab1), file.path(slides_dir, "sl_bod_summary.rds"))
+sl_dt_cause <- dt_merged[cause %in% names(cause_map), .(averted = sum(deaths_delayed)), by = .(cause, intervention)]
+sl_dt_cause[, `:=`(cause_lbl = c(ihd = "IHD", istroke = "Ischemic stroke", hstroke = "Hemorrhagic stroke", hhd = "Hypertensive HD")[cause],
+                   intervention = factor(intervention, levels = int_order))]
+g_cause_sl <- ggplot(sl_dt_cause, aes(cause_lbl, averted / 1e6, fill = intervention)) + geom_col(position = "dodge", width = 0.7) +
+  scale_fill_manual(values = int_cols[int_order], name = NULL) + labs(x = NULL, y = "Deaths averted (millions)") +
+  theme_minimal(base_size = 11) + theme(legend.position = "bottom", legend.text = element_text(size = 7)) + guides(fill = guide_legend(nrow = 2))
+wggsave(file.path(slides_dir, "sl_fig_by_cause.png"), g_cause_sl, width = 8, height = 4, dpi = 200)
+# DSA meta and scalars for the deck.
+one_way <- dsa_cum[in_tornado == TRUE & intervention == "All Interventions"]
+sl_dsa_meta <- list(run_id = run_id, mode = run_man$mode, is_pilot = is_pilot, countries = run_man$countries,
+                    n_countries = n_countries, n_eligible = run_man$n_eligible_countries, finished = run_man$finished,
+                    ref_adherence = ref_adh, ref_statin = sprintf("%.0f%% by %d", ra$statin_target_coverage * 100, as.integer(ra$statin_target_year)),
+                    n_dsa = nrow(man), validation = sl_dsa_validation,
+                    all_ref = total_all, one_way_min = if (nrow(one_way)) min(one_way$averted) else NA_real_,
+                    one_way_max = if (nrow(one_way)) max(one_way$averted) else NA_real_,
+                    one_way_min_id = if (nrow(one_way)) one_way[which.min(averted), short_label] else NA_character_,
+                    one_way_max_id = if (nrow(one_way)) one_way[which.max(averted), short_label] else NA_character_,
+                    all_ref_2026 = dsa_cum[dsa_id == "reference" & intervention == "All Interventions", averted])
+wsave(sl_dsa_meta, file.path(slides_dir, "sl_dsa_meta.rds"))
+sl_dsa_scenarios <- man[order(order), .(ID = dsa_id, Setting = short_label, Family = family_label,
+                                        `What changes` = fcase(family == "reference", "—",
+                                                               family == "target_achievement", sprintf("%.0f%% of increment by 2030", target_fraction * 100),
+                                                               family == "implementation_timing", sprintf("full endpoint in %d", bp_target_year),
+                                                               adherence_mode == "income_group", "statin adherence by income group (illustrative)",
+                                                               family %in% c("statin_adherence", "extra_reference"), sprintf("statin adherence %.2f / %.2f", adherence_ir, adherence_cf),
+                                                               family == "mortality_trend", trend_regime, default = ""))]
+wsave(sl_dsa_scenarios, file.path(slides_dir, "sl_dsa_scenarios.rds"))
+# Artefact manifest (the deck validates it before rendering).
+sl_files <- rbindlist(artefacts$list)[grepl("/slides/", file, fixed = TRUE)]
+sl_manifest <- sl_files[, .(file = basename(file), type, md5 = unname(tools::md5sum(file)), run_id = run_id)]
+.assert_out(file.path(slides_dir, "sl_manifest.rds")); saveRDS(sl_manifest, file.path(slides_dir, "sl_manifest.rds"))
+kable(sl_manifest[, .(File = file, Type = type, `Run` = run_id)], caption = "Slide artefacts written to output_dsa/slides/ (validated by aim1_executive_slides_dsa.Rmd).") |> kstyle(10)
+```
+
+---
+
+*DSA report for run `r run_id`, generated `r Sys.time()` with R `r R.version$major`.`r R.version$minor`.*

@@ -18,3 +18,16 @@ data/raw/**/*.*
 # Model output files
 output/out_model/
 output/dt_output_dalys.rds
+
+# DSA generated runs/checkpoints
+output_dsa/runs/
+
+# PSA generated runs/checkpoints/model samples
+output_psa/runs/
+
+# PSA temporary isolation outputs
+output_psa/isolation/
+
+# Generated DSA/PSA computational outputs
+output_dsa/
+output_psa/
