@@ -336,6 +336,11 @@ if(run_CF_trend== TRUE){
     
     # All dead envelope
     #bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_bgmx_all_forecasted.rds"))
+    # bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_mortality_coherent_forecasted.rds"))
+    # 
+    # bgmx_fcst[,percent_diff:=percent_diff_cvd]
+    # bgmx_fcst <- bgmx_fcst[year>2019,c("sex","age","cause","year","percent_diff"),with=F]
+
     bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_bgmx_cvd_forecasted.rds"))
     
     bgmx_fcst <- bgmx_fcst[year>2019,]

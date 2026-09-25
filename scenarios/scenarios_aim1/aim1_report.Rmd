@@ -2460,6 +2460,27 @@ saveRDS(copy(dt_age_sex),   paste0(paper_dir, "paper_dt_age_sex.rds"))
 message("Paper tables saved to: ", paper_dir)
 ```
 
+```{r paper-extras, message=FALSE, warning=FALSE, echo=FALSE}
+# Reporting-only manuscript artefacts, built from inputs/outputs already on disk
+# (no model logic). Produces:
+#   * paper_table1.rds -- target populations & coverage (HTN + statins) by WHO
+#     region x diabetes status, on the fixed 2025 denominator used by script 04;
+#   * paper_params.rds -- the policy/effect settings actually used by the executed
+#     06 run call and the ACHIEVED control rates (so the manuscript never hard-codes
+#     a parameter); note diabetes control is CAPPED at 0.80 but ACHIEVES ~0.45;
+#   * paper_strata.rds -- WHO region and World Bank income group ranked by deaths
+#     and DALYs averted and by % of BAU (All Interventions), 2026-2050.
+# The helper is a separate .R file so the same artefacts can be regenerated with
+# Rscript scenarios/scenarios_aim1/aim1_paper_extras.R without re-knitting.
+source(paste0(wd_scen, "aim1_paper_extras.R"))
+build_paper_extras(
+  wd_data = wd_data, wd_raw = wd_raw, wd_outp = wd_outp,
+  statin_target_coverage = 0.50, statin_start_year = 2026, statin_target_year = 2030,
+  control_start_year = 2026, control_target_year = 2030,
+  adherence_ir = 0.575, adherence_cf = 0.644, prop_athero_stroke = 0.60
+)
+```
+
 ```{r export-slides-bod-scalars, message=FALSE, warning=FALSE, echo=FALSE}
 # Exports burden of disease scalars and summary for aim1_executive_slides.RMD
 
