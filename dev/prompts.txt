@@ -1,3 +1,46 @@
+
+
+# Claude Code task: refactor uw-who-cvdtargets scripts 00–03
+
+Please implement this refactor in the current repository. This is an implementation task, not only a code review or plan.
+
+## Objective
+
+Refactor the active pipeline from code/00_run_model.R through code/03_calibration.R so it produces calibrated annual transition probabilities in data/processed/adjusted_searo* for each:
+
+- location;
+- single year of age from 20 through 95, where 95 represents the open-ended 95+ group;
+- sex;
+- modeled disease cause; and
+- required calendar year.
+
+The resulting artifacts must be ready for the later intervention-definition (04*), baseline-building (05*), and scenario-running (06*) stages.
+
+Read the active 04*, 05*, and 06* code to understand their input contracts
+
+## Scope
+
+Primary files to modify:
+
+- code/00_run_model.R
+- code/02_load_inputs.R
+- code/03_clean_inputs.R
+- code/03_calibration.R
+
+Make script 00 the single source of truth 00_run_model.R must be the authoritative location for pipeline-wide parameters. 
+Define each parameter once there and consume it downstream; do not redefine competing versions in scripts 01–03 or their active helpers.
+
+03
+
+modify only files in 00-03 pipelin. 03_clean_inputs must be removed since its legacy
+goal i 03_calibration to produce it produces calibrated annual transition probabilities in data/processed/adjusted_searo*
+
+03 must not produce probabilities and adjustments that agin will be appliend in 05, but applied in 03 and remove from where applied in 04-06 since no longer needed
+
+modify only files involved.
+
+
+##########################################
 Write a prompt to as claude code to: 
 Goal conduct a A Probabilistic Sensitivity Analysis (PSA) around intervention parameters as broad method used to evaluate parameter uncertainty in the model to derive uncertainty interval as a specific numerical range (like a 95% range) derived from that analysis to show the spread of plausible final outcomes in aim_1 report and executive slides estimates
 

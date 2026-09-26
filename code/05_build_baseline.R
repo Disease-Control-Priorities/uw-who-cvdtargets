@@ -16,9 +16,12 @@ locs_wpp.adj <- unique(wpp.adj$location_name)
 
 #baseline rates calculated in file calibration:
 
+# Stage 03 (03_calibration.R) writes the FINAL calibrated + secular-trend-
+# projected rates here. Scope the pattern to the current chunks so no stale
+# "adjusted*" file is silently mixed in.
 files <- list.files(
-  path       = wd_data, 
-  pattern    = "adjusted", 
+  path       = wd_data,
+  pattern    = "^adjusted_searo_part[0-9]+\\.rds$",
   full.names = TRUE
 )
 
@@ -39,11 +42,13 @@ b_rates[location=="Bolivia (Plurinational State of)",location:="Bolivia"]
 b_rates[location=="United Republic of Tanzania",location:="Tanzania"]
 
 b_rates <- b_rates[!is.na(location),]
-b_rates[,c("percent_lag","percent_diff"):=NULL]
+.drop_pd <- intersect(c("percent_lag","percent_diff"), names(b_rates))
+if (length(.drop_pd)) b_rates[, (.drop_pd) := NULL]
 
-b_rates<-left_join(b_rates, wpp.adj%>%
-                     rename(location = location_name)%>%
-                     select( -Nx, -mx, -iso3))
+# covid.mx is merged once, below (see the "Covid 2020/2021" block). The former
+# early left_join of wpp.adj covid.mx here only fed the covid-rebalance block
+# (removed): now that stage 03 delivers the 2020-2050 rows, that block would fire
+# spuriously on real covid values and double-touch BG.mx / IR / CF.
 
 # Update to UNWPP 2024
 dt_pop_unwpp <- as.data.table(readRDS(paste0(wd_data,"PopulationsSingleAge0050.rds")))
@@ -135,34 +140,11 @@ any(is.na(data.in))
 
 locs_data.in <- unique(data.in$location)
 
-#? testing covid.x =0
-#b_rates[covid.mx==0, covid.mx:=0]
-
-#rebalance TPs w/ covid such that they sum to less than 1
-#especially @ old ages where covid deaths are high
-b_rates[,check_well := BG.mx+covid.mx+IR]
-b_rates[,check_sick := BG.mx+covid.mx+CF]
-
-#first ensure that background mortality + covid <1
-b_rates[check_well>1 | check_sick>1, covid.mx:=ifelse(1-BG.mx<covid.mx, 1-BG.mx, covid.mx)]
-#then proportionally reduce rates by check_well
-b_rates[check_well>1, covid.mx:= covid.mx - covid.mx*(check_well-1)/(covid.mx+BG.mx+IR)]
-b_rates[check_well>1, BG.mx   := BG.mx    - BG.mx*   (check_well-1)/(covid.mx+BG.mx+IR)]
-b_rates[check_well>1, IR      := IR       - IR*      (check_well-1)/(covid.mx+BG.mx+IR)]
-
-b_rates[,check_well := BG.mx+covid.mx+IR]
-b_rates[check_well>1]
-
-#same process for check_sick
-b_rates[check_sick>1, covid.mx:= covid.mx - covid.mx*(check_sick-1)/(covid.mx+BG.mx+CF)]
-b_rates[check_sick>1, BG.mx   := BG.mx    - BG.mx*   (check_sick-1)/(covid.mx+BG.mx+CF)]
-b_rates[check_sick>1, CF      := CF       - CF*      (check_sick-1)/(covid.mx+BG.mx+CF)]
-
-b_rates[,check_sick := BG.mx+covid.mx+CF]
-b_rates[check_sick>1]
-
-#check that no BG.mx.all+covid>1
-b_rates[covid.mx+BG.mx.all>1]
+# NOTE: the covid TP-rebalance block that used to sit here was removed with the
+# refactor. It ran before the year-2020/2021 rows existed (covid.mx was all NA),
+# so it was a no-op that got overwritten anyway; once stage 03 delivers those
+# rows it would instead fire on real covid values and re-touch BG.mx/IR/CF. The
+# state-transition loop in 06 already accounts for covid.mx per year.
 
 #...........................................................
 ###fxn ----
@@ -175,12 +157,9 @@ repYear<-function(row){
 data.in<-data.table(data.in%>%select(-age)%>%rename(age=Age.group))
 b_rates[, newcases:=0]
 
-##repeat rates for years 2020-2050
-rep<-b_rates%>%filter(year==2019)
-
-for (i in 2020:2050){
-  b_rates<-bind_rows(b_rates, rep%>%mutate(year=i))
-}
+# Years 2020-2050 now arrive already extended and secular-trend-projected from
+# stage 03 (03_calibration.R); the former "repeat year 2019 to 2020-2050" block
+# was removed so the projection horizon is materialised exactly once.
 
 # rename causes to match abbreviated names
 b_rates[,cause:=ifelse(cause=="Ischemic heart disease", "ihd",
@@ -191,46 +170,12 @@ b_rates[,cause:=ifelse(cause=="Ischemic heart disease", "ihd",
                                                    cause)))))]
 
 # #...........................................................
-# # Adjustments ----
+# # Calibration adjustments ----
 # #...........................................................
-# ?? Adjustment of incidence rates and CF 
-
-if(run_adjustment_model == TRUE) {
-  
-  adjustments <- fread(file = paste0(wd_data,"adjustments2023_age.csv"))
-  
-  adjustments <- adjustments[,c("location","sex","cause","age_group","IRadjust", "CFadjust"),with=FALSE]
-  
-  gbd_breaks <- c(seq(20, 95, by = 5), Inf)
-  gbd_labels <- c(
-    paste0(seq(20, 90, by = 5), "-", seq(24, 94, by = 5)),
-    "95+"
-  )
-  
-  # 2) (Optionally) wrap in a helper
-  create_gbd_age_group <- function(age) {
-    cut(
-      age,
-      breaks        = gbd_breaks,
-      labels        = gbd_labels,
-      right         = FALSE,      # [20,25), [25,30), …, [95,Inf)
-      include.lowest = TRUE
-    )
-  }
-  
-  b_rates[,age_group := create_gbd_age_group(age)]
-  # Adjustments for age group
-  #b_rates <- merge(b_rates,adjustments,by=c("location","sex","cause"),all.x = T)
-  b_rates <- merge(b_rates,adjustments,by=c("location","sex","cause","age_group"),all.x = T)
-  
-  b_rates[ , age_group:=NULL]
-  
-  b_rates[!is.na(IRadjust), IR:=IR * IRadjust]
-  b_rates[!is.na(CFadjust), CF:=CF * CFadjust]
-  
-  b_rates[,c("IRadjust", "CFadjust"):=NULL]
-  
-}
+# The IR/CF calibration is now baked into adjusted_searo_part*.rds by stage 03
+# (03_calibration.R). The former run_adjustment_model block that re-multiplied
+# IR/CF by adjustments2023_age.csv here was removed so the calibration is applied
+# exactly once (no double adjustment across stages).
 
 # #...........................................................
 # # UNWPP 2024 Pop ----
@@ -246,7 +191,7 @@ b_rates<-left_join(b_rates, pop20%>%rename(Nx2=Nx, year=year_id)%>%filter(year>=
 # # Covid 2020/2021 ----
 # #...........................................................
 
-b_rates[,covid.mx:=NULL]
+if ("covid.mx" %in% names(b_rates)) b_rates[,covid.mx:=NULL]
 b_rates <- merge(b_rates,wpp.adj[,c("location_name","year","sex","age","covid.mx"),with=F],
                  by.x=c("location","year","sex","age"),
                  by.y=c("location_name","year","sex","age"),all.x=T)
@@ -254,124 +199,16 @@ b_rates <- merge(b_rates,wpp.adj[,c("location_name","year","sex","age","covid.mx
 b_rates[is.na(covid.mx), covid.mx:=0]
 b_rates[covid.mx>=1, covid.mx:=0.9]
 
-
+# For running capacity, preserve only year >= 2017
+b_rates <- b_rates[year>=2017,]
 #...........................................................
 # Mortality downward trends ----
 #...........................................................
-
-if(run_bgmx_trend == TRUE){
-  
-  bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_bgmx_forecasted.rds"))
-  
-  bgmx_fcst[,BG.mx.all:=NULL]
-  
-  bgmx_fcst <- bgmx_fcst[year>2019,]
-  
-  bgmx_fcst <- unique(bgmx_fcst,by=c("age","sex","cause","year"))
-  
-  bgmx_fcst[, cause := fcase(
-    cause == "Ischemic heart disease", "ihd",
-    cause == "Ischemic stroke", "istroke",
-    cause == "Intracerebral hemorrhage", "hstroke",
-    cause == "Hypertensive heart disease", "hhd",
-    cause == "Alzheimer's disease and other dementias", "aod",
-    default = cause
-  )]
-  
-  summary(b_rates$BG.mx)
-  
-  b_rates <- merge(b_rates,bgmx_fcst,,by=c("age","sex","cause","year"),all.x = T)
-  
-  b_rates[year>2019 & !is.na(percent_diff),BG.mx:=BG.mx*(1+percent_diff)]
-  b_rates[,c("percent_lag","percent_diff"):=NULL]
-  
-  summary(b_rates$BG.mx)
-  
-  # All dead envelope
-  bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_bgmx_all_forecasted.rds"))
-  
-  bgmx_fcst <- bgmx_fcst[year>2019,]
-  
-  bgmx_fcst[,BG.mx.all:=NULL]
-  
-  bgmx_fcst <- unique(bgmx_fcst,by=c("age","sex","cause","year"))
-  
-  bgmx_fcst[, cause := fcase(
-    cause == "Ischemic heart disease", "ihd",
-    cause == "Ischemic stroke", "istroke",
-    cause == "Intracerebral hemorrhage", "hstroke",
-    cause == "Hypertensive heart disease", "hhd",
-    cause == "Alzheimer's disease and other dementias", "aod",
-    default = cause
-  )]
-  
-  summary(b_rates$BG.mx.all)
-  
-  b_rates <- merge(b_rates,bgmx_fcst,by=c("age","sex","cause","year"),all.x = T)
-  
-  b_rates[year>2019 & !is.na(percent_diff),BG.mx.all:=BG.mx.all*(1+percent_diff)]
-  b_rates[,c("percent_lag","percent_diff"):=NULL]
-  
-  summary(b_rates$BG.mx.all)
-}
-
-## Adjusting also CF with downward trend
-
-if(run_CF_trend== TRUE){
-  
-  if(run_CF_trend_ihme== TRUE){
-    
-    bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_bgmx_cvd_ihme.rds"))
-    
-    bgmx_fcst <- bgmx_fcst[year>2019,]
-    
-    bgmx_fcst <- unique(bgmx_fcst,by=c("cause","year"))
-    
-    b_rates <- merge(b_rates,bgmx_fcst,by=c("cause","year"),all.x = T)
-    
-    b_rates[year>2019 & !is.na(percent_diff),CF:=CF*(1+percent_diff)]
-    b_rates[,c("percent_diff"):=NULL]
-    
-  }else{
-    
-    # All dead envelope
-    #bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_bgmx_all_forecasted.rds"))
-    # bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_mortality_coherent_forecasted.rds"))
-    # 
-    # bgmx_fcst[,percent_diff:=percent_diff_cvd]
-    # bgmx_fcst <- bgmx_fcst[year>2019,c("sex","age","cause","year","percent_diff"),with=F]
-
-    bgmx_fcst <- readRDS(file = paste0(wd_data,"tps_bgmx_cvd_forecasted.rds"))
-    
-    bgmx_fcst <- bgmx_fcst[year>2019,]
-    
-    bgmx_fcst[,BG.mx.all:=NULL]
-    
-    bgmx_fcst <- unique(bgmx_fcst,by=c("age","sex","cause","year"))
-    
-    bgmx_fcst[, cause := fcase(
-      cause == "Ischemic heart disease", "ihd",
-      cause == "Ischemic stroke", "istroke",
-      cause == "Intracerebral hemorrhage", "hstroke",
-      cause == "Hypertensive heart disease", "hhd",
-      cause == "Alzheimer's disease and other dementias", "aod",
-      default = cause
-    )]
-    
-    
-    b_rates <- merge(b_rates,bgmx_fcst,by=c("age","sex","cause","year"),all.x = T)
-    
-    if(run_CF_trend_80 == TRUE){
-      b_rates[year>2019 & !is.na(percent_diff),CF:=CF*(1+percent_diff*0.8)]
-    }else{
-      b_rates[year>2019 & !is.na(percent_diff),CF:=CF*(1+percent_diff)]
-    }
-    
-    b_rates[,c("percent_lag","percent_diff"):=NULL]
-    
-  }
-  
-}
+# The secular BG.mx / BG.mx.all / CF trends are now applied once, in stage 03
+# (03_calibration.R), using the same run_bgmx_trend / run_CF_trend /
+# run_CF_trend_80 / run_CF_trend_ihme switches and the same tps_bgmx_*_forecasted
+# files. The former trend blocks were removed here so each trend is applied
+# exactly once and the calibration/observed years are never trended twice.
 
 # Clean up environment
-rm("adjustments","bgmx_fcst","dt_pop_unwpp","wpp.adj","rep","pop20")
+rm(dt_pop_unwpp, wpp.adj, pop20)

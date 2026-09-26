@@ -5,6 +5,7 @@
 data/raw/**/*.*
 !data/raw/**/*.md
 
+data/temp/**/*.*
 
 .Rproj.user
 
