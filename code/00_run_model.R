@@ -60,6 +60,7 @@ setwd(wd_code)
 #...........................................................
 
 source("01_utils.R")
+source(paste0(wd,"R/utils.R"))
 
 run_calibration_par <- FALSE # stage 03: run the calibration search in parallel
 
@@ -81,6 +82,8 @@ run_CF_trend_ihme  <- FALSE  # alternative CF trend (IHME Foresight) vs GBD
 # longer gates the active pipeline. Retained (TRUE) only because the standalone
 # 09_uncertainty_psa.R / 10_deterministic_dsa.R still parse it from this file.
 run_adjustment_model <- TRUE
+
+trend_method <- "coherent"  # "coherent" (default analysis) or "legacy" (sensitivity)
 
 # Remove unnecessary dx
 
@@ -139,6 +142,8 @@ TP_EPS     <- 0.005           # headroom preserved by the final probability guar
 # Prevalence, Number, by 5-year band). Written by 021_get_base_rates.R; read-only
 # here. (Kept in data/raw/GBD to avoid re-running the heavy stage-02 GBD build.)
 gbd_target_file <- paste0(wd_raw, "GBD/temp_1baseline_rates_gbd23.rds")
+calibration_deaths_source <- "WHO"  # "WHO" or "GBD" (sensitivity)
+who_deaths_target_file <- file.path(wd_data, "dt_deaths_who_long.rds")
 
 # File discovery / output chunking (scoped so stale files are never mixed in).
 tps_inpt_stub <- "^tps_inpt_part[0-9]+\\.rds$"
@@ -162,7 +167,7 @@ source("02_load_inputs.R")
 
 # only if calibration is needed, run the calibration script. Otherwise, skip to the next step.
 if(run_calibration_par) {
-  source("03_calibration.R")
+  source("03_calibration_who.R")
 }
 
 # run trends script to apply secular trends to the calibrated transition probabilities. 

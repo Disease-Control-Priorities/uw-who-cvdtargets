@@ -1,4 +1,55 @@
 
+###################333
+
+Update DSA
+
+wrtite a pormpt to ask claude
+update
+
+code/10_deterministic_dsa.R is 
+scenarios/scenarios_aim1/aim1_report_dsa.Rmd
+
+the DSA section now out of date, and should match the new code/00-08* pipeline
+
+this update only code involved
+
+Goal docs/who_cvd_targets_paper1.Rmd dternministic sensitivity results should correspond to the actual code/00-08* pipeline already run and saved i disk
+
+no need to re run code/00-08* pipeline, even less the 03_calibration_who. that is expensive
+
+export the prompt as a .md file
+
+###################333
+
+Update manuscript
+
+avoid duplicative used of abbreviations. ie once fisrt defined must not be use the whole text again eg BAU CVD WHO etc
+
+In GATHER Checklist more that hide column status. AVoid citing Github files such as data/processed (CSV and RDS inputs); supplementary Excel workbook README, this is a final version 
+
+Cite the new Li et al 19 coherent leec carter methosd used, highliting the good property of coherent forecast in comparison to trad lee carter
+
+Statin eligible population
+
+
+#######################################
+# Claude Code task: update the code/00-06 pipeline
+
+Updtae to now leave # Coherent all-cause / modeled-cause / other-cause forecast -----------------
+# Li et al. (2019), Insurance: Mathematics and Economics 86:122-133,
+
+as the defaults CVD and backgroung and all mortality trend forceast fron code/023_get_tps_bgmx.R as the defaults mortality projection method, not lee carter
+
+however preserve the other existing methods since will be used for sensitivity analysis
+
+create a code/031_calibration_trends.R in which the application of trends must be made, i.e code/03_calibration.R should only run in sample calibration and trending must be in a separte
+file, so I can run teh trends without re running the the calibarion process. code/03_calibration.R should be a pure algorithmic calibration script
+
+no need to re run the calibration since will teake time. 
+
+
+#######################################################3
+################################################333
 
 # Claude Code task: refactor uw-who-cvdtargets scripts 00–03
 

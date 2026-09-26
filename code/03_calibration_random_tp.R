@@ -1,6 +1,6 @@
 # 03_calibration_indonesia_random_tp(2).R
 # Calibration on single-year ages 20:95, with 95 representing the open 95+ group.
-# GBD deaths and prevalence are scored in five-year bands, 2009-2019.
+# WHO deaths and GBD prevalence are scored in five-year bands, 2009-2019.
 # A common IR/CF pair initializes age-band multipliers. Each candidate is
 # evaluated using a complete cohort projection; the saved rates are rechecked.
 # Search: uniform random coordinate updates with occasional full draws.
@@ -53,10 +53,10 @@ CAL_YEAR_START <- 2009          # GBD comparison start (031 uses year >= 2009)
 CAL_YEAR_END   <- 2019          # GBD comparison end   (031 uses year <  2020)
 
 ## --- execution --------------------------------------------------------------
-# run_calibration_par is defined in 00_run_model_indonesia.R; default TRUE here.
+# run_calibration_par is defined in 00_run_model.R; default TRUE here.
 RUN_PAR   <- if (exists("run_calibration_par")) isTRUE(run_calibration_par) else TRUE
 MAX_CORES <- 14                 # cap on workers (031 used 14)
-N_OUT_CHUNKS <- 10              # number of adjusted_searo_part*.rds files (= 031)
+N_OUT_CHUNKS <- 10              # number of calibrated_searo_part*.rds files
 
 #===============================================================================
 # 1. LOAD INPUTS (same sources 031 reads -- this script never writes them)
@@ -91,36 +91,222 @@ pop20 <- pop20[year_id >= CAL_YEAR_START & year_id <= 2050]
 setnames(pop20, c("year_id", "Nx"), c("year", "Nx20"))
 
 #===============================================================================
-# 2. GBD CALIBRATION TARGETS  (Deaths + Prevalence, Number, by 5-year age group)
-#    Mirrors 031 lines 237-321; produces one tidy targets table.
+# 2. CALIBRATION TARGETS: selected deaths + GBD prevalence
 #===============================================================================
 
-gbd <- readRDS(paste0(wd_raw, "GBD/", "temp_1baseline_rates_gbd23.rds"))
-setDT(gbd)
-if ("upper" %in% names(gbd)) gbd[, upper := NULL]
-if ("lower" %in% names(gbd)) gbd[, lower := NULL]
+# Deaths: WHO (primary) or GBD (sensitivity). Prevalence: always GBD.
+# Join on the complete location/sex/cause/age/year key; never fill missing deaths
+# with zero, since that would change the objective without warning.
+if (!exists("gbd_target_file"))
+  gbd_target_file <- file.path(wd_raw, "GBD", "temp_1baseline_rates_gbd23.rds")
+if (!exists("who_deaths_target_file"))
+  who_deaths_target_file <- file.path(wd_data, "dt_deaths_who_long.rds")
+if (!exists("calibration_deaths_source")) calibration_deaths_source <- "WHO"
+calibration_deaths_source <- toupper(calibration_deaths_source)
+if (!calibration_deaths_source %in% c("WHO", "GBD"))
+  stop("calibration_deaths_source must be WHO or GBD")
+if (!file.exists(gbd_target_file)) stop("Missing GBD prevalence target: ", gbd_target_file)
+gbd <- as.data.table(readRDS(gbd_target_file))
+keys <- c("location", "sex", "cause", "age", "year")
+normalise_age <- function(x) {
+  a <- trimws(sub(" years$", "", as.character(x)))
+  a <- gsub("[–—]", "-", a)
+  single <- grepl("^[0-9]+$", a)
+  lower <- suppressWarnings(as.integer(ifelse(single, a, sub("^([0-9]+).*$", "\\1", a))))
+  a[single & lower >= 20L & lower < 95L] <- paste0(5L * (lower[single & lower >= 20L & lower < 95L] %/% 5L), "-",
+                                                   5L * (lower[single & lower >= 20L & lower < 95L] %/% 5L) + 4L)
+  a[!single & !grepl("^[0-9]+-[0-9]+$|^[0-9]+\\+$", a)] <- NA_character_
+  a[!is.na(lower) & lower >= 95L] <- "95+"
+  a[!is.na(lower) & lower < 20L] <- NA_character_
+  a
+}
+prev <- gbd[metric_name == "Number" & measure_name == "Prevalence" &
+              cause_name %in% unname(cause_map[names(cause_map) != "all"]) &
+              location_name %in% locs & year >= CAL_YEAR_START & year <= CAL_YEAR_END,
+            .(location = as.character(location_name), sex = as.character(sex_name),
+              cause = as.character(cause_name), age = normalise_age(age_name),
+              year = as.integer(year), gbdPrev = as.numeric(val))]
+prev <- prev[!is.na(age) & age %in% unique(normalise_age(20:95)) & sex %in% c("Male", "Female")]
+if (anyNA(prev$gbdPrev) || any(prev$gbdPrev < 0) || anyDuplicated(prev, by = keys))
+  stop("GBD prevalence contains missing, negative or duplicated calibration cells")
+if (!nrow(prev)) stop("No GBD prevalence targets in calibration window")
 
-gbd <- gbd[cause_name %in% dx_include]
-setnames(gbd,
-         c("sex_name", "age_name", "cause_name", "measure_name", "metric_name", "location_name"),
-         c("sex",      "age",      "cause",      "measure",      "metric",      "location"))
-
-## counts only (Number), Deaths + Prevalence only, calibration window, our locs
-gbd <- gbd[metric == "Number" &
-             measure %in% c("Deaths", "Prevalence") &
-             location %in% locs &
-             year >= CAL_YEAR_START & year <= CAL_YEAR_END]
-
-## long -> wide so each (location, sex, cause, age.group, year) has Deaths + Prev
-gbd <- dcast(gbd, location + sex + cause + age + year ~ measure, value.var = "val")
-
-## drop "All causes" (no per-cause target; 031 also excludes it from the join)
-targets <- gbd[cause != cause_map[["all"]],
-               .(location, sex, cause, age, year,
-                 gbdDeaths = Deaths, gbdPrev = Prevalence)]
-# The projection has no states below age 20: exclude their target rows.
-# Match the exact GBD label convention used by the age-band mapping below.
-targets <- targets[age %in% unique(gbd_band_label(20:95))]
+if (calibration_deaths_source == "WHO") {
+  if (!file.exists(who_deaths_target_file))
+    stop("WHO deaths target not found: ", who_deaths_target_file,
+         "; run the WHO-deaths cleaning step first")
+  death <- as.data.table(readRDS(who_deaths_target_file))
+  pick <- function(candidates, label) {
+    found <- intersect(candidates, names(death))
+    if (!length(found)) stop("WHO deaths file needs a ", label,
+                             " column; available: ", paste(names(death), collapse = ", "))
+    found[1L]
+  }
+  measure_col <- intersect(c("measure_name", "measure"), names(death))
+  if (length(measure_col)) death <- death[tolower(as.character(get(measure_col[1L]))) == "deaths"]
+  metric_col <- intersect(c("metric_name", "metric"), names(death))
+  if (length(metric_col)) death <- death[tolower(as.character(get(metric_col[1L]))) == "number"]
+  loc_col <- pick(c("location", "location_name"), "location")
+  sex_col <- pick(c("sex", "sex_name"), "sex")
+  cause_col <- pick(c("cause", "cause_name"), "cause")
+  age_col <- pick(c("age_group", "age_name", "age", "age.group"), "age")
+  year_col <- pick(c("year", "year_id"), "year")
+  value_col <- pick(c("deaths", "Deaths", "death_count", "deaths_who", "val", "value"), "death count")
+  who_single_year <- all(grepl("^[0-9]+$", as.character(death[[age_col]])))
+  death <- death[, .(location = as.character(get(loc_col)), sex = as.character(get(sex_col)),
+                     cause = as.character(get(cause_col)), age = normalise_age(get(age_col)),
+                     year = as.integer(get(year_col)), targetDeaths = as.numeric(get(value_col)))]
+  death[sex %in% c("male", "MALE"), sex := "Male"]
+  death[sex %in% c("female", "FEMALE"), sex := "Female"]
+  death[cause %in% names(cause_map), cause := unname(cause_map[cause])]
+  # WHO location labels are harmonized after this RDS is saved in stage 02.
+  who_to_gbd_loc <- c(
+    "Antigua & Barbuda" = "Antigua and Barbuda",
+    "Bosnia & Herzegovina" = "Bosnia and Herzegovina",
+    "Brunei" = "Brunei Darussalam",
+    "Côte d’Ivoire" = "Ivory Coast",
+    "Congo - Kinshasa" = "Democratic Republic of the Congo",
+    "Congo - Brazzaville" = "Congo",
+    "Cape Verde" = "Cabo Verde",
+    "Iran" = "Iran (Islamic Republic of)",
+    "South Korea" = "Republic of Korea",
+    "Laos" = "Lao People's Democratic Republic",
+    "St. Lucia" = "Saint Lucia",
+    "Moldova" = "Republic of Moldova",
+    "Myanmar (Burma)" = "Myanmar",
+    "North Korea" = "Democratic People's Republic of Korea",
+    "Palestinian Territories" = "Palestine",
+    "Russia" = "Russian Federation",
+    "São Tomé & Príncipe" = "Sao Tome and Principe",
+    "Syria" = "Syrian Arab Republic",
+    "Trinidad & Tobago" = "Trinidad and Tobago",
+    "St. Vincent & Grenadines" = "Saint Vincent and the Grenadines",
+    "Venezuela" = "Venezuela (Bolivarian Republic of)",
+    "Vietnam" = "Viet Nam"
+  )
+  death[location %in% names(who_to_gbd_loc),
+        location := unname(who_to_gbd_loc[location])]
+} else {
+  death <- gbd[metric_name == "Number" & measure_name == "Deaths",
+               .(location = as.character(location_name), sex = as.character(sex_name),
+                 cause = as.character(cause_name), age = normalise_age(age_name),
+                 year = as.integer(year), targetDeaths = as.numeric(val))]
+}
+# WHO reports deaths for an open 85+ band. Allocate that count to the three
+# model/GBD bands using GBD Number-of-Deaths shares for the SAME location, sex,
+# cause and year. Never treat the 85+ aggregate as an 85-89 count.
+if (calibration_deaths_source == "WHO") {
+  older <- death[age == "85+" & location %in% locs &
+                   cause %in% unname(cause_map[names(cause_map) != "all"]) &
+                   sex %in% c("Male", "Female") &
+                   year >= CAL_YEAR_START & year <= CAL_YEAR_END]
+  group_keys <- c("location", "sex", "cause", "year")
+  if (nrow(older)) {
+    if (anyDuplicated(older, by = group_keys))
+      stop("Duplicate WHO 85+ death counts for a location/sex/cause/year")
+    gbd_older <- gbd[metric_name == "Number" & measure_name == "Deaths" &
+                       location_name %in% locs &
+                       cause_name %in% unname(cause_map[names(cause_map) != "all"]) &
+                       year >= CAL_YEAR_START & year <= CAL_YEAR_END,
+                     .(location = as.character(location_name), sex = as.character(sex_name),
+                       cause = as.character(cause_name), year = as.integer(year),
+                       age = normalise_age(age_name), gbd_count = as.numeric(val))]
+    gbd_older <- gbd_older[age %in% c("85-89", "90-94", "95+") &
+                             sex %in% c("Male", "Female")]
+    if (anyNA(gbd_older$gbd_count) || any(gbd_older$gbd_count < 0) ||
+        anyDuplicated(gbd_older, by = c(group_keys, "age")))
+      stop("GBD older-age deaths contain missing, negative or duplicate counts")
+    alloc <- merge(older[, .(location, sex, cause, year,
+                              who_85_count = targetDeaths)],
+                   gbd_older, by = group_keys, all.x = TRUE,
+                   allow.cartesian = TRUE, sort = FALSE)
+    coverage <- alloc[, .(n_bands = .N, n_unique = uniqueN(age),
+                          missing_gbd = anyNA(gbd_count),
+                          gbd_total = sum(gbd_count)), by = group_keys]
+    if (coverage[, any(n_bands != 3L | n_unique != 3L | missing_gbd)])
+      stop("WHO 85+ split requires GBD death counts for 85-89, 90-94 and 95+ ",
+           "in every location/sex/cause/year")
+    alloc[coverage, on = group_keys, gbd_total := i.gbd_total]
+    if (alloc[, any(who_85_count > 0 & gbd_total <= 0)])
+      stop("Cannot distribute positive WHO 85+ deaths with zero GBD 85+ deaths")
+    alloc[, targetDeaths := fifelse(gbd_total > 0,
+                                   who_85_count * gbd_count / gbd_total, 0)]
+    check <- alloc[, .(who_count = first(who_85_count),
+                       allocated = sum(targetDeaths)), by = group_keys]
+    if (check[, any(abs(who_count - allocated) >
+                     1e-8 * pmax(1, abs(who_count)))])
+      stop("WHO 85+ death totals are not preserved after GBD-share allocation")
+    death <- rbindlist(list(death[age != "85+"],
+                            alloc[, .(location, sex, cause, age, year,
+                                      targetDeaths)]), use.names = TRUE)
+    message("Distributed ", nrow(older),
+            " WHO 85+ death cells across GBD 85-89/90-94/95+ bands")
+  }
+}
+death <- death[location %in% locs & cause %in% unname(cause_map[names(cause_map) != "all"]) &
+                 sex %in% c("Male", "Female") & year >= CAL_YEAR_START &
+                 year <= CAL_YEAR_END & !is.na(age) & age %in% unique(prev$age)]
+if (anyNA(death$targetDeaths) || any(death$targetDeaths < 0))
+  stop(calibration_deaths_source, " deaths contain missing or negative counts")
+# Single-year WHO values can be summed to five-year bands; duplicate aggregate
+# bands are ambiguous and must be resolved in the WHO cleaning step.
+if (anyDuplicated(death, by = keys)) {
+  if (calibration_deaths_source == "WHO" &&
+      isTRUE(who_single_year)) {
+    death <- death[, .(targetDeaths = sum(targetDeaths)), by = keys]
+  } else stop(calibration_deaths_source, " deaths have duplicate age-band keys; check age aggregation and other dimensions")
+}
+# Country-level fallback only. Retain WHO for every country with any WHO
+# calibration-window deaths; incomplete WHO country panels remain an error.
+if (calibration_deaths_source == "WHO") {
+  fallback_locs <- setdiff(unique(prev$location), unique(death$location))
+  if (length(fallback_locs)) {
+    gbd_fallback <- gbd[metric_name == "Number" & measure_name == "Deaths" &
+                          location_name %in% fallback_locs &
+                          cause_name %in% unname(cause_map[names(cause_map) != "all"]) &
+                          year >= CAL_YEAR_START & year <= CAL_YEAR_END,
+                        .(location = as.character(location_name),
+                          sex = as.character(sex_name),
+                          cause = as.character(cause_name),
+                          age = normalise_age(age_name),
+                          year = as.integer(year), targetDeaths = as.numeric(val))]
+    gbd_fallback <- gbd_fallback[sex %in% c("Male", "Female") &
+                                   !is.na(age) & age %in% unique(prev$age)]
+    if (anyNA(gbd_fallback$targetDeaths) || any(gbd_fallback$targetDeaths < 0) ||
+        anyDuplicated(gbd_fallback, by = keys))
+      stop("GBD fallback deaths contain missing, negative or duplicate cells")
+    death <- rbindlist(list(death, gbd_fallback), use.names = TRUE)
+    message("GBD deaths used for ", length(fallback_locs),
+            " countries without WHO calibration data: ",
+            paste(sort(fallback_locs), collapse = ", "))
+  }
+}
+targets <- merge(prev, death, by = keys, all.x = TRUE, sort = FALSE)
+if (anyNA(targets$targetDeaths)) {
+  missing <- targets[is.na(targetDeaths), ..keys]
+  stop("Missing ", calibration_deaths_source, " deaths for ", nrow(missing),
+       " GBD prevalence cells. First missing key: ",
+       paste(unlist(missing[1L]), collapse = " | "))
+}
+if (anyDuplicated(targets, by = keys)) stop("Duplicate calibration target keys")
+expected <- unique(b_rates[year >= CAL_YEAR_START & year <= CAL_YEAR_END,
+                           .(location = as.character(location), sex = as.character(sex),
+                             cause = as.character(cause), age = normalise_age(age),
+                             year = as.integer(year))])
+missing_model_keys <- fsetdiff(expected, targets[, ..keys])
+if (nrow(missing_model_keys))
+  stop("Calibration targets do not cover ", nrow(missing_model_keys),
+       " model cells; first missing: ", paste(unlist(missing_model_keys[1L]), collapse = " | "))
+message("Calibration targets: ", calibration_deaths_source, " deaths + GBD prevalence; ",
+        nrow(targets), " cells (", CAL_YEAR_START, "-", CAL_YEAR_END, ")")
+rm(gbd, prev, death)
+age_lut <- unique(data.table(age = normalise_age(20:95),
+                             model_age = as.character(gbd_band_label(20:95))))
+if (anyDuplicated(age_lut, by = "age"))
+      stop("gbd_band_label maps a target age band to multiple model labels")
+targets <- merge(targets, age_lut, by = "age", all.x = TRUE, sort = FALSE)
+if (anyNA(targets$model_age)) stop("Unmapped calibration age band")
+targets[, `:=`(age = model_age, model_age = NULL)]
 setkey(targets, location, sex, cause)
 
 #===============================================================================
@@ -315,25 +501,26 @@ proj_vs_targets <- function(proj, combo_targets, age_match) {
 }
 
 ## ----------------------------------------------------------------------------
-## Weighted RELATIVE squared error (the search objective). Deaths weighted 2x.
+## Sum of age-band weighted absolute RMSEs (same target measure as grid).
 ## ----------------------------------------------------------------------------
 combo_error <- function(proj, combo_targets, age_match,
                         w_deaths = W_DEATHS, w_prev = W_PREV, eps = EPS_REL) {
       j <- proj_vs_targets(proj, combo_targets, age_match)
-      j[, sum(
-            w_deaths * ((Deaths     - gbdDeaths) / (gbdDeaths + eps))^2 +
-            w_prev   * ((Prevalence - gbdPrev)   / (gbdPrev   + eps))^2,
-            na.rm = TRUE)]
+      if (anyNA(j$targetDeaths) || anyNA(j$gbdPrev))
+            stop("Missing target during stochastic calibration scoring")
+      band <- j[, .(RMSE_deaths = sqrt(mean((Deaths - targetDeaths)^2)),
+                    RMSE_prev = sqrt(mean((Prevalence - gbdPrev)^2))), by = age]
+      sum(w_deaths * band$RMSE_deaths + w_prev * band$RMSE_prev)
 }
 
 ## ----------------------------------------------------------------------------
 ## ABSOLUTE RMSE diagnostics per location-sex-cause-age.group (for comparison
-## with 031, which minimised 2*RMSE_deaths + RMSE_prev in count units).
+## with the grid search (2*RMSE_deaths + RMSE_prev in count units).
 ## ----------------------------------------------------------------------------
 combo_diag <- function(proj, combo_targets, age_match) {
       j <- proj_vs_targets(proj, combo_targets, age_match)
       j[, .(
-            RMSE_deaths = sqrt(mean((Deaths     - gbdDeaths)^2, na.rm = TRUE)),
+            RMSE_deaths = sqrt(mean((Deaths     - targetDeaths)^2, na.rm = TRUE)),
             RMSE_prev   = sqrt(mean((Prevalence - gbdPrev)^2,   na.rm = TRUE))
       ), by = .(location, sex, cause, age)]
 }
@@ -558,11 +745,15 @@ err_out      <- rbindlist(lapply(results, `[[`, "err"),     use.names = TRUE, fi
 setcolorder(calibrated, intersect(tps_input_cols, names(calibrated)))
 
 #===============================================================================
-# 5. WRITE OUTPUTS  (drop-in: adjusted_searo_part{1..10}.rds in wd_data)
+# 5. WRITE OUTPUTS  (calibrated_searo_part*.rds; 031 applies trends)
 #===============================================================================
 
 n     <- nrow(calibrated)
 chunk <- ceiling(n / N_OUT_CHUNKS)
+old_calibrated <- list.files(wd_data,
+                             pattern = "^calibrated_searo_part[0-9]+\\.rds$",
+                             full.names = TRUE)
+if (length(old_calibrated)) file.remove(old_calibrated)
 for (i in 1:N_OUT_CHUNKS) {
       start <- (i - 1) * chunk + 1
       end   <- min(i * chunk, n)
@@ -571,7 +762,7 @@ for (i in 1:N_OUT_CHUNKS) {
             next
       }
       saveRDS(calibrated[start:end],
-              file = paste0(wd_data, "adjusted_searo_part", i, ".rds"))
+              file = paste0(wd_data, "calibrated_searo_part", i, ".rds"))
 }
 
 ## calibrated multipliers (analogous to 032's adjustments2023_age.csv)
@@ -584,6 +775,12 @@ err_pct <- copy(err_out[, .(location, sex, cause, base_err, cal_err,
 err_pct[, pct_improvement := 100 * (base_err - cal_err) / pmax(base_err, EPS_REL)]
 diag_full <- merge(diag_out, err_pct, by = c("location", "sex", "cause"), all.x = TRUE)
 fwrite(diag_full, paste0(wd_data, "calibration_diagnostics_random_tp.csv"))
+file.copy(file.path(wd_data, "calibration_diagnostics_random_tp.csv"),
+          file.path(wd_data, paste0("calibration_diagnostics_random_tp_", calibration_deaths_source, ".csv")),
+          overwrite = TRUE)
+file.copy(file.path(wd_data, "calibration_factors_random_tp.csv"),
+          file.path(wd_data, paste0("calibration_factors_random_tp_", calibration_deaths_source, ".csv")),
+          overwrite = TRUE)
 
 #===============================================================================
 # 6. VALIDATION  (assert constraints; print baseline-vs-calibrated fit summary)
@@ -651,7 +848,7 @@ if (any(err_out$hit_bound, na.rm = TRUE)) {
 }
 
 cat("\nWrote:\n")
-cat(sprintf("  %sadjusted_searo_part{1..%d}.rds\n", wd_data, N_OUT_CHUNKS))
+cat(sprintf("  %scalibrated_searo_part{1..%d}.rds\n", wd_data, N_OUT_CHUNKS))
 cat(sprintf("  %scalibration_factors_random_tp.csv\n", wd_data))
 cat(sprintf("  %scalibration_diagnostics_random_tp.csv\n", wd_data))
 cat("\nReminder: set  run_adjustment_model <- FALSE  before sourcing ",

@@ -333,7 +333,12 @@ cause_map_full <- c(
 )
 num_causes  <- length(unique(cause_map_full))
 n_countries <- uniqueN(data.out$location)
-study_years <- paste0(min(data.out$year[data.out$year >= 2025]),
+# ---- Reporting window ----------------------------------------------------------
+# 2025 is the baseline year: it stays in the time-series figures as the reference
+# point, but deaths averted accumulate only from 2026 (reporting window 2026-2050).
+baseline_year  <- 2025L
+cum_start_year <- 2026L
+study_years <- paste0(min(data.out$year[data.out$year >= cum_start_year]),
                        "\u2013", max(data.out$year))
 ```
 
@@ -348,7 +353,7 @@ The central research question is:
 > *What would be the projected health impact --- in terms of deaths averted and
 > life-years gained --- of achieving WHO targets for hypertension control and
 > statin therapy coverage, applied simultaneously across `r n_countries` countries
-> from 2025 to 2050?*
+> from 2026 to 2050 (with 2025 as the baseline year)?*
 
 Four causes of CVD death are modelled jointly: ischemic heart disease (IHD), ischemic
 stroke, intracerebral hemorrhage (hemorrhagic stroke), and hypertensive heart disease (HHD).
@@ -786,33 +791,45 @@ ggsave(paste0(wd_outp, "aim1_asmr_cause.png"), plot = g,
 
 ---
 
-# Projected Deaths Averted (2025-2050)
+# Projected Deaths Averted (2026-2050)
+
+All cumulative deaths-averted totals below are summed over 2026--2050. The year 2025 is
+the baseline year: it is shown in the time-series figures as the starting reference
+point, but it is excluded from every cumulative total.
 
 ```{r compute-deaths-averted, message=FALSE, warning=FALSE, echo=FALSE}
 # ---- Core: deaths delayed by intervention x year ----------------------------
-dt_base <- data.out[intervention == "b.a.u" & year >= 2025,
+# Built from the 2025 baseline year so the time series can show it; every
+# cumulative quantity is restricted to year >= cum_start_year (2026).
+dt_base <- data.out[intervention == "b.a.u" & year >= baseline_year,
                     .(baseline_deaths = sum(dead, na.rm = TRUE)),
                     by = .(age_group, sex, year, location, cause, age)]
 
-dt_nonbase <- data.out[intervention != "b.a.u" & year >= 2025,
+dt_nonbase <- data.out[intervention != "b.a.u" & year >= baseline_year,
                        .(dead = sum(dead, na.rm = TRUE)),
                        by = .(age_group, sex, year, location, cause, age, intervention)]
 
-dt_merged <- merge(dt_nonbase, dt_base,
-                   by = c("age_group", "sex", "year", "location", "cause", "age"),
-                   all.x = TRUE)
-dt_merged[, deaths_delayed := baseline_deaths - dead]
+dt_merged_all <- merge(dt_nonbase, dt_base,
+                       by = c("age_group", "sex", "year", "location", "cause", "age"),
+                       all.x = TRUE)
+dt_merged_all[, deaths_delayed := baseline_deaths - dead]
 
-# ---- Cumulative totals -------------------------------------------------------
+# Accumulation window (2026-2050): used for all totals, tables and bar charts.
+dt_merged <- dt_merged_all[year >= cum_start_year]
+
+# ---- Cumulative totals (2026-2050) --------------------------------------------
 dt_cumul <- dt_merged[, .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
                        by = intervention]
 
 # ---- Annual time-series ------------------------------------------------------
-dt_annual <- dt_merged[, .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
-                        by = .(intervention, year)]
+# Keeps the 2025 baseline year as the first point; the running total is 0 in
+# 2025 and accumulates from 2026.
+dt_annual <- dt_merged_all[, .(deaths_delayed = sum(deaths_delayed, na.rm = TRUE)),
+                            by = .(intervention, year)]
 dt_annual[, intervention := factor(intervention, levels = int_order)]
 setorder(dt_annual, intervention, year)
-dt_annual[, cum_deaths_delayed := cumsum(deaths_delayed), by = intervention]
+dt_annual[, cum_deaths_delayed := cumsum(fifelse(year >= cum_start_year, deaths_delayed, 0)),
+          by = intervention]
 
 # ---- Per-scenario totals for inline text ------------------------------------
 total_all  <- dt_cumul[intervention == "All Interventions",      deaths_delayed]
@@ -821,7 +838,7 @@ total_bpd  <- dt_cumul[intervention == "HTN Control (Diabetes)", deaths_delayed]
 total_stat <- dt_cumul[intervention == "Improved Statin Uptake", deaths_delayed]
 ```
 
-Between 2025 and 2050, achieving all three intervention targets simultaneously is
+Between 2026 and 2050, achieving all three intervention targets simultaneously is
 projected to avert approximately **`r fmt_m(total_all)` million deaths** globally.
 HTN control in the general population (WHO Target 1) would avert
 `r fmt_m(total_bp)` million deaths; targeting BP control specifically in people with
@@ -829,7 +846,7 @@ diabetes (WHO Target 3) would avert `r fmt_m(total_bpd)` million deaths.
 Scale-up of lipid-lowering therapy (WHO Target 2) would avert an additional
 `r fmt_m(total_stat)` million deaths.
 
-## Table 1 --- Cumulative Deaths Averted by Intervention (2025-2050)
+## Table 1 --- Cumulative Deaths Averted by Intervention (2026-2050)
 
 ```{r table1, message=FALSE, warning=FALSE, echo=FALSE}
 tab1 <- copy(dt_cumul)
@@ -861,11 +878,11 @@ tab1_fmt <- tab1[, .(
 setnames(tab1_fmt,
          old = c("WHO_Target", "Deaths_averted_M", "Avg_per_year_thou"),
          new = c("WHO Target",
-                 "Deaths averted (M, 2025\u20132050)",
+                 "Deaths averted (M, 2026\u20132050)",
                  "Average per year (thousands)"))
 
 kable(tab1_fmt,
-      caption = "Table 1. Cumulative deaths averted (2025\u20132050) by intervention scenario.",
+      caption = "Table 1. Cumulative deaths averted (2026\u20132050) by intervention scenario.",
       align   = "llrr") |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = TRUE, font_size = 13) |>
@@ -874,7 +891,7 @@ kable(tab1_fmt,
   row_spec(0, bold = TRUE) |>
   footnote(general = paste0(
     "Deaths averted = deaths in business-as-usual scenario minus deaths under each intervention, ",
-    "summed over 2025\u20132050. ",
+    "summed over 2026\u20132050 (2025 = baseline year, excluded). ",
     "Causes: ischemic heart disease, ischemic stroke, intracerebral hemorrhage, ",
     "hypertensive heart disease."
   ))
@@ -896,7 +913,7 @@ g <- ggplot(dt_fig1, aes(x = deaths_delayed / 1e6, y = intervention,
   scale_fill_manual(values = int_cols, guide = "none") +
   scale_x_continuous(expand = c(0, 0), labels = comma) +
   labs(
-    title   = "Projected Deaths Averted by Intervention, 2025\u20132050",
+    title   = "Projected Deaths Averted by Intervention, 2026\u20132050",
     x       = "Deaths averted (millions)",
     y       = NULL,
     caption = "Deaths averted vs. business-as-usual scenario; all causes combined."
@@ -944,12 +961,12 @@ for (col in names(dt_tab2_wide)[names(dt_tab2_wide) != "intervention"]) {
 }
 
 kable(dt_tab2_wide,
-      caption = "Table 2. Cumulative deaths averted (millions, 2025\u20132050) by intervention and cause of death.",
+      caption = "Table 2. Cumulative deaths averted (millions, 2026\u20132050) by intervention and cause of death.",
       align   = c("l", rep("r", ncol(dt_tab2_wide) - 1))) |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = TRUE, font_size = 13) |>
   add_header_above(setNames(c(1L, ncol(dt_tab2_wide) - 1L),
-                            c(" ", "Deaths averted, millions (2025\u20132050)"))) |>
+                            c(" ", "Deaths averted, millions (2026\u20132050)"))) |>
   row_spec(0, bold = TRUE) |>
   footnote(general = paste0(
     "\u2013 = intervention does not affect this cause. ",
@@ -979,7 +996,7 @@ g <- ggplot(dt_fig2, aes(x = deaths_delayed / 1e6, y = intervention, fill = caus
   scale_x_continuous(expand = c(0, 0), labels = comma) +
   guides(fill = guide_legend(nrow = 2, byrow = TRUE)) +
   labs(
-    title = "Deaths Averted by Cause of Death and Intervention, 2025\u20132050",
+    title = "Deaths Averted by Cause of Death and Intervention, 2026\u20132050",
     x     = "Deaths averted (millions)",
     y     = NULL
   ) +
@@ -1004,7 +1021,8 @@ g <- ggplot(dt_annual[!intervention %in% c("All Interventions", "b.a.u")],
   scale_fill_manual(values  = int_cols, name = NULL) +
   scale_y_continuous(labels = comma) +
   labs(
-    title = "Annual Deaths Averted by Intervention, 2026\u20132050",
+    title    = "Annual Deaths Averted by Intervention, 2025\u20132050",
+    subtitle = "2025 = baseline year; intervention effects accrue from 2026",
     x     = "Year",
     y     = "Deaths averted (millions)"
   ) +
@@ -1035,7 +1053,8 @@ g <- ggplot(dt_fig4,
   scale_color_manual(values = fig4_cols, name = NULL) +
   scale_y_continuous(labels = comma) +
   labs(
-    title = "Cumulative Deaths Averted by Intervention, 2026\u20132050",
+    title    = "Cumulative Deaths Averted by Intervention, 2026\u20132050",
+    subtitle = "2025 = baseline year (cumulative total = 0); deaths averted accumulate from 2026",
     x     = "Year",
     y     = "Cumulative deaths averted (millions)"
   ) +
@@ -1050,18 +1069,20 @@ ggsave(paste0(wd_outp, "aim1_fig4_cum_averted.png"), plot = g,
 ## Figure 4b --- Cumulative Deaths Averted Over Time by Region (All Interventions)
 
 Cumulative deaths averted over time (2026--2050) under the combined all-interventions
-scenario, with one line per WHO region.
+scenario, with one line per WHO region. The series starts at the 2025 baseline year,
+where the cumulative total is zero.
 
 ```{r figure4b-cumulative-region, message=FALSE, warning=FALSE, echo=FALSE, fig.width=10, fig.height=5}
 who_region_levels <- c("Africa", "Americas", "Eastern Mediterranean",
                        "Europe", "South-East Asia", "Western Pacific")
 
 # Region x year deaths averted under the combined scenario (All Interventions),
-# then cumulated over time within each WHO region.
-reg_base <- data.out[intervention == "b.a.u" & year >= 2025,
+# then cumulated over time within each WHO region. 2025 (baseline year) is kept
+# as the first point but excluded from the running total, which starts in 2026.
+reg_base <- data.out[intervention == "b.a.u" & year >= baseline_year,
                      .(baseline_deaths = sum(dead, na.rm = TRUE)),
                      by = .(region, year)]
-reg_int  <- data.out[intervention == "All Interventions" & year >= 2025,
+reg_int  <- data.out[intervention == "All Interventions" & year >= baseline_year,
                      .(deaths_projected = sum(dead, na.rm = TRUE)),
                      by = .(region, year)]
 
@@ -1069,7 +1090,8 @@ dt_region_annual <- merge(reg_int, reg_base, by = c("region", "year"), all.x = T
 dt_region_annual <- dt_region_annual[region %in% who_region_levels]
 dt_region_annual[, deaths_delayed := baseline_deaths - deaths_projected]
 setorder(dt_region_annual, region, year)
-dt_region_annual[, cum_deaths_delayed := cumsum(deaths_delayed), by = region]
+dt_region_annual[, cum_deaths_delayed := cumsum(fifelse(year >= cum_start_year, deaths_delayed, 0)),
+                 by = region]
 dt_region_annual[, region := factor(region, levels = who_region_levels)]
 
 g <- ggplot(dt_region_annual,
@@ -1079,7 +1101,7 @@ g <- ggplot(dt_region_annual,
   scale_y_continuous(labels = comma) +
   labs(
     title    = "Cumulative Deaths Averted Over Time by Region, 2026–2050",
-    subtitle = "All Interventions combined",
+    subtitle = "All Interventions combined; 2025 = baseline year, deaths averted accumulate from 2026",
     x        = "Year",
     y        = "Cumulative deaths averted (millions)"
   ) +
@@ -1115,7 +1137,7 @@ g <- ggplot(dt_age_sex,
   facet_wrap(~sex, nrow = 1) +
   scale_x_continuous(expand = c(0, 0), labels = comma) +
   labs(
-    title = "Deaths Averted by Age Group, Sex, and Intervention (2025\u20132050)",
+    title = "Deaths Averted by Age Group, Sex, and Intervention (2026\u20132050)",
     x     = "Deaths averted (millions)",
     y     = NULL,
     fill  = "Age group"
@@ -1135,7 +1157,7 @@ ggsave(paste0(wd_outp, "aim1_fig5_demo_age.png"), plot = g,
 
 ```{r table3-age, message=FALSE, warning=FALSE, echo=FALSE}
 dt_tab3 <- deaths_summary(
-  data.out[year >= 2025],
+  data.out[year >= cum_start_year],
   baseline_label = "b.a.u",
   by_cols        = c("age_group", "intervention")
 )
@@ -1159,7 +1181,7 @@ setnames(dt_tab3_fmt,
                  "Deaths averted", "Deaths averted/year", "% averted"))
 
 kable(dt_tab3_fmt,
-      caption = "Table 3. Cumulative deaths averted (2025\u20132050) by age group and intervention.",
+      caption = "Table 3. Cumulative deaths averted (2026\u20132050) by age group and intervention.",
       align   = c("l","l","r","r","r","r","r")) |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = TRUE, font_size = 12) |>
@@ -1175,10 +1197,10 @@ dt_excel_tab3 <- copy(dt_tab3_fmt)
 ## Table 4 --- Deaths Averted by Country (All Interventions)
 
 ```{r table4-country, message=FALSE, warning=FALSE, echo=FALSE}
-dt_tab4_base <- data.out[year >= 2025 & intervention == "b.a.u",
+dt_tab4_base <- data.out[year >= cum_start_year & intervention == "b.a.u",
                           .(baseline_deaths = sum(dead, na.rm = TRUE)),
                           by = .(region, location)]
-dt_tab4_int  <- data.out[year >= 2025 & intervention == "All Interventions",
+dt_tab4_int  <- data.out[year >= cum_start_year & intervention == "All Interventions",
                           .(deaths_projected = sum(dead, na.rm = TRUE)),
                           by = .(region, location)]
 
@@ -1207,7 +1229,7 @@ datatable(
   dt_tab4_fmt,
   caption  = htmltools::tags$caption(
     style = "caption-side: top; text-align: left;",
-    "Table 4. Country-level deaths averted under all interventions, 2025\u20132050."
+    "Table 4. Country-level deaths averted under all interventions, 2026\u20132050."
   ),
   filter   = "top",
   rownames = FALSE,
@@ -1227,7 +1249,7 @@ g <- ggplot(dt_top20, aes(x = deaths_delayed / 1e6, y = location, fill = region)
   geom_col(width = 0.7) +
   scale_x_continuous(expand = c(0, 0), labels = comma) +
   labs(
-    title = "Top 20 Countries by Projected Deaths Averted\n(All Interventions, 2025\u20132050)",
+    title = "Top 20 Countries by Projected Deaths Averted\n(All Interventions, 2026\u20132050)",
     x     = "Deaths averted (millions)",
     y     = NULL,
     fill  = "Region"
@@ -1268,7 +1290,7 @@ if (!is.null(wpp)) {
       scale_fill_viridis_c(name = "per 100,000", na.value = "grey90",
                            option = "C", direction = -1) +
       labs(
-        title    = "Deaths Averted per 100,000 Population, 2025\u20132050",
+        title    = "Deaths Averted per 100,000 Population, 2026\u20132050",
         subtitle = "All interventions combined (HTN control + lipid-lowering therapy)",
         caption  = "Source: Model output; denominator = UNWPP 2024 age 20+ population"
       ) +
@@ -1288,9 +1310,9 @@ if (!is.null(wpp)) {
 ## Table 5 --- Deaths Averted by Region (All Interventions)
 
 ```{r table5-region, message=FALSE, warning=FALSE, echo=FALSE}
-dt_tab5_base <- data.out[year >= 2025 & intervention == "b.a.u",
+dt_tab5_base <- data.out[year >= cum_start_year & intervention == "b.a.u",
                           .(baseline_deaths = sum(dead, na.rm = TRUE)), by = region]
-dt_tab5_int  <- data.out[year >= 2025 & intervention == "All Interventions",
+dt_tab5_int  <- data.out[year >= cum_start_year & intervention == "All Interventions",
                           .(deaths_projected = sum(dead, na.rm = TRUE)), by = region]
 
 dt_tab5 <- merge(dt_tab5_int, dt_tab5_base, by = "region", all.x = TRUE)
@@ -1314,7 +1336,7 @@ setnames(dt_tab5_fmt,
                  "Deaths averted", "Deaths averted/year", "% averted"))
 
 kable(dt_tab5_fmt,
-      caption = "Table 5. Deaths averted by region under all interventions, 2025\u20132050.",
+      caption = "Table 5. Deaths averted by region under all interventions, 2026\u20132050.",
       align   = c("l","r","r","r","r","r")) |>
   kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
                 full_width = FALSE, font_size = 13) |>
@@ -1388,14 +1410,15 @@ dt_dalys <- merge(dt_dalys,
                   by = "location", all.x = TRUE)
 
 # ---- Compute baseline values per cell ----------------------------------------
-daly_base <- dt_dalys[intervention == "b.a.u",
+# Accumulation window 2026-2050 (07 already writes year >= 2026; restated here).
+daly_base <- dt_dalys[intervention == "b.a.u" & year >= cum_start_year,
                       .(base_deaths = sum(dead, na.rm = TRUE),
                         base_yll    = sum(yll, na.rm = TRUE),
                         base_yld    = sum(yld, na.rm = TRUE),
                         base_daly   = sum(daly, na.rm = TRUE)),
                       by = .(location, cause, year)]
 
-daly_int <- dt_dalys[intervention != "b.a.u",
+daly_int <- dt_dalys[intervention != "b.a.u" & year >= cum_start_year,
                      .(deaths = sum(dead, na.rm = TRUE),
                        yll    = sum(yll, na.rm = TRUE),
                        yld    = sum(yld, na.rm = TRUE),
@@ -1636,17 +1659,17 @@ add_sheet <- function(wb, sheet_name, dat, title_str) {
 }
 
 add_sheet(wb, "T1_Deaths_by_Intervention", as.data.frame(dt_excel_tab1),
-          "Table 1. Cumulative deaths averted (2025-2050) by intervention scenario.")
+          "Table 1. Cumulative deaths averted (2026-2050) by intervention scenario.")
 add_sheet(wb, "T2_Deaths_by_Cause", as.data.frame(dt_excel_tab2),
-          "Table 2. Deaths averted (millions) by intervention and cause of death.")
+          "Table 2. Deaths averted (millions, 2026-2050) by intervention and cause of death.")
 add_sheet(wb, "T3_Deaths_by_Age", as.data.frame(dt_excel_tab3),
-          "Table 3. Deaths averted by age group and intervention.")
+          "Table 3. Deaths averted (2026-2050) by age group and intervention.")
 add_sheet(wb, "T4_Deaths_by_Country", as.data.frame(dt_excel_tab4),
-          "Table 4. Country-level deaths averted (All Interventions, 2025-2050).")
+          "Table 4. Country-level deaths averted (All Interventions, 2026-2050).")
 
 if (exists("dt_excel_tab5") && nrow(dt_excel_tab5) > 0)
   add_sheet(wb, "T5_Deaths_by_Region", as.data.frame(dt_excel_tab5),
-            "Table 5. Deaths averted by region (All Interventions, 2025-2050).")
+            "Table 5. Deaths averted by region (All Interventions, 2026-2050).")
 
 out_xlsx <- paste0(wd_scen, "aim1_results_tables.xlsx")
 saveWorkbook(wb, out_xlsx, overwrite = TRUE)
@@ -1669,7 +1692,7 @@ message("Slide artefacts will be written to: ", slides_dir)
 
 ```{r slides-scalars, message=FALSE, warning=FALSE, echo=FALSE}
 # SL-01: Scalar bundle — all inline `r` values the slides need
-bau_total_deaths <- data.out[intervention == "b.a.u" & year >= 2025,
+bau_total_deaths <- data.out[intervention == "b.a.u" & year >= cum_start_year,
                               sum(dead, na.rm = TRUE)]
 sl_scalars <- list(
   n_countries      = n_countries,
@@ -1700,9 +1723,9 @@ message("SL-02 saved: sl_tab_summary.rds")
 ```{r slides-tab-region, message=FALSE, warning=FALSE, echo=FALSE}
 # SL-03: Regional summary
 sl_tab_region <- merge(
-  data.out[intervention == "All Interventions" & year >= 2025,
+  data.out[intervention == "All Interventions" & year >= cum_start_year,
            .(int = sum(dead, na.rm = TRUE)), by = region],
-  data.out[intervention == "b.a.u" & year >= 2025,
+  data.out[intervention == "b.a.u" & year >= cum_start_year,
            .(bau = sum(dead, na.rm = TRUE)), by = region],
   by = "region"
 )
@@ -1716,10 +1739,10 @@ message("SL-03 saved: sl_tab_region.rds")
 ```{r slides-tab-top15, message=FALSE, warning=FALSE, echo=FALSE}
 # SL-04: Top 15 countries
 sl_tab_top15 <- merge(
-  data.out[intervention == "All Interventions" & year >= 2025,
+  data.out[intervention == "All Interventions" & year >= cum_start_year,
            .(int_dead = sum(dead, na.rm = TRUE),
              region   = region[1]), by = location],
-  data.out[intervention == "b.a.u" & year >= 2025,
+  data.out[intervention == "b.a.u" & year >= cum_start_year,
            .(bau = sum(dead, na.rm = TRUE)), by = location],
   by = "location"
 )
@@ -1749,7 +1772,7 @@ message("SL-05 saved: sl_dt_cause.rds")
 
 ```{r slides-dt-age, message=FALSE, warning=FALSE, echo=FALSE}
 # SL-06: Deaths by age group x intervention
-sl_age_raw <- data.out[year >= 2025,
+sl_age_raw <- data.out[year >= cum_start_year,
                         .(dead = sum(dead, na.rm = TRUE)),
                         by = .(year, cause, intervention, age_group)]
 sl_bau_ag  <- sl_age_raw[intervention == "b.a.u",
@@ -2307,7 +2330,7 @@ cause_averted_stat <- dt_merged[intervention == "Improved Statin Uptake",
                                  by = cause]
 
 # ---- BAU cause-specific deaths -----------------------------------------------
-bau_by_cause <- data.out[intervention == "b.a.u" & year >= 2025,
+bau_by_cause <- data.out[intervention == "b.a.u" & year >= cum_start_year,
                           .(bau_deaths = sum(dead, na.rm = TRUE)),
                           by = cause]
 

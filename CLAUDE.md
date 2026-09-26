@@ -10,7 +10,7 @@ Pure R project. No build system or package manager — everything runs by sourci
 source("code/00_run_model.R")
 ```
 
-**Hardcoded absolute paths.** `code/00_run_model.R` sets `wd` to a local OneDrive path and derives `wd_code`, `wd_raw`, `wd_data`, `wd_outp`; `wd_temp` points outside the repo. The reporting `.Rmd` files (`scenarios/scenarios_aim1/aim1_report.Rmd`, `scenarios/scenarios_aim2/aim2_report.Rmd`, `docs/who_cvd_targets_paper1.Rmd`) each re-declare their own `wd`. All of these must be edited when running on a new machine.
+**Hardcoded absolute paths.** `code/00_run_model.R` sets `wd` to a local OneDrive path and derives `wd_code`, `wd_raw`, `wd_data`, `wd_outp`, and `wd_temp` (`data/temp/`, scratch space for stage 02; its contents are gitignored). The reporting `.Rmd` files (`scenarios/scenarios_aim1/aim1_report.Rmd`, `scenarios/scenarios_aim2/aim2_report.Rmd`, `docs/who_cvd_targets_paper1.Rmd`) each re-declare their own `wd`. All of these must be edited when running on a new machine.
 
 **Packages.** Model pipeline: `dplyr`, `data.table`, `tidyr`, `ggplot2`, `RColorBrewer`, `readxl`, `countrycode`, `stringr`, `parallel`, `doParallel`, `foreach`, `gmodels`, `forecast`. `023_get_tps_bgmx.R` additionally loads `StMoMo` and `demography`. Reports additionally need `knitr`, `kableExtra`, `DT`, `scales`, `openxlsx`, `sf`, `rnaturalearth`, `rnaturalearthdata`, `bookdown`. The PSA/DSA (`09*.R`, `10_*.R`) also use `jsonlite`, `htmltools`, `rmarkdown`, `digest`, `codetools`.
 
@@ -32,35 +32,48 @@ Rscript tests/test_aim1_psa.R
 
 | Script | Role |
 |--------|------|
-| `01_utils.R` | Shared helpers (`get.bp.prob`, `calc_mortality_reduction`, `create_age_groups`; stage 03/031 artifact helpers `tp_guard`, `write_location_chunks`, manifests, `calibration_artifact_status`) |
-| `02_load_inputs.R` | Thin wrapper — sources `020`–`023` below; only when `inputs_mode = "rebuild"` (default `"reuse"` uses the saved stage-02 outputs) |
-| `020_get_deaths_who.R` | WHO GHE 2021 CVD/stroke deaths 2000–2023 → `dt_deaths_who_long.rds` |
+| `01_utils.R`, then `R/utils.R` | Shared helpers (`get.bp.prob`, `calc_mortality_reduction`, `create_age_groups`). `R/utils.R` is a copy of `01_utils.R` plus `gbd_age_lookup` / `gbd_band_label()`, which the alternative calibrators use. Because it is sourced second, its definitions win |
+| `02_load_inputs.R` | Thin wrapper that **always** sources `020`–`023` below (there is no skip switch, so every run rebuilds stage 02) |
+| `020_get_deaths_who.R` | WHO GHE 2021 CVD/stroke deaths 2000–2023 → `dt_deaths_who_long.rds` (also the default calibration death target) |
 | `021_get_base_rates.R` | GBD 2023 incidence/prevalence/mortality → `baseline_rates_part*.rds` |
-| `022_get_tps.R` | Transition probabilities (`IR`, `CF`, `BG.mx`) → `tps_inpt_part*.rds` |
-| `023_get_tps_bgmx.R` | Lee–Carter forecasts → `tps_bgmx_*_forecasted.rds` (sensitivity); a closing Li et al. (2019) coherent/MinT section → `tps_mortality_coherent_{forecasted,validation}.rds` (Global; the DEFAULT trend applied by 031) |
-| `03_calibration.R` | In-sample calibration ONLY: `IR`/`CF` multipliers vs GBD 2023 targets, applied to the historical `tps_inpt` → calibrated, UNTRENDED `adjusted_tps_part*.rds` (2000–2019) + `calibration_manifest.csv`; grid-search runs also write `calibration_factors.csv` / `calibration_diagnostics.csv` |
-| `031_calibration_trends.R` | Reads `adjusted_tps`, extends 2019 to 2050, applies the selected mortality/CF trends to the projected years only, guard + validation → FINAL `adjusted_searo_part*.rds` + `trends_manifest.csv` |
+| `022_get_tps.R` | Transition probabilities (`IR`, `CF`, `BG.mx`) → `tps_inpt_part*.rds` (2000–2019) |
+| `023_get_tps_bgmx.R` | Lee–Carter forecasts → `tps_bgmx_*_forecasted.rds`; a closing Li et al. (2019) coherent/MinT section → `tps_mortality_coherent_{forecasted,validation}.rds` (Global; the default trend source for 031) |
+| `03_calibration_who.R` | **Only if `run_calibration_par` is `TRUE`** (default `FALSE`). Grid-search `IR`/`CF` calibration → calibrated, **untrended** `calibrated_searo_part*.rds` (`YEARS_HIST`) + `calibration_factors.csv` / `calibration_diagnostics.csv` (+ `*_grid_<WHO\|GBD>.csv` copies) |
+| `031_calibration_trends.R` | Reads `calibrated_searo_part*.rds` from disk, repeats 2019 through 2050, applies the secular trends to years > 2019 only, runs the probability guard and validation, and writes the FINAL `adjusted_searo_part*.rds` (2000–2050) |
 | `04_define_interventions.R` | Builds the BP-control target table (150M split by diabetes status) and statin targets |
-| `05_build_baseline.R` | Loads the final `adjusted_searo_part*.rds` (checked against `trends_manifest.csv`) + UNWPP 2024 population + COVID excess mortality (calibration and trends already baked in by 03/031) |
+| `05_build_baseline.R` | Loads `adjusted_searo_part*.rds` + UNWPP 2024 population + COVID excess mortality. Calibration and trends are already baked in; 05 re-applies neither |
 | `06_run_scenarios_multiple.R` | **Aim 1** — multi-intervention scenarios, parallel by country |
-| `06_run_scenarios_targets.R` | **Aim 2** — BP-control scenarios by diabetes subgroup, parallel by country × scenario |
+| `06_run_scenarios_targets.R` | **Aim 2** — BP-control scenarios by diabetes subgroup, parallel by country × scenario (commented out in 00) |
 | `07_output_dalys.R` | YLL/YLD/DALY calculation → `output/dt_output_dalys.rds` |
 | `08_economic_value_calculation.R` | VSL/VSLY monetisation (see below) |
 
-Stage 03 (`03_calibration.R`) replaces the retired `03_clean_inputs.R → 031_calibration.R → 032_adjustments.R` chain. It runs ONE consolidated `IR`/`CF` calibration — a cohort well–sick–dead projection over `CAL_YEAR_START`–`CAL_YEAR_END`, grid search minimising `W_DEATHS·RMSE_deaths + W_PREV·RMSE_prev` against GBD Number per `location × sex × cause × 5-year band`, with the identity `(1,1)` always in the grid so the fit is never worse than baseline; grids `CAL_IR_GRID` × `CAL_CF_GRID` (180 points) and the other `CAL_*`/`YEARS_*` constants are set in `00_run_model.R`. It writes only the historical years: it never reads a forecast or applies a trend. Consolidating the legacy two-pass (031 fine grid + 032 wide grid, the latter a period model) into one cohort calibration shifts the calibrated numbers.
+### Calibration (stage 03)
 
-**Calibration reuse (`calibration_mode`, default `"reuse"`).** `00` skips stage 03 when `calibration_manifest.csv` says `adjusted_tps` matches the current `tps_inpt` md5s, calibration settings and `calibration_factors.csv`. Otherwise stage 03 re-applies `calibration_factors.csv` without the grid search (≈15 s; strict key/grid checks). If neither is possible, 00 stops with instructions and never recalibrates silently. `"factors"` forces that re-apply; `"run"` forces the grid search (≈50 min on 8 cores). The factors from the 2026-09-25 grid search predate the manifest. On their first re-apply, 03 adopts the current `tps_inpt` and settings as their provenance, so a later stage-02 rebuild or grid change stops with instructions. Re-applying them reproduces the 2000–2019 rows of that run's `adjusted_searo` bit for bit (checked 2026-09-25). One-time search: `options(who_cvd.calibration_mode = "run"); source("code/03_calibration.R")`.
+Stage 03 replaces the retired `03_clean_inputs.R → 031_calibration.R → 032_adjustments.R` chain (`adjustments2023_age.csv` in `data/processed/` is that chain's leftover). Calibrators all read `tps_inpt_part*.rds` and write `calibrated_searo_part*.rds`. **Source only one per run**:
 
-**Stage 031 trends.** `trend_method` (`"coherent"` default | `"legacy_lc"`) is the only selector of the mortality forecast. `run_bgmx_trend` / `run_CF_trend` switch the mortality block / CF trend on or off. `run_CF_trend_ihme` swaps only the CF source for IHME Foresight; combined with `run_CF_trend = FALSE` it stops as contradictory. `run_CF_trend_80` sets the CF share (0.8 default, else 1). Each country's own 2019 levels are scaled by the Global cumulative 2019-relative change, never compounded. Only the bottom level (4 × `DIS.mx.t0` + `BG.mx.all`) is scaled; `ALL.mx = BG.mx.all + ΣDIS` and `BG.mx = ALL.mx − DIS` follow. The 2019 `BG.mx.all` anchor is re-derived as `ALL.mx − ΣDIS` (the stage-02 value excludes dementia), which leaves a step of ≈3.9% of all deaths between the 2019 and 2020 rows. The CF rule is `CF_2019 × (1 + 0.8·(R_c − 1))`, while the rate columns carry 100%, so modeled CVD deaths decline by less than the reference `DIS.mx.t0`. Missing, duplicate or non-finite forecast keys and zero Global denominators stop the run; `tps_bgmx_forecasted.rds` is not applied. Standalone: `Rscript code/031_calibration_trends.R` (≈30 s). Changing a trend setting reruns only 031 (plus 04–08), never 03.
+- `03_calibration_who.R` (**active**, called by 00): a cohort well–sick–dead projection over `CAL_YEAR_START`–`CAL_YEAR_END` (2009–2019). The grid search minimises `W_DEATHS·RMSE_deaths + W_PREV·RMSE_prev` per `location × sex × cause × 5-year band`, with `(1,1)` always in the grid. Death targets come from `calibration_deaths_source` (`"WHO"` default via `who_deaths_target_file`, or `"GBD"`); prevalence always comes from GBD (`gbd_target_file` = `data/raw/GBD/temp_1baseline_rates_gbd23.rds`). Grids `CAL_IR_GRID` × `CAL_CF_GRID` (180 points) and the other `CAL_*` / `YEARS_*` / `TP_EPS` / stub constants are set in `00_run_model.R`. A full run takes ≈50 min on 8 cores.
+- `03_calibration.R`: the same grid calibrator, GBD deaths only (the predecessor of `_who`).
+- `03_calibration_random_tp.R`, `03_calibration_stochastic_hill.R`: alternative searches (random coordinate updates / Gaussian hill climb) over a symmetric `[1 − SEARCH_HALFWIDTH, 1 + SEARCH_HALFWIDTH]` range, with `GRANULARITY` `"combo"` or `"age_group"`. Audit files are `calibration_{factors,diagnostics}_random_tp*.csv` (and the hill-climb equivalents).
 
-Both 03 and 031 run standalone: when the settings are absent they source `00_run_model.R` with `options(who_cvd.settings_only = TRUE)`, which stops 00 before any stage runs. The production `adjusted_searo_part*.rds` still hold the pre-031 legacy trends (no `trends_manifest.csv`, so 05 warns) until 031 is run once. Even then, 06 → 07 → 08 and the reports still hold pre-refactor results.
+The header comments of `03_calibration*.R` still say they write "FINAL calibrated + trended" `adjusted_searo`. That is stale: they write untrended `calibrated_searo`, and 031 does the trends. 031's validation reads `calibration_factors.csv` (grid calibrator format: `ir_mult`, `cf_mult`, `base_error`, `cal_error`) and requires its location set to match the calibrated rates.
+
+### Secular trends (stage 031)
+
+- **Source:** `031_calibration_trends.R` picks the trend source with `getOption("who_cvd.trend_method", "coherent")` (`"coherent"` | `"legacy"`). The `trend_method` variable set in `00` is **ignored** (overwritten), so use `options(who_cvd.trend_method = "legacy")`.
+- **Coherent:** scales `DIS.mx.t0` by `1 + percent_diff_cvd`. It rebuilds `BG.mx.all` from each country's 2019 residual `ALL.mx − ΣDIS.mx.t0` × `(1 + percent_diff_bgmx_all)`, then sets `ALL.mx = BG.mx.all + ΣDIS` and `BG.mx = ALL.mx − DIS`. A post-guard identity check stops the run if the guard breaks that identity.
+- **Legacy:** applies `tps_bgmx_forecasted` / `tps_bgmx_all_forecasted` to `BG.mx` / `BG.mx.all` and `tps_bgmx_cvd_forecasted` to `CF`.
+- **Switches:** `run_bgmx_trend` / `run_CF_trend` turn the mortality and CF trends on or off. The CF share is 0.8 when `run_CF_trend_80`, else 1. `run_CF_trend_ihme` swaps the CF source for `tps_bgmx_cvd_ihme.rds` under either method.
+- **Accumulation:** `percent_diff` is cumulative from 2019, so it is applied once per projected year, never compounded.
+- **Standalone use:** 031 needs 00's settings in the session (it stops listing any that are missing). To change only trends, source 00 up to its settings block, then `source("031_calibration_trends.R")`.
+
+Current state: `adjusted_searo_part*.rds` in the working tree were regenerated by 031 but not committed, and 06 → 07 → 08 and the reports have not been re-run on them.
 
 **Not sourced by `00_run_model.R`**:
 
 - `09_uncertainty_psa.R` (+ `091`–`094`) — Aim 1 probabilistic sensitivity analysis; see **PSA** below.
 - `10_deterministic_dsa.R` — Aim 1 deterministic sensitivity analysis; see **DSA** below.
 
-  **Both are currently broken / out of sync:** (1) they re-run `05` expecting its trend blocks and `run_adjustment_model`, which moved to stages 03/031 (trends now in `031_calibration_trends.R`); (2) they still require the sodium/TFA pieces (`calculate_tfa_impact`, `dt_tfa_scenarios`, `salteff`/`saltmet`/`saltyear*`/`tfa_*` run-call args) that were removed from `06_run_scenarios_multiple.R`. `tests/test_aim1_psa.R` fails for the same reason. Update `091`–`094`, `10` and the test before running them.
+  **Both are currently broken / out of sync:** (1) they re-run `05` expecting its trend blocks and `run_adjustment_model`, which moved to 03/031; (2) they still require the sodium/TFA pieces (`calculate_tfa_impact`, `dt_tfa_scenarios`, `salteff`/`saltmet`/`saltyear*`/`tfa_*` run-call args) that were removed from `06_run_scenarios_multiple.R`. `tests/test_aim1_psa.R` fails for the same reason. Update `091`–`094`, `10` and the test before running them.
 
 ### Control flags
 
@@ -68,13 +81,14 @@ Set in `00_run_model.R`, consumed downstream:
 
 | Flag | Used in |
 |------|---------|
-| `run_aod_par` | `022_get_tps.R` (dementia arm) |
-| `run_calibration_par` | `03_calibration.R` (parallel calibration search) |
-| `inputs_mode` (`"reuse"` \| `"rebuild"`), `calibration_mode` (`"reuse"` \| `"factors"` \| `"run"`) | `00_run_model.R` stage control (also via `options(who_cvd.inputs_mode / who_cvd.calibration_mode)`) |
-| `trend_method`, `run_bgmx_trend`, `run_CF_trend`, `run_CF_trend_80`, `run_CF_trend_ihme` | `031_calibration_trends.R` (secular trends; precedence above) |
-| `run_adjustment_model` | vestigial — calibration is unconditional in `03_calibration.R`; kept (`TRUE`) only because the standalone `09_*`/`10_*` still parse it from `00` |
+| `run_calibration_par` (`FALSE`) | `00` — gates whether `03_calibration_who.R` runs at all (and its parallel search) |
+| `calibration_deaths_source` (`"WHO"`) | `03_calibration_who.R` and the alternative calibrators |
+| `run_bgmx_trend`, `run_CF_trend`, `run_CF_trend_80`, `run_CF_trend_ihme` | `031_calibration_trends.R` |
+| `trend_method` | not read (see above); use `options(who_cvd.trend_method = …)` |
+| `run_aod_par` | `022_get_tps.R` (dementia arm; off) |
+| `run_adjustment_model` | vestigial; kept only because `09_*` / `10_*` still parse it from `00` |
 
-`run_CF_trend_80` (consumed by `031_calibration_trends.R`) implements the baseline assumption that only 80% of the historical secular CF decline is exogenous (the other 20% attributed to past HTN control gains).
+`run_CF_trend_80` implements the baseline assumption that only 80% of the historical secular CF decline is exogenous (the other 20% attributed to past HTN control gains).
 
 R `options()` (default in parentheses):
 
@@ -86,8 +100,8 @@ R `options()` (default in parentheses):
 | `who_cvd.run_aim2_example` (`FALSE`) | Runs a single-country example in `06_run_scenarios_targets.R` |
 | `who_cvd.pilot_country` (`NULL`) | Restricts the Aim 1 batch in `06_run_scenarios_multiple.R` to one eligible country (e.g. `"Colombia"`) |
 | `who_cvd.execute_09` (`TRUE`) | `FALSE` loads the PSA functions without running `psa_main()` |
-| `who_cvd.cal_pilot` (`NULL`) | Restricts `03_calibration.R` to the named location(s) for a fast test (mirrors `who_cvd.pilot_country`); a pilot grid search overwrites `calibration_factors.csv` / `adjusted_tps` |
-| `who_cvd.settings_only` (`FALSE`) | `TRUE` makes `00_run_model.R` define the settings and stop before stage 02 (used by standalone 03/031) |
+| `who_cvd.cal_pilot` (`NULL`) | Restricts `03_calibration*.R` to the named location(s). It still overwrites `calibrated_searo_part*.rds` and `calibration_factors.csv`, so restore them afterwards |
+| `who_cvd.trend_method` (`"coherent"`) | Trend source in `031_calibration_trends.R` (`"coherent"` \| `"legacy"`) |
 
 ## Disease Model
 
@@ -181,7 +195,7 @@ The artefact hand-off is one-directional: **model → `out_model/` → report `.
 - `library/` — reference PDFs (GATHER checklist, Basios 2025 statin adherence, etc.)
 - `dev/` — task specs and review notes (`*_prompt.md`, `gate1_*`, `psa_feasibility_review.md`, `prompts.txt` log) — reference only, not instructions
 - `config/` — README only, currently unused
-- `R/` — `engine.R` / `utils.R` left over from an abandoned SEAHEARTS port; not referenced by anything
+- `R/` — `utils.R` is sourced by 00 (see the pipeline table); `engine.R` (`sh_*` state-projection helpers from an abandoned SEAHEARTS port) is not referenced
 - root `figure/` — stray knitr chunk output
 
 ## Economic Valuation (`08_economic_value_calculation.R`)
@@ -234,9 +248,9 @@ Rscript code/10_deterministic_dsa.R mode=full workers=5
 
 - **Location names** follow GBD 2023. Ad-hoc renames appear in several scripts (e.g. `United States of America` → `United States`, `Bolivia (Plurinational State of)` → `Bolivia`; see `aim2_recode_locations()` in 04). If a join silently drops rows, check location-name alignment first.
 - **Population**: UNWPP 2024 single-year age (`PopulationsSingleAge0050.rds`) overrides GBD `Nx` where available. Ages 95+ collapsed to 95.
-- **Age groups**: 5-year bins 20–24 through 85+. `create_age_groups()` in `01_utils.R`; `cal_age_group()` in `03_calibration.R` produces GBD-style labels (20–24 … 95+) for the calibration and trend merges.
+- **Age groups**: 5-year bins 20–24 through 85+. `create_age_groups()` in `01_utils.R`; `cal_age_group()` in the grid calibrators and `gbd_band_label()` in `R/utils.R` (alternative calibrators) produce GBD-style labels (20–24 … 95+) for calibration merges.
 - **Region/income groupings**: `data/processed/Country_groupings_extended.csv` (WHO region + World Bank income).
-- **Causes / no dementia**: the project models only the 4 CVD causes + "All causes" (`cause_map` in `00_run_model.R`; `adjusted_searo` keeps full GBD cause names, which 05 renames to the abbreviations). Never add a dementia (`aod`) node. Known inconsistency, not yet fixed: `021_get_base_rates.R` redefines `cause_map` with dementia, so the input `BG.mx.all` = ALL − ΣCVD − dementia, and dementia deaths drop out of model mortality in 2000–2019. Stage 031 re-anchors the projected years on `ALL.mx − ΣDIS` (dementia included), which leaves a step at 2020. The fix belongs in 021, followed by regenerating 022/03/031. `00` restores its own `cause_map` after a stage-02 rebuild.
+- **Causes / no dementia**: the project models only the 4 CVD causes + "All causes" (`cause_map` in `00_run_model.R`; `adjusted_searo` keeps full GBD cause names, which 05 renames to the abbreviations). Never add a dementia (`aod`) node. Known inconsistency, not yet fixed: `021_get_base_rates.R` redefines `cause_map` with dementia, so the input `BG.mx.all` = ALL − ΣCVD − dementia, and dementia deaths drop out of model mortality in 2000–2019. Coherent 031 re-anchors the projected years on `ALL.mx − ΣDIS` (dementia included), which leaves a step at 2020. The fix belongs in 021, followed by regenerating 022/03/031. Because 02 runs on every `00` run, 021's `cause_map` (with dementia) and 020's also **overwrite** 00's global `cause_map` before 07 uses it. `MODEL_CAUSES` is computed before 02, so it is unaffected.
 
 ### Key in-memory objects
 
@@ -250,10 +264,10 @@ Rscript code/10_deterministic_dsa.R mode=full workers=5
 
 ### Data locations
 
-`data/processed/` is version-controlled and holds the calibrated/derived inputs (`adjusted_tps_part*.rds` + `calibration_manifest.csv` + `calibration_factors.csv` / `calibration_diagnostics.csv` from stage 03, `adjusted_searo_part*.rds` + `trends_manifest.csv` from stage 031, `tps_inpt_part*.rds`, `tps_mortality_coherent_*.rds`, `baseline_rates_part*.rds`, `tps_bgmx_*.rds`, `bp_data6.csv`, `covfxn2.csv`, `wpp.adj.Rda`, `Scenarios.xlsx`, `htn_control_targets_*.csv`, `statins_control_targets_by_loc.csv`, statin/sodium/TFA scenario RDS files).
+`data/processed/` is version-controlled and holds the calibrated/derived inputs (`calibrated_searo_part*.rds` + `calibration_factors*.csv` / `calibration_diagnostics*.csv` from stage 03, `adjusted_searo_part*.rds` from stage 031, `dt_deaths_who_long.rds`, `tps_inpt_part*.rds`, `tps_mortality_coherent_*.rds`, `baseline_rates_part*.rds`, `tps_bgmx_*.rds`, `bp_data6.csv`, `covfxn2.csv`, `wpp.adj.Rda`, `Scenarios.xlsx`, `htn_control_targets_*.csv`, `statins_control_targets_by_loc.csv`, statin/sodium/TFA scenario RDS files).
 
 `data/raw/` is gitignored (`data/raw/**/*.*`, README files excepted). Needed there: GBD 2023 extracts, WHO GHE CVD/stroke CSVs, NCD-RisC hypertension estimates, `IHME_GBD_2019_RELATIVE_RISKS_Y2020M10D15_HTN.xlsx`, and the three economic-valuation files listed above.
 
-Also gitignored: `output/out_model/`, `output/dt_output_dalys.rds`, `*.html` (except `docs/*.html`), `*.doc`/`*.docx`, `.claude/worktrees/`, `output_psa/`, `output_dsa/`. `scenarios_psa/` and `scenarios_dsa/` (except `*.html`) are tracked.
+Also gitignored: `data/temp/**/*.*`, `output/out_model/`, `output/dt_output_dalys.rds`, `*.html` (except `docs/*.html`), `*.doc`/`*.docx`, `.claude/worktrees/`, `output_psa/`, `output_dsa/`. `scenarios_psa/` and `scenarios_dsa/` (except `*.html`) are tracked.
 
 The per-directory `README.md` files (`data/`, `docs/`, `output/`, `scenarios/`, `tests/`, `dev/`, `config/`, `manuscript/`, `library/`, …) are all copies of the root `README.md` boilerplate — they do not describe their directories.

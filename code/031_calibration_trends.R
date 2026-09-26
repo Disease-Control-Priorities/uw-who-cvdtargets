@@ -68,6 +68,106 @@ setorder(b_rates, location, sex, cause, year, age)
 # 7. SECULAR TRENDS  (projected years only; each applied exactly once)
 #===============================================================================
 
+## Default: the reconciled all-cause / four-CVD-cause / other-cause forecast
+## produced by 023_get_tps_bgmx.R. Set options(who_cvd.trend_method = "legacy")
+## before sourcing this script to recover the earlier separate forecast files.
+## The existing run_* switches and IHME CF alternative remain available.
+trend_method <- getOption("who_cvd.trend_method", "coherent")
+if (length(trend_method) != 1L || is.na(trend_method) ||
+    !trend_method %in% c("coherent", "legacy")) {
+  stop("who_cvd.trend_method must be 'coherent' or 'legacy'.", call. = FALSE)
+}
+
+if (trend_method == "coherent") {
+  coherent_file <- file.path(wd_data, "tps_mortality_coherent_forecasted.rds")
+  if (!file.exists(coherent_file)) {
+    stop("031_calibration_trends.R: coherent forecast not found: ",
+         coherent_file, "; run 023_get_tps_bgmx.R first.", call. = FALSE)
+  }
+  trend <- readRDS(coherent_file); setDT(trend)
+  trend_cols <- c("sex", "age", "year", "cause", "percent_diff_cvd",
+                  "percent_diff_bgmx_all")
+  if (!all(trend_cols %in% names(trend))) {
+    stop("031_calibration_trends.R: coherent forecast missing: ",
+         paste(setdiff(trend_cols, names(trend)), collapse = ", "), call. = FALSE)
+  }
+  short2full <- c(ihd = "Ischemic heart disease",
+                  istroke = "Ischemic stroke",
+                  hstroke = "Intracerebral hemorrhage",
+                  hhd = "Hypertensive heart disease")
+  trend <- trend[year > HIST_END & year %in% YEARS_TP,
+                 ..trend_cols]
+  trend[, cause := unname(short2full[as.character(cause)])]
+  if (anyNA(trend$cause) ||
+      anyDuplicated(trend, by = c("sex", "age", "year", "cause"))) {
+    stop("031_calibration_trends.R: coherent forecast has unmapped or ",
+         "duplicate cause/sex/age/year rows.", call. = FALSE)
+  }
+  
+  future <- merge(b_rates[year > HIST_END], trend,
+                  by = c("sex", "age", "year", "cause"), all.x = TRUE,
+                  sort = FALSE)
+  if (nrow(future) != nrow(b_rates[year > HIST_END]) ||
+      anyNA(future[, .(percent_diff_cvd, percent_diff_bgmx_all)]) ||
+      future[, any(!is.finite(percent_diff_cvd) |
+                   !is.finite(percent_diff_bgmx_all) |
+                   1 + percent_diff_cvd < 0 |
+                   1 + percent_diff_bgmx_all < 0)]) {
+    stop("031_calibration_trends.R: coherent forecast does not cover ",
+         "every projected sex/age/year/cause with valid trend factors.",
+         call. = FALSE)
+  }
+  if (!setequal(unique(future$cause), MODEL_CAUSES)) {
+    stop("031_calibration_trends.R: coherent cause names differ from ",
+         "MODEL_CAUSES.", call. = FALSE)
+  }
+  
+  ## Derive each location's 2019 other-cause rate from its all-cause rate
+  ## less the four disjoint modeled causes. Stage 02's BG.mx.all can differ
+  ## from this residual; using the residual enforces the accounting identity.
+  base <- b_rates[year == HIST_END,
+                  .(ALL_base = first(ALL.mx),
+                    ALL_spread = max(ALL.mx) - min(ALL.mx),
+                    cvd_base = sum(DIS.mx.t0),
+                    n_causes = .N),
+                  by = .(location, sex, age)]
+  if (base[, any(n_causes != length(MODEL_CAUSES) |
+                 ALL_spread > 1e-10 * pmax(ALL_base, 1) |
+                 ALL_base - cvd_base < -1e-10)]) {
+    stop("031_calibration_trends.R: 2019 all-cause rates are inconsistent ",
+         "across causes or below the sum of modeled CVD rates.", call. = FALSE)
+  }
+  base[, other_base := pmax(0, ALL_base - cvd_base)]
+  future <- merge(future, base[, .(location, sex, age, other_base)],
+                  by = c("location", "sex", "age"), all.x = TRUE,
+                  sort = FALSE)
+  if (anyNA(future$other_base)) {
+    stop("031_calibration_trends.R: missing 2019 other-cause baseline.",
+         call. = FALSE)
+  }
+  
+  if (isTRUE(run_bgmx_trend)) {
+    cat("  Applying coherent CVD-cause and other-cause mortality trends; ",
+        "reconstructing ALL.mx and BG.mx...\n", sep = "")
+    future[, DIS.mx.t0 := DIS.mx.t0 * (1 + percent_diff_cvd)]
+    future[, BG.mx.all := other_base * (1 + percent_diff_bgmx_all)]
+    future[, ALL.mx := BG.mx.all + sum(DIS.mx.t0),
+           by = .(location, sex, age, year)]
+    future[, BG.mx := ALL.mx - DIS.mx.t0]
+  }
+  if (isTRUE(run_CF_trend) && !isTRUE(run_CF_trend_ihme)) {
+    cf_share <- if (isTRUE(run_CF_trend_80)) 0.8 else 1
+    cat(sprintf("  Applying coherent cause trend to CF (%.0f%% of decline)...\n",
+                100 * cf_share))
+    future[, CF := CF * (1 + cf_share * percent_diff_cvd)]
+  }
+  future[, c("percent_diff_cvd", "percent_diff_bgmx_all",
+             "other_base") := NULL]
+  b_rates <- rbindlist(list(b_rates[year <= HIST_END], future),
+                       use.names = TRUE)
+  setorder(b_rates, location, sex, cause, year, age)
+}
+
 ## The forecasts are Global (percent_diff cumulative from the 2019 base), keyed
 ## by age x sex x cause x year with full cause names. Applied only to year > HIST_END
 ## so the calibration/observed years are never trended, and once per year so a
@@ -89,13 +189,14 @@ apply_trend <- function(dt, file, target_col, share = 1) {
   dt[]
 }
 
-if (isTRUE(run_bgmx_trend)) {
+if (trend_method == "legacy" && isTRUE(run_bgmx_trend)) {
   cat("  Applying background-mortality trends (BG.mx, BG.mx.all)...\n")
   b_rates <- apply_trend(b_rates, file.path(wd_data, "tps_bgmx_forecasted.rds"),     "BG.mx")
   b_rates <- apply_trend(b_rates, file.path(wd_data, "tps_bgmx_all_forecasted.rds"), "BG.mx.all")
 }
 
-if (isTRUE(run_CF_trend)) {
+if (isTRUE(run_CF_trend) &&
+    (trend_method == "legacy" || isTRUE(run_CF_trend_ihme))) {
   cf_share <- if (isTRUE(run_CF_trend_80)) 0.8 else 1
   if (isTRUE(run_CF_trend_ihme)) {
     cat("  Applying CF trend (IHME Foresight CVD forecast, cause x year)...\n")
@@ -134,6 +235,24 @@ b_rates[headroom >= 0 & CF > headroom, CF := headroom]
 n_bg_fix <- b_rates[headroom < 0, .N]
 b_rates[headroom < 0, `:=`(BG.mx = 1 - TP_EPS, IR = 0, CF = 0)]
 b_rates[, headroom := NULL]
+
+if (trend_method == "coherent" && isTRUE(run_bgmx_trend)) {
+  projected <- b_rates[year > HIST_END]
+  coherent_check <- projected[, .(
+    all_spread = max(ALL.mx) - min(ALL.mx),
+    other_spread = max(BG.mx.all) - min(BG.mx.all),
+    gap = abs(first(ALL.mx) - first(BG.mx.all) - sum(DIS.mx.t0)),
+    bg_gap = max(abs(BG.mx - (ALL.mx - DIS.mx.t0)))
+  ), by = .(location, sex, age, year)]
+  if (coherent_check[, any(all_spread > 1e-8 |
+                           other_spread > 1e-8 |
+                           gap > 1e-8 | bg_gap > 1e-8)]) {
+    stop("031_calibration_trends.R: projected mortality accounting identity ",
+         "was changed by the probability guard; inspect those rows.",
+         call. = FALSE)
+  }
+  rm(projected, coherent_check)
+}
 
 #===============================================================================
 # 9. VALIDATION

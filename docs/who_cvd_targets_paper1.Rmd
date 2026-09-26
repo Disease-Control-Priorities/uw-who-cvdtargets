@@ -117,6 +117,8 @@ income_by_deaths  <- rank_names(strata_dat, "deaths_averted", "World Bank income
 income_by_pct     <- rank_names(strata_dat, "deaths_pct_bau", "World Bank income group")
 ```
 
+\newpage
+
 # Abstract
 
 ## Structured abstract
@@ -147,7 +149,7 @@ This work is funded by the World Health Organization.
 
 Evidence before this study
 
-We did not conduct a formal systematic search. We drew on prior multi-country modelling studies of blood pressure control and lipid-lowering therapy identified through the authors' knowledge of the field and the reference lists of key studies and WHO and NCD Countdown 2030 technical reports. The clinical case for both interventions is well established: the individual-participant meta-analysis of the Blood Pressure Lowering Treatment Trialists' Collaboration [@BPLTTC2021] and the meta-analyses of the Cholesterol Treatment Trialists' Collaboration [@Fulcher2015] provide the trial-based effect sizes on which current WHO treatment guidelines rest. What has remained unquantified is the combined global health impact of treating both risk factors simultaneously at scale. Kontis and colleagues [-@Kontis2019] projected that antihypertensive scale-up to 70% coverage could delay up to 39.4 million deaths over 25 years; Pickersgill and colleagues [-@Pickersgill2022] estimated 76 to 130 million all-cause deaths averted under the 80-80-80 hypertension target but did not model statin therapy. The NCD Countdown 2030 analyses identified both interventions as among the most cost-efficient pathways to Sustainable Development Goal target 3.4 but did not quantify their joint health impact [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. To our knowledge, no published study has simultaneously projected the health consequences of achieving the combined 150-million hypertension control target across its mutually exclusive diabetes and non-diabetes subgroups together with the 50% statin coverage target across `r n_countries` countries, evaluated individually and in combination against a common business-as-usual baseline.
+We drew on prior multi-country modelling studies of blood pressure control and lipid-lowering therapy identified through the authors' knowledge of the field and the reference lists of key studies and WHO and NCD Countdown 2030 technical reports. The clinical case for both interventions is well established: the individual-participant meta-analysis of the Blood Pressure Lowering Treatment Trialists' Collaboration [@BPLTTC2021] and the meta-analyses of the Cholesterol Treatment Trialists' Collaboration [@Fulcher2015] provide the trial-based effect sizes on which current WHO treatment guidelines rest. What has remained unquantified is the combined global health impact of treating both risk factors simultaneously at scale. Kontis and colleagues [-@Kontis2019] projected that antihypertensive scale-up to 70% coverage could delay up to 39.4 million deaths over 25 years; Pickersgill and colleagues [-@Pickersgill2022] estimated 76 to 130 million all-cause deaths averted under the 80-80-80 hypertension target but did not model statin therapy. The NCD Countdown 2030 analyses identified both interventions as among the most cost-efficient pathways to Sustainable Development Goal target 3.4 but did not quantify their joint health impact [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. To our knowledge, no published study has simultaneously projected the health consequences of achieving the combined 150-million hypertension control target across its mutually exclusive diabetes and non-diabetes subgroups together with the 50% statin coverage target across `r n_countries` countries, evaluated individually and in combination against a common business-as-usual baseline.
 
 Added value of this study
 
@@ -218,6 +220,7 @@ The central analysis reports point estimates derived from mean input parameters.
 
 This study is reported in accordance with the Guidelines for Accurate and Transparent Health Estimates Reporting (GATHER) [@Stevens2016GATHER]. A completed 18-item GATHER checklist, mapping each item to the manuscript, supplement, or repository component that addresses it, is provided at the end of the Supplement (Section [GATHER checklist](#gather)).
 
+\newpage
 # Results
 
 ## Baseline global trajectory, 2026--2050
