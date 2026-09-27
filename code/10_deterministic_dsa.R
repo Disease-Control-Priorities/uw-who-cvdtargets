@@ -3,32 +3,46 @@
 # =============================================================================
 #
 # One-way deterministic scenario analyses around the ACTIVE Aim 1 base case
-# (00_run_model.R -> 04 -> 05 -> 06_run_scenarios_multiple.R -> 07 -> 08),
-# following Briggs et al., "Model Parameter Estimation and Uncertainty",
-# ISPOR-SMDM Task Force-6, Value Health 2012;15:835-842. Every DSA setting is a
-# deliberately chosen scenario value, NOT a probability distribution: results
-# are deterministic spreads, never confidence or credible intervals.
+# (00_run_model.R -> [03, gated] -> 031 -> 04 -> 05 -> 06_run_scenarios_multiple.R
+# -> 07 -> 08), following Briggs et al., "Model Parameter Estimation and
+# Uncertainty", ISPOR-SMDM Task Force-6, Value Health 2012;15:835-842. Every
+# DSA setting is a deliberately chosen scenario value, NOT a probability
+# distribution: results are deterministic spreads, never confidence or credible
+# intervals.
 #
 # Scenario families (manifest: dsa_manifest(); one source of truth for inputs,
 # report captions and slide labels):
-#   reference            the active 06 country call, reproduced exactly
+#   reference            the active pipeline: saved 031 rates + the executed 06 call
 #   target_achievement   50% / 75% of the increment above baseline, by 2030
 #   implementation_timing full endpoint reached in 2035 / 2040 (BP and statins)
 #   statin_adherence     low (0.50/0.65) and moderate (0.70/0.80) IR/CF adherence
 #   statin_adherence_income  illustrative World Bank income-group adherence map
-#   mortality_trend      CVD case-fatality trend regimes (background trend on)
+#   mortality_trend      CVD case-fatality trend regimes of 031 (one switch each)
 #   extra_reference      perfect statin adherence (1.00/1.00); NOT the base case
+#
+# Saved pipeline artefacts reused (the DSA never runs 02, 03, 04, 06, 07 or 08):
+#   * calibrated_searo_part*.rds + calibration_factors.csv  stage 03 output. The
+#     calibration (03_calibration_who.R) is NEVER re-run: no DSA setting changes
+#     an input of the 2009-2019 calibration window.
+#   * adjusted_searo_part*.rds  stage 031 output = the reference regime's rates.
+#   * htn_control_targets_by_loc.csv (04), the 023 trend files, and the 05-08
+#     inputs. A missing artefact stops the run with the stage that produces it.
 #
 # File boundary. This script writes ONLY below output_dsa/ and scenarios_dsa/
 # (every write goes through dsa_assert_write()). It reads, never edits, the
 # pipeline scripts and inputs:
-#   * 00_run_model.R  flag assignments (run_bgmx_trend, ...) and cause_map are
-#                     evaluated one by one; nothing else in 00 runs.
-#   * 05_build_baseline.R  evaluated in a sandbox after a static write scan.
-#                     The statements BEFORE its two trend blocks give one common
-#                     pre-trend b_rates; for every trend regime 05's own trend
-#                     blocks are re-evaluated on a fresh copy of that state
-#                     (never on an already-trended table).
+#   * 00_run_model.R  its settings block (every top-level `name <- value` before
+#                     `source("02_load_inputs.R")`) is evaluated after a static
+#                     write scan; nothing else in 00 runs.
+#   * 031_calibration_trends.R  evaluated in a sandbox up to, never including,
+#                     its write section, on the saved calibrated_searo. With the
+#                     00 switches it must reproduce the saved adjusted_searo
+#                     bit-for-bit (V01) or the run stops; each alternative trend
+#                     regime is the same evaluation with ONE switch changed.
+#   * 05_build_baseline.R  evaluated in a sandbox after a static write scan,
+#                     with its four adjusted_searo loading statements replaced
+#                     by the regime's rates (reference: the saved files, read as
+#                     05 reads them). 05 must contain no trend blocks.
 #   * 06_run_scenarios_multiple.R (the 06 script 00 sources) is never run with
 #                     its execution guard on. Its helpers and the function
 #                     definitions inside the guard are evaluated verbatim; its
@@ -49,21 +63,27 @@
 #                     table and so cannot run on a country subset.
 #   * 04 is never sourced (it rewrites data/processed/); its validated target
 #     table data/processed/htn_control_targets_by_loc.csv is read as 06 reads it.
-# Ordinary output/ files are read ONLY by the verification checks (V20-V23),
-# never as inputs to any DSA result.
+# Ordinary output/ files are read ONLY by the verification checks (V13,
+# V20-V23, V30), never as inputs to any DSA result.
+#
+# Report artefacts. Only a complete full run (mode=full, every DSA id) writes
+# the manuscript-facing artefacts in output_dsa/paper/ and output_dsa/slides/
+# and the tracked files in scenarios_dsa/; pilot and partial runs keep theirs
+# below output_dsa/runs/<run_id>/report/.
 #
 # Usage (from the repository root; R: "C:/Program Files/R/R-4.5.1/bin/Rscript.exe"):
 #   Rscript code/10_deterministic_dsa.R mode=pilot countries=Colombia workers=2
-#   Rscript code/10_deterministic_dsa.R mode=full workers=6
+#   Rscript code/10_deterministic_dsa.R mode=full workers=5
 #   Rscript code/10_deterministic_dsa.R render=only run_id=full
 # Other key=value options: dsa=<id,id,...> (default all), resume=TRUE,
-#   validate=TRUE, validate_05_regimes=TRUE, compare_ordinary=TRUE,
-#   render=TRUE|FALSE|only, run_id=<id>, ihme_raw_dir=<dir>.
+#   validate=TRUE, compare_ordinary=TRUE, render=TRUE|FALSE|only,
+#   render_slides=FALSE, run_id=<id>, ihme_raw_dir=<dir>.
 # Interactive use: options(who_cvd.execute_10 = FALSE); source(this file); then
 #   dsa_main(dsa_config(mode = "pilot", countries = "Colombia")).
 # R options: who_cvd.execute_10 (FALSE = define functions only),
 #   who_cvd.dsa_pilot_country (default pilot country), who_cvd.dsa_ids,
-#   who_cvd.repo_root (or env var WHO_CVD_ROOT) to override the repository root.
+#   who_cvd.repo_root (or env var WHO_CVD_ROOT) to override the repository root,
+#   who_cvd.trend_method (as in 031; the DSA requires its "coherent" default).
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -78,7 +98,7 @@ suppressPackageStartupMessages({
   library(parallel)
 })
 
-DSA_VERSION <- "1.0.0"
+DSA_VERSION <- "2.0.0"
 DSA_RENDER_TOKEN <- "rendered-by-10_deterministic_dsa"
 DSA_MODEL_YEARS <- 2017:2050          # rows present in the 06 model output
 DSA_REPORT_YEAR0 <- 2019L             # first year kept in the aggregated tables
@@ -264,65 +284,107 @@ dsa_scan_writes <- function(exprs, allow = character()) {
 }
 
 #...........................................................
-# 00_run_model.R switches (evaluated statement by statement) ----
+# 00_run_model.R settings (its settings block, evaluated verbatim) ----
 #...........................................................
 
-DSA_00_FLAGS <- c("run_adjustment_model", "run_bgmx_trend", "run_CF_trend",
-                  "run_CF_trend_80", "run_CF_trend_ihme")
+# The 031 switches the DSA varies, and the settings it needs from 00.
+DSA_00_FLAGS <- c("run_bgmx_trend", "run_CF_trend", "run_CF_trend_80", "run_CF_trend_ihme")
+DSA_00_REQUIRED <- c(DSA_00_FLAGS, "cause_map", "MODEL_CAUSES", "AGES", "SEXES", "YEARS_HIST",
+                     "YEARS_TP", "TP_EPS", "calibrated_stub", "adjusted_stub", "N_OUT_CHUNKS",
+                     "CAL_IR_GRID", "CAL_CF_GRID")
 
+# Every top-level `name <- value` statement of 00 before it sources
+# 02_load_inputs.R, with `wd` set to this repository. library(), setwd(),
+# source(), rm() and if() statements are not evaluated, so 02, 03, 031 and
+# 04-08 never run from here.
 dsa_read_00 <- function(paths) {
-  exprs <- parse(file.path(paths$wd_code, "00_run_model.R"), keep.source = FALSE)
+  exprs <- as.list(parse(file.path(paths$wd_code, "00_run_model.R"), keep.source = FALSE))
+  src <- vapply(exprs, function(e) {
+    if (is.call(e) && identical(e[[1]], as.name("source"))) paste(deparse(e[[2]]), collapse = "") else NA_character_
+  }, "")
+  i02 <- which(grepl("02_load_inputs", src, fixed = TRUE))
+  if (length(i02) != 1L) stop("00_run_model.R: expected exactly one source(\"02_load_inputs.R\").")
+  st <- Filter(function(e) is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+                 !identical(as.character(e[[2]]), "wd"), exprs[seq_len(i02 - 1L)])
+  bad <- dsa_scan_writes(st)
+  if (length(bad)) stop("00_run_model.R settings block contains write calls: ", paste(bad, collapse = ", "))
   env <- new.env(parent = baseenv())
-  for (e in exprs) {
-    if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
-        as.character(e[[2]]) %in% c(DSA_00_FLAGS, "cause_map")) {
-      if (length(dsa_called_functions(e[[3]])) && !identical(dsa_called_functions(e[[3]]), "c")) {
-        stop("00_run_model.R: unexpected expression for ", as.character(e[[2]]))
-      }
-      eval(e, env)
-    }
-  }
-  miss <- setdiff(c(DSA_00_FLAGS, "cause_map"), ls(env))
+  env$wd <- paths$wd
+  for (e in st) eval(e, env)
+  miss <- setdiff(DSA_00_REQUIRED, ls(env))
   if (length(miss)) stop("00_run_model.R no longer assigns: ", paste(miss, collapse = ", "))
   flags <- mget(DSA_00_FLAGS, envir = env)
   if (!all(vapply(flags, function(x) is.logical(x) && length(x) == 1L && !is.na(x), logical(1)))) {
     stop("00_run_model.R trend switches must be single TRUE/FALSE values.")
   }
-  list(flags = flags, cause_map = env$cause_map)
+  # Stage order the DSA relies on: trends are applied once, in 031, before 05.
+  s <- src[!is.na(src)]
+  p031 <- which(grepl("031_calibration_trends.R", s, fixed = TRUE))[1]
+  p05  <- which(grepl("05_build_baseline.R", s, fixed = TRUE))[1]
+  if (is.na(p031) || is.na(p05) || p031 > p05) {
+    stop("00_run_model.R no longer sources 031_calibration_trends.R before 05_build_baseline.R; update the DSA.")
+  }
+  get0l <- function(nm, default) if (exists(nm, envir = env, inherits = FALSE)) get(nm, envir = env) else default
+  list(flags = flags, cause_map = env$cause_map,
+       settings = mget(setdiff(ls(env), "wd"), envir = env),
+       trend_method_00 = get0l("trend_method", NA_character_),
+       run_calibration_par = get0l("run_calibration_par", NA),
+       calibration_deaths_source = get0l("calibration_deaths_source", NA_character_))
 }
 
 #...........................................................
 # Trend regimes and the scenario manifest (single source of truth) ----
 #...........................................................
 
-# CVD trend regimes. Background trend (run_bgmx_trend) is ON in every regime.
-# `run_CF_trend_80_used` records whether 05 actually reads the 80% switch in
-# that regime; where it does not, the value passed is the 00 value and is
-# documented as irrelevant.
-dsa_trend_regimes <- function(flags00) {
-  if (!isTRUE(flags00$run_bgmx_trend) || !isTRUE(flags00$run_CF_trend) ||
-      !isTRUE(flags00$run_CF_trend_80) || !isFALSE(flags00$run_CF_trend_ihme) ||
-      !isTRUE(flags00$run_adjustment_model)) {
+# The trend source 031 uses by default (getOption("who_cvd.trend_method", "coherent")).
+DSA_TREND_METHOD <- "coherent"
+
+# CVD trend regimes = 031_calibration_trends.R evaluated with the 00 switches
+# (reference) or with exactly ONE switch changed. The coherent mortality block
+# (DIS.mx.t0, BG.mx.all, ALL.mx, BG.mx; run_bgmx_trend) is identical in every
+# regime; only the case-fatality (CF) trend differs. `run_CF_trend_80_used`
+# records whether 031 reads the 80% share in that regime (it does in the
+# coherent and the IHME branches, not when run_CF_trend = FALSE).
+dsa_trend_regimes <- function(r00) {
+  f <- r00$flags
+  if (!isTRUE(f$run_bgmx_trend) || !isTRUE(f$run_CF_trend) ||
+      !isTRUE(f$run_CF_trend_80) || !isFALSE(f$run_CF_trend_ihme)) {
     stop("00_run_model.R switches differ from the documented DSA reference ",
          "(run_bgmx_trend = TRUE, run_CF_trend = TRUE, run_CF_trend_80 = TRUE, ",
-         "run_CF_trend_ihme = FALSE, run_adjustment_model = TRUE). Update the DSA regimes first.")
+         "run_CF_trend_ihme = FALSE). Update the DSA regimes first.")
+  }
+  method <- getOption("who_cvd.trend_method", DSA_TREND_METHOD)
+  if (!identical(method, DSA_TREND_METHOD)) {
+    stop("The DSA trend regimes are defined around 031's '", DSA_TREND_METHOD, "' default, but ",
+         "options(who_cvd.trend_method) is '", method, "'. Unset it (the saved adjusted_searo ",
+         "must then reproduce, check V01).")
+  }
+  if (!is.na(r00$trend_method_00) && !identical(r00$trend_method_00, method)) {
+    stop("00_run_model.R sets trend_method = '", r00$trend_method_00, "' but 031 would use '",
+         method, "'; resolve before running the DSA.")
   }
   data.table(
     trend_regime        = c("reference", "trend_full_cvd", "trend_no_cvd", "trend_ihme_cvd"),
-    run_bgmx_trend      = TRUE,
-    run_CF_trend        = c(TRUE, TRUE, FALSE, TRUE),
-    run_CF_trend_80     = c(TRUE, FALSE, TRUE, TRUE),   # value passed to 05
-    run_CF_trend_80_used = c(TRUE, TRUE, FALSE, FALSE),  # does 05 read it?
-    run_CF_trend_ihme   = c(FALSE, FALSE, FALSE, TRUE),
-    cvd_trend_input     = c("tps_bgmx_cvd_forecasted.rds (x 0.8 percent_diff)",
-                            "tps_bgmx_cvd_forecasted.rds (x 1.0 percent_diff)",
-                            "none (CF keeps its pre-trend post-2019 values)",
-                            "tps_bgmx_cvd_ihme.rds (x 1.0 percent_diff; 80% switch not used)"),
-    cvd_trend_formula   = c("CF_t = CF_pre,t * (1 + 0.8 * pd[age,sex,cause,t]), t > 2019",
-                            "CF_t = CF_pre,t * (1 + pd[age,sex,cause,t]), t > 2019",
-                            "CF_t = CF_pre,t",
-                            "CF_t = CF_pre,t * (1 + pd_IHME[cause,t]), t > 2019"),
-    background_inputs   = "tps_bgmx_forecasted.rds (BG.mx) + tps_bgmx_all_forecasted.rds (BG.mx.all), identical in every regime"
+    trend_method        = method,
+    run_bgmx_trend      = f$run_bgmx_trend,
+    run_CF_trend        = c(f$run_CF_trend, f$run_CF_trend, FALSE, f$run_CF_trend),
+    run_CF_trend_80     = c(f$run_CF_trend_80, FALSE, f$run_CF_trend_80, f$run_CF_trend_80),
+    run_CF_trend_80_used = c(TRUE, TRUE, FALSE, TRUE),   # does 031 read it?
+    run_CF_trend_ihme   = c(f$run_CF_trend_ihme, f$run_CF_trend_ihme, f$run_CF_trend_ihme, TRUE),
+    changed_switch      = c("none (00_run_model.R values)", "run_CF_trend_80 = FALSE",
+                            "run_CF_trend = FALSE", "run_CF_trend_ihme = TRUE"),
+    cvd_trend_input     = c("tps_mortality_coherent_forecasted.rds percent_diff_cvd (x 0.8)",
+                            "tps_mortality_coherent_forecasted.rds percent_diff_cvd (x 1.0)",
+                            "none (CF held at its calibrated 2019 value)",
+                            "tps_bgmx_cvd_ihme.rds percent_diff (x 0.8)"),
+    cvd_trend_formula   = c("CF_t = CF_2019 * (1 + 0.8 * pd_cvd[sex,age,cause,t]), t > 2019",
+                            "CF_t = CF_2019 * (1 + pd_cvd[sex,age,cause,t]), t > 2019",
+                            "CF_t = CF_2019, t > 2019",
+                            "CF_t = CF_2019 * (1 + 0.8 * pd_IHME[cause,t]), t > 2019"),
+    background_inputs   = paste0("tps_mortality_coherent_forecasted.rds: DIS.mx.t0 x (1 + pd_cvd), BG.mx.all = ",
+                                 "2019 other-cause residual x (1 + pd_bgmx_all), ALL.mx = BG.mx.all + sum DIS.mx.t0, ",
+                                 "BG.mx = ALL.mx - DIS.mx.t0; identical in every regime. All regimes then pass ",
+                                 "031's probability guard (IR, CF <= 1 - BG.mx - TP_EPS).")
   )
 }
 
@@ -342,10 +404,16 @@ DSA_INCOME_ADHERENCE <- data.table(
 # Country-code aliases between the GBD-style grouping file and World Bank files.
 DSA_ISO3_ALIASES <- c(SDS = "SSD")   # South Sudan
 
-dsa_manifest <- function(ref, regimes) {
+dsa_manifest <- function(ref, regimes, r00) {
   a_ir <- ref$adherence_ir; a_cf <- ref$adherence_cf
   ty <- as.integer(ref$statin_target_year)
   sc <- ref$statin_target_coverage
+  # Position of a scenario adherence value relative to the reference (so the
+  # manifest never mislabels a value, e.g. a "low" CF above the base case).
+  vs_ref <- function(x, r) if (isTRUE(all.equal(x, r))) "equal to" else if (x < r) "below" else "above"
+  adh_note <- function(ir, cf) sprintf("Scenario value: IR %s and CF %s the base case (IR %.3f / CF %.3f, Basios et al. 2025)",
+                                       vs_ref(ir, a_ir), vs_ref(cf, a_cf), a_ir, a_cf)
+  cal_src <- if (is.na(r00$calibration_deaths_source)) "" else paste0(r00$calibration_deaths_source, " death target, ")
   row <- function(dsa_id, order, family, family_label, analysis, label, short_label,
                   target_fraction = 1, bp_target_year = ty, statin_target_year = ty,
                   adherence_mode = "constant", adherence_ir = a_ir, adherence_cf = a_cf,
@@ -364,12 +432,14 @@ dsa_manifest <- function(ref, regimes) {
   fmt2 <- function(x) formatC(x, format = "f", digits = 3)
   m <- rbindlist(list(
     row("reference", 1, "reference", "Reference", "reference",
-        "Reference: active 06 base case", "Reference",
-        assumption = paste0("Active 06 country call: BP 150M target reached 2030; statins ",
-                            round(sc * 100), "% by ", ty, "; statin adherence IR ", fmt2(a_ir),
-                            " / CF ", fmt2(a_cf), "; sodium inert (salteff = 0); TFA eliminated from ",
-                            ref$tfa_policy_start_year, "; CVD CF trend at 80% of the input series."),
-        source_note = "06_run_scenarios_multiple.R %dopar% call; 00_run_model.R switches; Basios et al. 2025 (adherence)"),
+        "Reference: active Aim 1 base case", "Reference",
+        assumption = paste0("Active pipeline: stage-03 calibration (", cal_src, "reused, not re-estimated); ",
+                            "031 coherent mortality trends with the CVD case-fatality trend at 80% of the ",
+                            "coherent CVD decline (saved adjusted_searo); BP 150M target reached 2030 (04 table); statins ",
+                            round(sc * 100), "% by ", ty, " (start ", as.integer(ref$statin_start_year),
+                            "); statin adherence IR ", fmt2(a_ir), " / CF ", fmt2(a_cf), "."),
+        source_note = paste0("06_run_scenarios_multiple.R %dopar% call; 00_run_model.R settings; ",
+                             "adjusted_searo_part*.rds (031); Basios et al. 2025 (adherence)")),
     row("target_50", 2, "target_achievement", "Target achievement", "one_way",
         "Partial achievement: 50% of the increment by 2030", "50% of increment",
         target_fraction = 0.50,
@@ -395,12 +465,12 @@ dsa_manifest <- function(ref, regimes) {
         "Statin adherence low (IR 0.50 / CF 0.65)", "Statin adherence low",
         adherence_ir = 0.50, adherence_cf = 0.65,
         assumption = "Assumed effective statin persistence/adherence over the horizon: IR 0.50 (primary prevention), CF 0.65 (secondary prevention). BP effects unchanged.",
-        source_note = "Scenario value; below the base case of Basios et al. 2025"),
+        source_note = adh_note(0.50, 0.65)),
     row("adherence_moderate", 7, "statin_adherence", "Statin adherence", "one_way",
         "Statin adherence moderate (IR 0.70 / CF 0.80)", "Statin adherence moderate",
         adherence_ir = 0.70, adherence_cf = 0.80,
         assumption = "Assumed effective statin persistence/adherence: IR 0.70, CF 0.80. BP effects unchanged.",
-        source_note = "Scenario value; above the base case of Basios et al. 2025"),
+        source_note = adh_note(0.70, 0.80)),
     row("adherence_income", 8, "statin_adherence_income", "Statin adherence by income group", "one_way",
         "Statin adherence by World Bank income group (illustrative)", "Statin adherence by income",
         adherence_mode = "income_group", adherence_ir = NA_real_, adherence_cf = NA_real_,
@@ -418,23 +488,29 @@ dsa_manifest <- function(ref, regimes) {
         assumption = "Statin adherence 1.00/1.00 (the calculate_statins_impact() default). Shown for context only; never the DSA anchor.",
         source_note = "Function default in 06; not the active call"),
     row("trend_full_cvd", 10, "mortality_trend", "CVD mortality trend", "one_way",
-        "CVD case-fatality trend at 100% of the input series", "Full CVD CF trend",
+        "CVD case-fatality trend at 100% of the coherent CVD decline", "Full CVD CF trend",
         trend_regime = "trend_full_cvd",
-        assumption = "run_CF_trend_80 = FALSE: CF multiplied by (1 + percent_diff) instead of (1 + 0.8 percent_diff). Same pre-supplied series, not a new Lee-Carter fit.",
-        source_note = "tps_bgmx_cvd_forecasted.rds (023_get_tps_bgmx.R, Lee-Carter with damped-trend ETS)"),
+        assumption = paste0("031 with run_CF_trend_80 = FALSE: CF_t = CF_2019 x (1 + percent_diff_cvd) instead of ",
+                            "(1 + 0.8 percent_diff_cvd). Same coherent forecast, not a new fit; the coherent ",
+                            "mortality block (DIS.mx.t0, BG.mx.all, ALL.mx, BG.mx) is unchanged."),
+        source_note = paste0("tps_mortality_coherent_forecasted.rds (023_get_tps_bgmx.R, Li et al. 2019 coherent ",
+                             "forecast reconciled by MinT); 031_calibration_trends.R")),
     row("trend_no_cvd", 11, "mortality_trend", "CVD mortality trend", "one_way",
-        "No CVD case-fatality trend (background trend retained)", "No CVD CF trend",
+        "No CVD case-fatality trend (coherent mortality trends retained)", "No CVD CF trend",
         trend_regime = "trend_no_cvd",
-        assumption = "run_CF_trend = FALSE: no secular trend applied to CF; BG.mx and BG.mx.all keep the reference background trend.",
-        source_note = "05_build_baseline.R switches"),
+        assumption = paste0("031 with run_CF_trend = FALSE: CF held at its calibrated 2019 value after 2019; ",
+                            "the coherent mortality block is unchanged."),
+        source_note = "031_calibration_trends.R switches"),
     row("trend_ihme_cvd", 12, "mortality_trend", "CVD mortality trend", "one_way",
-        "IHME GBD Foresight CVD trend", "IHME Foresight CVD trend",
+        "IHME GBD Foresight CVD case-fatality trend", "IHME Foresight CVD trend",
         trend_regime = "trend_ihme_cvd",
-        assumption = "run_CF_trend_ihme = TRUE: CF multiplied by (1 + cause-year percent_diff) from the IHME Foresight reference-scenario global age-standardised death rates; the 80% switch is not used in this branch.",
-        source_note = "tps_bgmx_cvd_ihme.rds (023_get_tps_bgmx.R from gbd2023_foresight_asr_*20+.csv)")
+        assumption = paste0("031 with run_CF_trend_ihme = TRUE: CF_t = CF_2019 x (1 + 0.8 percent_diff[cause, t]) ",
+                            "from the IHME Foresight reference-scenario global age-standardised CVD death rates ",
+                            "(031 applies the same 80% share as the reference); the coherent mortality block is unchanged."),
+        source_note = "tps_bgmx_cvd_ihme.rds (023_get_tps_bgmx.R from gbd2023_foresight_asr_*20+.csv); 031_calibration_trends.R")
   ), use.names = TRUE)
-  m <- merge(m, regimes[, .(trend_regime, run_bgmx_trend, run_CF_trend, run_CF_trend_80,
-                            run_CF_trend_80_used, run_CF_trend_ihme, cvd_trend_input,
+  m <- merge(m, regimes[, .(trend_regime, trend_method, run_bgmx_trend, run_CF_trend, run_CF_trend_80,
+                            run_CF_trend_80_used, run_CF_trend_ihme, changed_switch, cvd_trend_input,
                             cvd_trend_formula)], by = "trend_regime", all.x = TRUE, sort = FALSE)
   setorder(m, order)
   setcolorder(m, c("dsa_id", "order", "family", "family_label", "analysis", "label", "short_label"))
@@ -450,6 +526,7 @@ dsa_manifest_display <- function(m) {
         `Statin endpoint coverage` = statin_target_coverage_full,
         `Statin adherence IR` = fifelse(adherence_mode == "income_group", "income map", sprintf("%.3f", adherence_ir)),
         `Statin adherence CF` = fifelse(adherence_mode == "income_group", "income map", sprintf("%.3f", adherence_cf)),
+        `Trend method (031)` = trend_method, `031 switch changed` = changed_switch,
         `run_bgmx_trend` = run_bgmx_trend, `run_CF_trend` = run_CF_trend,
         `run_CF_trend_80` = fifelse(run_CF_trend_80_used, as.character(run_CF_trend_80), "irrelevant"),
         `run_CF_trend_ihme` = run_CF_trend_ihme, `CVD trend input` = cvd_trend_input,
@@ -458,29 +535,8 @@ dsa_manifest_display <- function(m) {
 }
 
 #...........................................................
-# 05: parse, pre-trend state, trend regimes ----
+# 031: CVD-trend regimes built from the saved calibrated rates ----
 #...........................................................
-
-dsa_parse_05 <- function(paths) {
-  f <- file.path(paths$wd_code, "05_build_baseline.R")
-  exprs <- parse(f, keep.source = FALSE)
-  bad <- dsa_scan_writes(exprs, allow = "setwd")
-  if (length(bad)) stop("05_build_baseline.R contains write calls: ", paste(bad, collapse = ", "))
-  is_trend <- vapply(exprs, function(e) {
-    is.call(e) && identical(e[[1]], as.name("if")) &&
-      any(all.names(e[[2]]) %in% c("run_bgmx_trend", "run_CF_trend"))
-  }, logical(1))
-  ti <- which(is_trend)
-  if (length(ti) != 2L || diff(ti) != 1L) {
-    stop("05: expected exactly two consecutive trend blocks (run_bgmx_trend, then run_CF_trend).")
-  }
-  if (!"run_bgmx_trend" %in% all.names(exprs[[ti[1]]][[2]]) ||
-      !"run_CF_trend" %in% all.names(exprs[[ti[2]]][[2]])) {
-    stop("05: trend blocks are not in the expected order.")
-  }
-  list(file = f, exprs = exprs, pre = seq_len(ti[1] - 1L), trend = ti,
-       post = seq.int(ti[2] + 1L, length(exprs)))
-}
 
 dsa_eval_in_sandbox <- function(exprs, env) {
   owd <- getwd()
@@ -493,50 +549,191 @@ dsa_eval_in_sandbox <- function(exprs, env) {
   unique(warns)
 }
 
-dsa_05_env <- function(paths, flags) {
+# 031 checks its settings with exists() called from vapply(), which looks up
+# the global environment, not the sandbox. For the duration of `code` the 00
+# settings are therefore also assigned there; previous values are restored and
+# new names removed afterwards (nothing outside this R session is touched).
+dsa_with_globals <- function(vars, code) {
+  ge <- globalenv()
+  had <- vapply(names(vars), exists, logical(1), envir = ge, inherits = FALSE)
+  clash <- names(vars)[had][vapply(names(vars)[had], function(n) is.function(get(n, envir = ge)), logical(1))]
+  if (length(clash)) stop("00 settings would mask functions of this session: ", paste(clash, collapse = ", "))
+  old <- mget(names(vars)[had], envir = ge)
+  on.exit({
+    suppressWarnings(rm(list = names(vars)[!had], envir = ge))
+    for (nm in names(old)) assign(nm, old[[nm]], envir = ge)
+  }, add = TRUE)
+  for (nm in names(vars)) assign(nm, vars[[nm]], envir = ge)
+  force(code)
+}
+
+DSA_031_KEYS <- c("location", "sex", "cause", "year", "age")   # 031's row order
+
+# 031_calibration_trends.R split at its write section: every statement before
+# the first one that writes (the removal/saveRDS of adjusted_searo) is
+# evaluated; that statement and everything after it never are.
+dsa_parse_031 <- function(paths) {
+  f <- file.path(paths$wd_code, "031_calibration_trends.R")
+  exprs <- as.list(parse(f, keep.source = FALSE))
+  w <- vapply(exprs, function(e) length(dsa_scan_writes(list(e))) > 0L, logical(1))
+  if (!any(w)) stop("031_calibration_trends.R: no write section found; update the DSA.")
+  iw <- which(w)[1]
+  tail <- exprs[iw:length(exprs)]
+  # What is skipped may only write and clean up; it must not change b_rates.
+  changes <- vapply(tail, function(e) {
+    s <- paste(deparse(e), collapse = " ")
+    grepl("b_rates[[:space:]]*(<-|=[^=])", s) || grepl("set[a-z]+\\(b_rates", s) ||
+      grepl("b_rates\\[[^]]*:=", s)
+  }, logical(1))
+  if (any(changes)) stop("031: statements in or after its write section modify b_rates; update the DSA.")
+  compute <- exprs[seq_len(iw - 1L)]
+  if (!any(vapply(compute, function(e) "getOption" %in% all.names(e), logical(1)))) {
+    stop("031 no longer selects its trend source with getOption(\"who_cvd.trend_method\"); update the DSA.")
+  }
+  list(file = f, compute = compute, n_skipped = length(tail))
+}
+
+dsa_regime_row <- function(regimes, regime) {
+  r <- regimes[trend_regime == regime]
+  if (nrow(r) != 1L) stop("Unknown trend regime: ", regime)
+  as.list(r)
+}
+
+# 031 in a sandbox with the regime's switches, on the saved calibrated_searo.
+# Returns its in-memory b_rates exactly as 031 would write it (full GBD cause
+# names, all locations, 2000-2050).
+dsa_run_031 <- function(paths, p031, r00, rrow) {
+  s <- r00$settings
+  for (nm in DSA_00_FLAGS) s[[nm]] <- rrow[[nm]]
+  env <- new.env(parent = globalenv())
+  for (nm in names(s)) assign(nm, s[[nm]], envir = env)
+  old <- options(who_cvd.trend_method = rrow$trend_method)
+  on.exit(options(old), add = TRUE)
+  out <- NULL; warns <- NULL
+  dsa_with_globals(s, {
+    out <- utils::capture.output(warns <- dsa_eval_in_sandbox(p031$compute, env))
+  })
+  list(rates = env$b_rates, log = out, warnings = warns,
+       guard = c(ir_capped = env$n_ir_cap, cf_capped = env$n_cf_cap, bg_shrunk = env$n_bg_fix))
+}
+
+dsa_saved_files <- function(paths, stub) {
+  f <- list.files(paths$wd_data, pattern = paste0("^", stub, "[0-9]+[.]rds$"), full.names = TRUE)
+  if (!length(f)) stop("No ", stub, "*.rds in ", paths$wd_data, ".")
+  f
+}
+
+# V01: the reference regime (031 with the 00 switches) equals the SAVED
+# adjusted_searo, chunk by chunk (each file holds whole locations in 031's row
+# order). The saved rows of the modelled locations are returned in the order
+# 05 reads them; they are the reference regime's input to 05.
+dsa_verify_031_reference <- function(paths, stub, x031, raw_locs) {
+  files <- dsa_saved_files(paths, stub)
+  keep <- vector("list", length(files)); seen <- character(); bad <- character()
+  for (i in seq_along(files)) {
+    d <- readRDS(files[i]); setDT(d)
+    L <- unique(d$location)
+    s <- x031[location %in% L]
+    same <- identical(names(d), names(s)) && nrow(d) == nrow(s) &&
+      identical(vapply(d, typeof, ""), vapply(s, typeof, "")) &&
+      isTRUE(all.equal(d, s, tolerance = 0, check.attributes = FALSE))
+    if (!same) bad <- c(bad, basename(files[i]))
+    seen <- c(seen, L)
+    keep[[i]] <- d[location %in% raw_locs]
+    rm(d, s)
+  }
+  loc_ok <- !anyDuplicated(seen) && setequal(seen, unique(x031$location))
+  pass <- !length(bad) && loc_ok
+  check <- dsa_check("V01", paste0("031 re-evaluated on the saved calibrated_searo with the 00 switches reproduces ",
+                                   "the saved adjusted_searo (all locations and columns, tolerance 0)"), pass,
+                     if (pass) sprintf("%d files, %d locations, %d rows: identical", length(files), length(seen), nrow(x031))
+                     else paste0("differs in: ", paste(bad, collapse = ", "),
+                                 if (!loc_ok) "; location sets differ" else ""), nrow(x031))
+  list(check = check, rates = rbindlist(keep, use.names = TRUE, fill = TRUE))
+}
+
+#...........................................................
+# 05: evaluated with the regime's rates in place of its loading block ----
+#...........................................................
+
+# 05 must not apply trends any more (031 does, once). Its four statements that
+# read adjusted_searo (files <- list.files(...); dt_list <- lapply(...);
+# b_rates <- rbindlist(...); rm(dt_list, files)) are located structurally and
+# replaced by the regime's rates; every other statement is evaluated verbatim.
+dsa_parse_05 <- function(paths, adjusted_stub) {
+  f <- file.path(paths$wd_code, "05_build_baseline.R")
+  exprs <- as.list(parse(f, keep.source = FALSE))
+  bad <- dsa_scan_writes(exprs, allow = "setwd")
+  if (length(bad)) stop("05_build_baseline.R contains write calls: ", paste(bad, collapse = ", "))
+  trend_if <- vapply(exprs, function(e) {
+    is.call(e) && identical(e[[1]], as.name("if")) &&
+      any(all.names(e[[2]]) %in% c("run_bgmx_trend", "run_CF_trend", "run_adjustment_model"))
+  }, logical(1))
+  if (any(trend_if)) {
+    stop("05_build_baseline.R again contains trend/adjustment blocks; the regime rates would be trended ",
+         "twice (trends belong to 031). Update the DSA.")
+  }
+  is_assign <- function(e, nm) is.call(e) && identical(e[[1]], as.name("<-")) && identical(e[[2]], as.name(nm))
+  i_files <- which(vapply(exprs, function(e) {
+    is_assign(e, "files") && any(grepl(adjusted_stub, deparse(e), fixed = TRUE))
+  }, logical(1)))
+  if (length(i_files) != 1L) stop("05: could not find the statement listing the ", adjusted_stub, " files.")
+  blk <- i_files + 0:3
+  ok <- blk[4] <= length(exprs) &&
+    is_assign(exprs[[blk[2]]], "dt_list") && identical(exprs[[blk[2]]][[3]][[1]], as.name("lapply")) &&
+    is_assign(exprs[[blk[3]]], "b_rates") && identical(exprs[[blk[3]]][[3]][[1]], as.name("rbindlist")) &&
+    is.call(exprs[[blk[4]]]) && identical(exprs[[blk[4]]][[1]], as.name("rm")) &&
+    setequal(all.vars(exprs[[blk[4]]]), c("dt_list", "files"))
+  if (!ok) {
+    stop("05: the adjusted_searo loading block changed (expected files <- list.files(...); ",
+         "dt_list <- lapply(...); b_rates <- rbindlist(...); rm(dt_list, files)). Update the DSA.")
+  }
+  if (any(vapply(exprs[-blk], function(e) any(grepl(adjusted_stub, deparse(e), fixed = TRUE)), logical(1)))) {
+    stop("05 reads ", adjusted_stub, " outside its loading block; update the DSA.")
+  }
+  list(file = f, exprs = exprs, pre = seq_len(i_files - 1L), load = blk,
+       post = seq.int(blk[4] + 1L, length(exprs)))
+}
+
+# 05's location renames (b_rates[location == "A", location := "B"]), so the
+# modelled countries can be selected under their 031 (GBD) names.
+dsa_05_renames <- function(p05) {
+  out <- character()
+  for (e in p05$exprs[p05$post]) {
+    if (is.call(e) && identical(e[[1]], as.name("[")) && length(e) >= 4L &&
+        identical(e[[2]], as.name("b_rates")) && !dsa_is_empty_arg(e, 3L) && !dsa_is_empty_arg(e, 4L)) {
+      i <- e[[3]]; j <- e[[4]]
+      if (is.call(i) && identical(i[[1]], as.name("==")) && identical(i[[2]], as.name("location")) &&
+          is.character(i[[3]]) && is.call(j) && identical(j[[1]], as.name(":=")) &&
+          identical(j[[2]], as.name("location")) && is.character(j[[3]])) {
+        out[i[[3]]] <- j[[3]]
+      }
+    }
+  }
+  out
+}
+
+dsa_raw_locations <- function(raw, locs, renames) {
+  mapped <- ifelse(raw %in% names(renames), unname(renames[raw]), raw)
+  raw[mapped %in% locs]
+}
+
+# 05 in a sandbox; `rates` stands in for its loading block and is modified in
+# place by 05's first statements, so callers must not reuse it.
+dsa_run_05 <- function(paths, p05, rates) {
   env <- new.env(parent = globalenv())
   env$wd_raw <- paths$wd_raw
   env$wd_data <- paths$wd_data
-  for (nm in names(flags)) assign(nm, flags[[nm]], envir = env)
-  env
-}
-
-# Everything 05 does before its trend blocks: adjusted rates, UNWPP population,
-# COVID rebalancing, 2020-2050 replication, IR/CF adjustments, covid.mx merge.
-dsa_run_05_pre <- function(paths, p05, flags) {
-  env <- dsa_05_env(paths, flags)
-  warns <- dsa_eval_in_sandbox(p05$exprs[p05$pre], env)
+  w1 <- dsa_eval_in_sandbox(p05$exprs[p05$pre], env)
+  env$b_rates <- rates
+  w2 <- dsa_eval_in_sandbox(p05$exprs[p05$post], env)
   # repYear() is a closure over the 05 sandbox; re-home it (outputs unchanged).
   rep_year <- env$repYear
   environment(rep_year) <- baseenv()
   probe <- seq_len(34L * 224L)
   if (!identical(rep_year(probe), env$repYear(probe))) stop("repYear() depends on its 05 environment.")
-  list(b_pre = env$b_rates, data.in = env$data.in, inc = env$inc, repYear = rep_year,
-       warnings = warns)
-}
-
-# 05's own trend blocks re-evaluated on a FRESH copy of the common pre-trend
-# state (never on a table that already carries a trend).
-dsa_apply_trends <- function(b_pre, flags, paths, p05) {
-  env <- dsa_05_env(paths, flags)
-  env$b_rates <- data.table::copy(b_pre)
-  dsa_eval_in_sandbox(p05$exprs[p05$trend], env)
-  env$b_rates
-}
-
-# Full 05 in one sandbox (independent reproduction check, V01/V02).
-dsa_run_05_full <- function(paths, p05, flags) {
-  env <- dsa_05_env(paths, flags)
-  dsa_eval_in_sandbox(p05$exprs, env)
-  env$b_rates
-}
-
-dsa_regime_flags <- function(regimes, regime, flags00) {
-  r <- regimes[trend_regime == regime]
-  if (nrow(r) != 1L) stop("Unknown trend regime: ", regime)
-  list(run_adjustment_model = flags00$run_adjustment_model,
-       run_bgmx_trend = r$run_bgmx_trend, run_CF_trend = r$run_CF_trend,
-       run_CF_trend_80 = r$run_CF_trend_80, run_CF_trend_ihme = r$run_CF_trend_ihme)
+  list(b_rates = env$b_rates, data.in = env$data.in, inc = env$inc, repYear = rep_year,
+       warnings = unique(c(w1, w2)))
 }
 
 #...........................................................
@@ -601,10 +798,13 @@ dsa_06_run_args <- function(p06) {
                      logical(1))
   args <- lapply(a[constant], function(x) x)
   need <- c("statin_target_coverage", "statin_start_year", "statin_target_year",
-            "adherence_ir", "adherence_cf", "saltmet", "salteff", "saltyear1",
-            "saltyear2", "tfa_target_tfa", "tfa_policy_start_year")
+            "adherence_ir", "adherence_cf")
   miss <- setdiff(need, names(args))
   if (length(miss)) stop("06 run call no longer passes constants: ", paste(miss, collapse = ", "))
+  # Any other constant (e.g. a re-introduced intervention parameter) would be
+  # silently dropped by dsa_project_country(): stop instead.
+  extra <- setdiff(names(args), c(need, "baseline_statin_coverage"))
+  if (length(extra)) stop("06 run call passes constants the DSA does not handle: ", paste(extra, collapse = ", "))
   if (!"baseline_statin_coverage" %in% names(a)) args["baseline_statin_coverage"] <- list(NULL)
   nonconst <- vapply(a[!constant], function(x) paste(deparse(x), collapse = ""), "")
   expected_nc <- c(Country = "country", scenario_list = "scenarios",
@@ -617,13 +817,13 @@ dsa_06_run_args <- function(p06) {
   args
 }
 
-# 06's setup statements evaluated read-only on a given b_rates (per regime).
-dsa_06_setup <- function(paths, p06, b_rates, base05) {
+# 06's setup statements evaluated read-only on a regime's 05 output.
+dsa_06_setup <- function(paths, p06, b_rates, r05) {
   env <- new.env(parent = globalenv())
   env$b_rates <- b_rates
-  env$data.in <- data.table::copy(base05$data.in)
-  env$inc     <- data.table::copy(base05$inc)
-  env$repYear <- base05$repYear
+  env$data.in <- data.table::copy(r05$data.in)
+  env$inc     <- data.table::copy(r05$inc)
+  env$repYear <- r05$repYear
   env$wd_raw  <- paths$wd_raw
   env$wd_data <- paths$wd_data
   old <- options(who_cvd.execute_06 = FALSE)
@@ -633,7 +833,7 @@ dsa_06_setup <- function(paths, p06, b_rates, base05) {
     for (e in p06$setup) eval(e, env)
   })
   need <- c("b_rates", "data.in", "inc", "dt_gbd_rr", "ETIHAD_RR", "ETIHAD_RR_BIN",
-            "dt_tfa_scenarios", "dt_statin_scenarios", "dt_af_statins", "dt_hbp_targets",
+            "dt_statin_scenarios", "dt_af_statins", "dt_hbp_targets",
             "scenarios", "htn_scenario_ids", "project.all", "prepare_country_context",
             "run_multiple_scenarios")
   miss <- need[!vapply(need, exists, logical(1), envir = env, inherits = FALSE)]
@@ -653,7 +853,7 @@ dsa_06_locations <- function(data_in, dt_hbp_targets) {
 # Data objects the 06 functions read as globals (06 runs them in the global
 # environment; here each country task gets its own environment).
 DSA_06_DATA <- c("b_rates", "data.in", "inc", "repYear", "dt_gbd_rr", "ETIHAD_RR",
-                 "ETIHAD_RR_BIN", "dt_tfa_scenarios", "dt_statin_scenarios",
+                 "ETIHAD_RR_BIN", "dt_statin_scenarios",
                  "dt_af_statins", "dt_hbp_targets", "scenarios", "htn_scenario_ids")
 
 dsa_country_data <- function(env06, Country) {
@@ -666,7 +866,6 @@ dsa_country_data <- function(env06, Country) {
        dt_gbd_rr = env06$dt_gbd_rr,
        ETIHAD_RR = env06$ETIHAD_RR,
        ETIHAD_RR_BIN = env06$ETIHAD_RR_BIN,
-       dt_tfa_scenarios = env06$dt_tfa_scenarios[location == Country],
        dt_statin_scenarios = env06$dt_statin_scenarios[location == Country],
        dt_af_statins = env06$dt_af_statins[location == Country],
        dt_hbp_targets = env06$dt_hbp_targets[location == Country],
@@ -1038,28 +1237,14 @@ dsa_08_country <- function(dt_model, g) {
 # Country metadata: WHO region and World Bank income group ----
 #...........................................................
 
-# WHO region: the aim1_report.Rmd `country-metadata` logic (who-regions.csv by
-# iso3 plus its who_fix table). Income group: resolved EXPLICITLY for every
-# model country (World Bank 2026 file; iso3 aliases; otherwise the latest
-# classification in the World Bank historical file OGHIST). Unresolved -> stop.
-dsa_income_history <- function(paths) {
-  f <- file.path(paths$wd_raw, "OGHIST_2026_03_10 World Bank Income Group.xlsx")
-  if (!file.exists(f)) return(NULL)
-  x <- suppressMessages(as.data.table(read_excel(f, sheet = "Country Analytical History",
-                                                  col_names = FALSE)))
-  hdr <- which(x[[2]] == "Bank's fiscal year:")
-  if (length(hdr) != 1L) stop("OGHIST: fiscal-year header row not found.")
-  fy <- unlist(x[hdr, -(1:2)], use.names = FALSE)
-  rows <- x[grepl("^[A-Z]{3}$", x[[1]])]
-  long <- melt(rows, id.vars = names(rows)[1:2], variable.name = "col", value.name = "code")
-  setnames(long, names(rows)[1:2], c("iso3", "wb_name"))
-  long[, fy := fy[match(col, names(rows)[-(1:2)])]]
-  long <- long[code %in% c("L", "LM", "UM", "H") & !is.na(fy)]
-  long[, fy_num := as.integer(sub("^FY", "", fy))]
-  long[, fy_num := fifelse(fy_num < 50L, 2000L + fy_num, 1900L + fy_num)]   # FY89..FY99, FY00..FY26
-  long[order(fy_num), .(last_code = code[.N], last_fy = fy[.N]), by = iso3]
-}
-
+# WHO region and World Bank income group exactly as aim1_report.Rmd's
+# `country-metadata` chunk defines them (who-regions.csv by iso3 plus its
+# who_fix table; World Bank 2026 file by iso3 with blank codes -> Low income),
+# so every stratified DSA table matches the primary report and the manuscript.
+# Countries that rule leaves unclassified (iso3 absent from the World Bank
+# file, e.g. South Sudan: SDS vs SSD) stay unclassified in the report strata;
+# for the income-group adherence INPUT only they are resolved through
+# DSA_ISO3_ALIASES with the same blank -> Low rule. Unresolved -> stop.
 dsa_country_metadata <- function(paths, locs) {
   countries_dt <- fread(paste0(paths$wd_data, "Country_groupings_extended.csv"))
   who_regions <- fread(paste0(paths$wd_raw, "who-regions.csv"))
@@ -1077,6 +1262,19 @@ dsa_country_metadata <- function(paths, locs) {
   countries_dt[, region_who_fix := NULL]
   countries_dt[, region := fifelse(!is.na(region_who), region_who, region)]
   countries_dt[, region_who := NULL]
+  # Income group: aim1_report.Rmd's statements verbatim (blank -> L; merge by
+  # iso3; the first row per location is kept, which also resolves an iso3 the
+  # World Bank file lists twice).
+  ig_raw <- fread(paste0(paths$wd_raw, "World Bank Income Group 2026.csv"))
+  income_groups <- copy(ig_raw)
+  income_groups[location_income == "", location_income := "L"]
+  lab <- setNames(DSA_INCOME_ADHERENCE$income_group, DSA_INCOME_ADHERENCE$income_code)
+  if (!all(income_groups$location_income %in% names(lab))) {
+    stop("World Bank 2026 file: unexpected income codes ",
+         paste(setdiff(income_groups$location_income, names(lab)), collapse = ", "))
+  }
+  income_groups[, location_income := unname(lab[location_income])]
+  countries_dt <- merge(countries_dt, income_groups[, .(iso3, location_income)], by = "iso3", all.x = TRUE)
   countries_dt <- unique(countries_dt, by = "location")
   meta <- countries_dt[data.table(location = locs), on = .(location)]
   if (anyNA(meta$iso3)) stop("Country metadata: no iso3 for ", paste(meta[is.na(iso3), location], collapse = ", "))
@@ -1084,31 +1282,25 @@ dsa_country_metadata <- function(paths, locs) {
   if (any(!meta$region %in% who_levels)) {
     stop("Country metadata: no WHO region for ", paste(meta[!region %in% who_levels, location], collapse = ", "))
   }
-  # Income group, resolved explicitly: (1) World Bank 2026 file by iso3 (with
-  # the documented alias table); (2) if unclassified there, the latest code in
-  # the World Bank historical file; (3) otherwise stop. No default group.
-  valid <- DSA_INCOME_ADHERENCE$income_code
-  ig <- fread(paste0(paths$wd_raw, "World Bank Income Group 2026.csv"))
-  ig <- unique(ig[location_income %in% valid, .(iso3, wb_code = location_income)])
-  if (anyDuplicated(ig$iso3)) stop("World Bank 2026 file: conflicting codes for ", paste(ig[duplicated(iso3), iso3], collapse = ", "))
-  meta[, iso3_wb := fifelse(iso3 %in% names(DSA_ISO3_ALIASES), unname(DSA_ISO3_ALIASES[iso3]), iso3)]
-  meta[, income_code := ig$wb_code[match(iso3_wb, ig$iso3)]]
-  meta[, income_source := fifelse(is.na(income_code), NA_character_,
-                                  fifelse(iso3_wb != iso3, paste0("World Bank 2026 (iso3 alias ", iso3, " -> ", iso3_wb, ")"),
-                                          "World Bank 2026"))]
-  hist <- dsa_income_history(paths)
-  if (anyNA(meta$income_code) && !is.null(hist)) {
-    j <- match(meta$iso3_wb, hist$iso3)
-    fill <- is.na(meta$income_code) & !is.na(j)
-    meta[fill, `:=`(income_code = hist$last_code[j[fill]],
-                    income_source = paste0("World Bank historical classification (blank in the 2026 file; latest ",
-                                           hist$last_fy[j[fill]], ")"))]
-  }
+  # Adherence input: the reporting group's code, or, where aim1_report.Rmd
+  # leaves a country unclassified, the code of its iso3 alias (first row).
+  meta[, iso3_wb := fifelse(is.na(location_income) & iso3 %in% names(DSA_ISO3_ALIASES),
+                            unname(DSA_ISO3_ALIASES[iso3]), iso3)]
+  meta[, income_code := names(lab)[match(location_income, lab)]]
+  meta[, alias_code := names(lab)[match(income_groups$location_income[match(iso3_wb, income_groups$iso3)], lab)]]
+  meta[is.na(income_code) & iso3_wb != iso3, income_code := alias_code]
+  ig_n <- ig_raw[, .(n = .N, n_blank = sum(location_income == "")), by = iso3]
+  meta[, income_source := fcase(
+    is.na(income_code), NA_character_,
+    iso3_wb != iso3, paste0("World Bank 2026 via iso3 alias ", iso3, " -> ", iso3_wb,
+                            " (adherence input only; unclassified in the aim1_report.Rmd income strata)"),
+    iso3 %in% ig_n[n > 1L, iso3], "iso3 listed more than once in the World Bank 2026 file; first row used, as aim1_report.Rmd",
+    iso3 %in% ig_n[n_blank == n, iso3], "blank in the World Bank 2026 file -> Low income (aim1_report.Rmd rule)",
+    default = "World Bank 2026")]
   if (anyNA(meta$income_code)) {
     stop("Income group unresolved for: ", paste(meta[is.na(income_code), location], collapse = ", "),
-         ". Add an explicit entry; the DSA never assigns a default income group.")
+         ". Add an iso3 alias to DSA_ISO3_ALIASES; the DSA never assigns a default income group.")
   }
-  meta[, location_income := DSA_INCOME_ADHERENCE$income_group[match(income_code, DSA_INCOME_ADHERENCE$income_code)]]
   meta <- meta[, .(location, iso3, iso3_wb, region, income_code, location_income, income_source)]
   if (anyDuplicated(meta$location)) stop("Country metadata: duplicated locations.")
   meta[]
@@ -1246,12 +1438,6 @@ dsa_project_country <- function(env, ctx, Country, d, ra) {
       statin_target_year       = d$statin_target_year,
       adherence_ir             = d$adherence_ir,
       adherence_cf             = d$adherence_cf,
-      saltmet   = ra$saltmet,
-      salteff   = ra$salteff,
-      saltyear1 = ra$saltyear1,
-      saltyear2 = ra$saltyear2,
-      tfa_target_tfa        = ra$tfa_target_tfa,
-      tfa_policy_start_year = ra$tfa_policy_start_year,
       baseline_statin_coverage = ra$baseline_statin_coverage,
       country_context = ctx
     )
@@ -1406,8 +1592,9 @@ dsa_run_country_task <- function(task) {
   data.table::setDTthreads(1L)
   Country <- task$Country
   env <- dsa_task_env(task$data, task$fun_exprs, task$allowed_target_years)
+  # As run_multiple_scenarios() decides it.
   make_bp <- any(vapply(env$scenarios, function(s) {
-    any(c("antihypertensive_no_diabetes", "antihypertensive_diabetes", "sodium") %in% s)
+    any(c("antihypertensive_no_diabetes", "antihypertensive_diabetes") %in% s)
   }, logical(1)))
   ctx <- env$prepare_country_context(Country, make_bp_baseline = make_bp)
   ctx_digest <- digest::digest(ctx, algo = "xxhash64")
@@ -1489,8 +1676,8 @@ dsa_worker_init <- function(code_file) {
 
 dsa_config <- function(mode = c("pilot", "full"), countries = NULL, dsa_ids = NULL,
                        workers = NULL, resume = TRUE, validate = TRUE,
-                       validate_05_regimes = TRUE, compare_ordinary = TRUE,
-                       render = TRUE, run_id = NULL,
+                       compare_ordinary = TRUE, render = TRUE, render_slides = FALSE,
+                       run_id = NULL,
                        # Optional: raw IHME Foresight downloads, used only by the
                        # provenance check V12 (outside the repository).
                        ihme_raw_dir = getOption("who_cvd.ihme_raw_dir",
@@ -1499,7 +1686,8 @@ dsa_config <- function(mode = c("pilot", "full"), countries = NULL, dsa_ids = NU
   mode <- match.arg(mode)
   if (mode == "pilot" && is.null(countries)) countries <- getOption("who_cvd.dsa_pilot_country", "Colombia")
   if (is.null(dsa_ids)) dsa_ids <- getOption("who_cvd.dsa_ids", NULL)
-  if (is.null(workers)) workers <- if (mode == "pilot") 2L else 6L   # full: ~1 GB per worker + ~3 GB master
+  if (is.null(workers)) workers <- if (mode == "pilot") 2L else 5L   # full: ~1 GB per worker + ~4 GB master
+  if (mode == "full" && !is.null(countries)) stop("mode=full runs every eligible country; use mode=pilot with countries=.")
   if (is.null(run_id)) {
     run_id <- if (mode == "pilot") paste0("pilot_", paste(countries, collapse = "-")) else "full"
     if (!is.null(dsa_ids)) run_id <- paste0(run_id, "_", paste(dsa_ids, collapse = "-"))
@@ -1507,28 +1695,32 @@ dsa_config <- function(mode = c("pilot", "full"), countries = NULL, dsa_ids = NU
   }
   list(mode = mode, countries = countries, dsa_ids = dsa_ids, workers = as.integer(workers),
        resume = isTRUE(resume), validate = isTRUE(validate),
-       validate_05_regimes = isTRUE(validate_05_regimes), compare_ordinary = isTRUE(compare_ordinary),
-       render = render, run_id = run_id, ihme_raw_dir = ihme_raw_dir)
+       compare_ordinary = isTRUE(compare_ordinary),
+       render = render, render_slides = isTRUE(render_slides), run_id = run_id, ihme_raw_dir = ihme_raw_dir)
 }
+
+# A complete full run (every eligible country, every DSA id) is the only kind
+# that publishes the manuscript-facing artefacts (output_dsa/paper, /slides) and
+# the tracked files in scenarios_dsa/.
+dsa_is_published <- function(mode, complete) identical(mode, "full") && isTRUE(complete)
 
 dsa_parse_cli <- function(args = commandArgs(trailingOnly = TRUE)) {
   kv <- strsplit(args, "=", fixed = TRUE)
   opt <- setNames(lapply(kv, function(x) paste(x[-1], collapse = "=")), vapply(kv, `[`, "", 1))
   lg <- function(x, default) if (is.null(x)) default else toupper(x) %in% c("TRUE", "T", "1", "YES")
   split <- function(x) if (is.null(x) || x %in% c("", "all")) NULL else trimws(strsplit(x, ",", fixed = TRUE)[[1]])
-  known <- c("mode", "countries", "dsa", "workers", "resume", "validate", "validate_05_regimes",
-             "compare_ordinary", "render", "run_id", "ihme_raw_dir")
+  known <- c("mode", "countries", "dsa", "workers", "resume", "validate",
+             "compare_ordinary", "render", "render_slides", "run_id", "ihme_raw_dir")
   bad <- setdiff(names(opt), known)
   if (length(bad)) stop("Unknown option(s): ", paste(bad, collapse = ", "), ". Known: ", paste(known, collapse = ", "))
-  o <- function(nm) opt[[nm, exact = TRUE]]   # exact: `$` would let "validate" match "validate_05_regimes"
+  o <- function(nm) opt[[nm, exact = TRUE]]   # exact: `$` would let "render" match "render_slides"
   render <- if (is.null(o("render"))) TRUE else if (tolower(o("render")) == "only") "only" else lg(o("render"), TRUE)
   args <- list(mode = if (is.null(o("mode"))) "pilot" else o("mode"),
                countries = split(o("countries")), dsa_ids = split(o("dsa")),
                workers = if (is.null(o("workers"))) NULL else as.integer(o("workers")),
                resume = lg(o("resume"), TRUE), validate = lg(o("validate"), TRUE),
-               validate_05_regimes = lg(o("validate_05_regimes"), TRUE),
                compare_ordinary = lg(o("compare_ordinary"), TRUE),
-               render = render, run_id = o("run_id"))
+               render = render, render_slides = lg(o("render_slides"), FALSE), run_id = o("run_id"))
   if (!is.null(o("ihme_raw_dir"))) args$ihme_raw_dir <- o("ihme_raw_dir")
   do.call(dsa_config, args)
 }
@@ -1538,29 +1730,75 @@ dsa_md5 <- function(files) {
   setNames(unname(tools::md5sum(files)), basename(files))
 }
 
-dsa_input_files <- function(paths) {
-  c(list.files(paths$wd_data, pattern = "adjusted", full.names = TRUE),
-    file.path(paths$wd_data, c("wpp.adj.Rda", "PopulationsSingleAge0050.rds", "PopulationsAge20_2050.csv",
-                               "bp_data6.csv", "covfxn2.csv", "adjustments2023_age.csv",
-                               "tps_bgmx_forecasted.rds", "tps_bgmx_all_forecasted.rds",
-                               "tps_bgmx_cvd_forecasted.rds", "tps_bgmx_cvd_ihme.rds",
-                               "htn_control_targets_by_loc.csv", "htn_control_targets_summary.csv",
-                               "ettehad_rr_bp_reduction_10mmHg_bplttc_2021.csv",
-                               "ettehad_rr_bp_reduction_effects_bplttc_2021.xlsx",
-                               "sodium_policy_scenarios.rds", "tfa_policy_scenarios.rds",
-                               "statin_data.rds", "af_statins.rds", "Country_groupings_extended.csv")),
-    file.path(paths$wd_raw, c("IHME_GBD_2019_RELATIVE_RISKS_Y2020M10D15_HTN.xlsx",
-                              "World Bank Income Group 2026.csv", "who-regions.csv",
-                              "OGHIST_2026_03_10 World Bank Income Group.xlsx",
-                              "API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv",
-                              "WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx",
-                              "1721734326790-ssp_basic_drivers_release_3.1_full.xlsx",
-                              "GBD/IHME-GBD_2023_DATA-52d32656-1.csv")))
+# Saved pipeline artefacts and inputs the DSA reads, with the stage that
+# produces each. `required = FALSE` marks verification-only files.
+dsa_artefacts <- function(paths, settings) {
+  d <- paths$wd_data; r <- paths$wd_raw; o <- paths$wd_outp_ordinary
+  a <- function(file, producer, required = TRUE, pattern = NULL) {
+    data.table(file = file, pattern = if (is.null(pattern)) NA_character_ else pattern,
+               producer = producer, required = required)
+  }
+  rbindlist(list(
+    a(d, "03_calibration_who.R (stage 03; expensive, ~45 min; the DSA never runs it)",
+      pattern = paste0("^", settings$calibrated_stub, "[0-9]+[.]rds$")),
+    a(file.path(d, "calibration_factors.csv"), "03_calibration_who.R (stage 03; read by 031's validation)"),
+    a(d, "031_calibration_trends.R (stage 031, after 03)", pattern = paste0("^", settings$adjusted_stub, "[0-9]+[.]rds$")),
+    a(file.path(d, "tps_mortality_coherent_forecasted.rds"), "023_get_tps_bgmx.R (stage 02)"),
+    a(file.path(d, "tps_bgmx_cvd_ihme.rds"), "023_get_tps_bgmx.R (stage 02)"),
+    a(file.path(d, "htn_control_targets_by_loc.csv"), "04_define_interventions.R"),
+    a(file.path(d, c("wpp.adj.Rda", "PopulationsSingleAge0050.rds", "PopulationsAge20_2050.csv",
+                     "bp_data6.csv", "covfxn2.csv")), "processed input read by 05"),
+    a(file.path(d, c("statin_data.rds", "af_statins.rds", "ettehad_rr_bp_reduction_10mmHg_bplttc_2021.csv",
+                     "ettehad_rr_bp_reduction_effects_bplttc_2021.xlsx")), "processed input read by 06"),
+    a(file.path(r, "IHME_GBD_2019_RELATIVE_RISKS_Y2020M10D15_HTN.xlsx"), "raw input read by 06"),
+    a(file.path(r, c("GBD/IHME-GBD_2023_DATA-52d32656-1.csv",
+                     "WPP2024_MORT_F05_1_LIFE_EXPECTANCY_BY_AGE_BOTH_SEXES.xlsx")), "raw input read by 07"),
+    a(file.path(r, c("API_NY.GNP.PCAP.PP.KD_DS2_en_csv_v2_7203.csv",
+                     "1721734326790-ssp_basic_drivers_release_3.1_full.xlsx", "who-regions.csv")), "raw input read by 08"),
+    a(file.path(d, "Country_groupings_extended.csv"), "processed input (country metadata)"),
+    a(file.path(r, "World Bank Income Group 2026.csv"), "raw input (country metadata)"),
+    a(file.path(o, "out_model"), "06_run_scenarios_multiple.R (verification V21 only)", FALSE,
+      pattern = "^model_output_.*[.]rds$"),
+    a(file.path(o, "08_vsl_results.rds"), "08_economic_value_calculation.R (verification V22 only)", FALSE),
+    a(file.path(o, "dt_output_dalys.rds"), "07_output_dalys.R (verification V23 only)", FALSE),
+    a(file.path(o, "paper", c("paper_scalars.rds", "paper_params.rds")), "aim1_report.Rmd (verification V13/V30 only)", FALSE)
+  ))
+}
+
+# Preflight: stop, naming the producing stage, if a required artefact is
+# missing. The DSA never launches an upstream stage itself.
+dsa_preflight <- function(paths, settings) {
+  a <- dsa_artefacts(paths, settings)
+  a[, dir_ := fifelse(is.na(pattern), dirname(file), file)]   # pattern rows: `file` is the directory
+  a[, found := vapply(seq_len(.N), function(i) {
+    if (is.na(pattern[i])) file.exists(file[i]) else length(list.files(dir_[i], pattern = pattern[i])) > 0L
+  }, logical(1))]
+  miss <- a[required == TRUE & found == FALSE]
+  if (nrow(miss)) {
+    stop("Missing pipeline artefact(s) the DSA reuses (it does not run upstream stages):\n",
+         paste0("  - ", fifelse(is.na(miss$pattern), miss$file, paste0(miss$dir_, "/", miss$pattern)),
+                "  [produced by ", miss$producer, "]", collapse = "\n"),
+         "\nProduce them with the named stage, then rerun the DSA.", call. = FALSE)
+  }
+  a[, mtime := vapply(seq_len(.N), function(i) {
+    f <- if (is.na(pattern[i])) file[i] else list.files(dir_[i], pattern = pattern[i], full.names = TRUE)
+    if (!length(f) || !all(file.exists(f))) NA_real_ else max(as.numeric(file.mtime(f)))
+  }, numeric(1))]
+  a[, .(file = fifelse(is.na(pattern), file, paste0(dir_, "/", pattern)), producer, required, found,
+        mtime = as.POSIXct(mtime, origin = "1970-01-01"))]
+}
+
+dsa_input_files <- function(paths, settings) {
+  a <- dsa_artefacts(paths, settings)[required == TRUE]
+  unlist(lapply(seq_len(nrow(a)), function(i) {
+    if (is.na(a$pattern[i])) a$file[i] else list.files(a$file[i], pattern = a$pattern[i], full.names = TRUE)
+  }))
 }
 
 dsa_code_files <- function(paths, p06_file) {
-  c(file.path(paths$wd_code, c("00_run_model.R", "05_build_baseline.R", "07_output_dalys.R",
-                               "08_economic_value_calculation.R", "10_deterministic_dsa.R")), p06_file)
+  c(file.path(paths$wd_code, c("00_run_model.R", "031_calibration_trends.R", "05_build_baseline.R",
+                               "07_output_dalys.R", "08_economic_value_calculation.R", "10_deterministic_dsa.R")),
+    p06_file)
 }
 
 # Snapshot of every repository file outside output_dsa/, scenarios_dsa/, .git/
@@ -1592,27 +1830,33 @@ dsa_git <- function(paths, args) {
 dsa_prepare_shared <- function(paths, cfg) {
   t0 <- Sys.time()
   r00 <- dsa_read_00(paths)
-  regimes <- dsa_trend_regimes(r00$flags)
-  p05 <- dsa_parse_05(paths)
+  artefacts <- dsa_preflight(paths, r00$settings)
+  regimes <- dsa_trend_regimes(r00)
+  p031 <- dsa_parse_031(paths)
+  p05 <- dsa_parse_05(paths, r00$settings$adjusted_stub)
   p06 <- dsa_parse_06(paths)
   ra <- dsa_06_run_args(p06)
-  dsa_log("06 script: %s | executed call: statins %.2f by %d (start %d), adherence IR %.3f / CF %.3f, salteff %s, TFA %s from %d.",
+  dsa_log("06 script: %s | executed call: statins %.2f by %d (start %d), adherence IR %.3f / CF %.3f.",
           basename(p06$file), ra$statin_target_coverage, as.integer(ra$statin_target_year),
-          as.integer(ra$statin_start_year), ra$adherence_ir, ra$adherence_cf, ra$salteff,
-          ra$tfa_target_tfa, as.integer(ra$tfa_policy_start_year))
-  manifest <- dsa_manifest(ra, regimes)
+          as.integer(ra$statin_start_year), ra$adherence_ir, ra$adherence_cf)
+  dsa_log("031 trend method '%s', 00 switches %s. Stage 03 is reused from disk, never run (00: run_calibration_par = %s).",
+          regimes$trend_method[1],
+          paste(names(r00$flags), unlist(r00$flags), sep = "=", collapse = ", "), r00$run_calibration_par)
+  manifest <- dsa_manifest(ra, regimes, r00)
   if (!is.null(cfg$dsa_ids)) {
     bad <- setdiff(cfg$dsa_ids, manifest$dsa_id)
     if (length(bad)) stop("Unknown dsa ids: ", paste(bad, collapse = ", "))
   }
-  dsa_log("Evaluating 05 (pre-trend state) ...")
-  flags_ref <- dsa_regime_flags(regimes, "reference", r00$flags)
-  base05 <- dsa_run_05_pre(paths, p05, flags_ref)
-  dsa_log("05 pre-trend state: %d rate rows (%.0f s).", nrow(base05$b_pre),
-          as.numeric(difftime(Sys.time(), t0, units = "secs")))
+  # data.in, inc and repYear do not depend on the rates: 05 is evaluated once on
+  # a single saved location to obtain them and the 06 location list.
+  probe <- readRDS(dsa_saved_files(paths, r00$settings$adjusted_stub)[1]); setDT(probe)
+  probe <- probe[location == location[1]]
+  base05 <- dsa_run_05(paths, p05, probe)[c("data.in", "inc", "repYear")]
+  rm(probe)
+  renames <- dsa_05_renames(p05)
   tg_all <- fread(paste0(paths$wd_data, "htn_control_targets_by_loc.csv"))
-  # 06 builds its list from its own data.in (after prepare_sodium_data, which
-  # only merges salt); dsa_main() confirms it against each regime's 06 setup.
+  # 06 builds its list from its own data.in; dsa_main() confirms it against
+  # each regime's 06 setup.
   all_locs <- dsa_06_locations(base05$data.in, tg_all)
   locs <- all_locs
   if (!is.null(cfg$countries)) {
@@ -1620,10 +1864,8 @@ dsa_prepare_shared <- function(paths, cfg) {
     if (length(bad)) stop("Requested countries are not eligible 06 locations: ", paste(bad, collapse = ", "))
     locs <- cfg$countries
   }
-  # Only the modelled countries' rates are kept (05's trend merges are by
-  # age/sex/cause/year, so no country depends on another).
-  base05$b_pre <- base05$b_pre[location %in% locs]
-  gc(verbose = FALSE)
+  dsa_log("05 inputs ready; %d eligible 06 locations, %d modelled (%.0f s).", length(all_locs), length(locs),
+          as.numeric(difftime(Sys.time(), t0, units = "secs")))
   meta_all <- dsa_country_metadata(paths, all_locs)
   i07 <- dsa_load_07_inputs(paths, r00$cause_map)
   k08 <- dsa_load_08(paths)
@@ -1635,8 +1877,9 @@ dsa_prepare_shared <- function(paths, cfg) {
   pop40 <- wpp[year_id == 2025 & age >= 40, .(pop40_2025 = sum(Nx, na.rm = TRUE)), by = location]
   rm(wpp)
   dsa_log("Shared inputs ready (%.0f s).", as.numeric(difftime(Sys.time(), t0, units = "secs")))
-  list(r00 = r00, regimes = regimes, p05 = p05, p06 = p06, run_args = ra, manifest = manifest,
-       base05 = base05, tg_all = tg_all, all_locs = all_locs, locs = locs, meta_all = meta_all,
+  list(r00 = r00, artefacts = artefacts, regimes = regimes, p031 = p031, p05 = p05, p06 = p06,
+       run_args = ra, manifest = manifest, base05 = base05, renames = renames,
+       tg_all = tg_all, all_locs = all_locs, locs = locs, meta_all = meta_all,
        meta = meta_all[location %in% locs], i07 = i07, k08 = k08, g08 = g08,
        pop_unwpp = pop_unwpp, who_reg08 = who_reg08, pop20_2019 = pop20_2019, pop40 = pop40)
 }
@@ -1769,50 +2012,65 @@ dsa_check <- function(id, group, pass, detail = "", n = NA_integer_) {
              n = as.integer(n), detail = as.character(detail))
 }
 
-DSA_RATE_KEYS <- c("location", "year", "age", "sex", "cause")
-DSA_RATE_COLS <- c("IR", "CF", "BG.mx", "BG.mx.all", "covid.mx", "Nx", "PREVt0", "DIS.mx.t0")
+DSA_RATE_COLS_031 <- c("IR", "CF", "BG.mx", "BG.mx.all", "ALL.mx", "DIS.mx.t0", "PREVt0", "Nx")
 
 dsa_same_table <- function(a, b) {
   isTRUE(all.equal(a, b, check.attributes = FALSE, tolerance = 0)) && identical(names(a), names(b))
 }
 
-dsa_slim <- function(x) {
-  x <- x[, c(DSA_RATE_KEYS, DSA_RATE_COLS), with = FALSE]
-  setkeyv(x, DSA_RATE_KEYS)
+# Keys and rates of a 031 table (031's row order is already its key order).
+dsa_slim031 <- function(x) {
+  x <- x[, c(DSA_031_KEYS, DSA_RATE_COLS_031), with = FALSE]
+  setkeyv(x, DSA_031_KEYS)
   x
 }
 
-# Checks on the trend input files that do not depend on a regime.
-dsa_trend_input_checks <- function(sh, paths, cfg) {
-  v <- list()
-  pre <- dsa_slim(sh$base05$b_pre)
-  pd <- as.data.table(readRDS(file.path(paths$wd_data, "tps_bgmx_cvd_forecasted.rds")))[year > 2019]
-  pd <- unique(pd, by = c("age", "sex", "cause", "year"))
-  pd[, cause := fcase(cause == "Ischemic heart disease", "ihd", cause == "Ischemic stroke", "istroke",
-                      cause == "Intracerebral hemorrhage", "hstroke", cause == "Hypertensive heart disease", "hhd",
-                      default = cause)]
-  e <- merge(pre[, DSA_RATE_KEYS, with = FALSE], pd[, .(age, sex, cause, year, pd = percent_diff)],
-             by = c("age", "sex", "cause", "year"), all.x = TRUE)
-  v[[length(v) + 1]] <- dsa_check("V06b", "CVD trend series covers every model age/sex/cause after 2019",
-                                   e[year > 2019L, !anyNA(pd)],
-                                   sprintf("%d model rows without percent_diff after 2019", e[year > 2019L, sum(is.na(pd))]))
+DSA_SHORT2FULL <- c(ihd = "Ischemic heart disease", istroke = "Ischemic stroke",
+                    hstroke = "Intracerebral hemorrhage", hhd = "Hypertensive heart disease")
+
+# The CVD trend inputs mapped to 031's key space exactly as 031 maps them.
+dsa_trend_series <- function(paths) {
+  coh <- as.data.table(readRDS(file.path(paths$wd_data, "tps_mortality_coherent_forecasted.rds")))
+  coh <- coh[year > 2019, .(sex, age, year, cause = unname(DSA_SHORT2FULL[as.character(cause)]),
+                            pd_cvd = percent_diff_cvd, pd_bg = percent_diff_bgmx_all)]
   ih <- as.data.table(readRDS(file.path(paths$wd_data, "tps_bgmx_cvd_ihme.rds")))
+  ih[, cause := fifelse(cause %in% names(DSA_SHORT2FULL), unname(DSA_SHORT2FULL[cause]), cause)]
+  ih <- unique(ih[year > 2019, .(cause, year, pd_ihme = percent_diff)], by = c("cause", "year"))
+  list(coherent = coh, ihme = ih)
+}
+
+# Calibrated (stage 03) 2019 values of the modelled locations: the state every
+# 031 projection starts from.
+dsa_calibrated_2019 <- function(paths, stub, raw_locs) {
+  rbindlist(lapply(dsa_saved_files(paths, stub), function(f) {
+    d <- readRDS(f); setDT(d)
+    d[year == 2019L & location %in% raw_locs,
+      .(location, sex, cause, age, CF19 = CF, DIS19 = DIS.mx.t0, BGall19 = BG.mx.all)]
+  }))
+}
+
+# Checks on the trend inputs that do not depend on a regime.
+dsa_trend_input_checks <- function(sh, paths, cfg, ser, x_ref) {
+  v <- list()
+  keys <- unique(x_ref[year > 2019L, .(sex, age, year, cause)])
+  e <- merge(keys, ser$coherent, by = c("sex", "age", "year", "cause"), all.x = TRUE)
+  ok <- !anyNA(e$pd_cvd) && !anyNA(e$pd_bg) && all(is.finite(e$pd_cvd)) && all(is.finite(e$pd_bg)) &&
+    all(1 + e$pd_cvd >= 0) && all(1 + e$pd_bg >= 0) &&
+    !anyDuplicated(ser$coherent, by = c("sex", "age", "year", "cause"))
+  v[[length(v) + 1]] <- dsa_check("V06b", "coherent forecast covers every modelled sex/age/cause/year after 2019 with valid factors", ok,
+                                   sprintf("%d model keys; %d without percent_diff_cvd", nrow(e), sum(is.na(e$pd_cvd))))
+  ih0 <- as.data.table(readRDS(file.path(paths$wd_data, "tps_bgmx_cvd_ihme.rds")))
   cov_ok <- all(vapply(c("ihd", "istroke", "hstroke", "hhd"), function(cc) {
-    y <- ih[cause == cc & year > 2019, year]; setequal(y, 2020:2050) && !anyDuplicated(y)
-  }, logical(1))) && all(is.finite(ih$percent_diff))
+    y <- ih0[cause == cc & year > 2019, year]; setequal(y, 2020:2050) && !anyDuplicated(y)
+  }, logical(1))) && all(is.finite(ih0$percent_diff))
   v[[length(v) + 1]] <- dsa_check("V08", "IHME series: 4 causes x 2020-2050, unique and finite", cov_ok,
-                                   paste0(nrow(ih), " rows; causes ", paste(sort(unique(ih$cause)), collapse = ","),
-                                          "; years ", min(ih$year), "-", max(ih$year)))
-  # BG.mx trend input: 05 multiplies BG.mx only where percent_diff is non-NA.
-  bg <- as.data.table(readRDS(file.path(paths$wd_data, "tps_bgmx_forecasted.rds")))
-  n_bg <- bg[year > 2019, sum(!is.na(percent_diff))]
-  bga <- as.data.table(readRDS(file.path(paths$wd_data, "tps_bgmx_all_forecasted.rds")))
-  n_bga <- bga[year > 2019, sum(!is.na(percent_diff))]
-  v[[length(v) + 1]] <- dsa_check("V11", "background trend inputs (informational)", NA,
-                                   paste0("tps_bgmx_forecasted.rds: ", n_bg, " of ", bg[year > 2019, .N],
-                                          " post-2019 percent_diff non-missing (",
-                                          if (n_bg == 0) "the BG.mx trend is INERT in 05 in every regime, including the reference" else "active",
-                                          "); tps_bgmx_all_forecasted.rds: ", n_bga, " non-missing (BG.mx.all trend active)"), n_bg)
+                                   paste0(nrow(ih0), " rows; causes ", paste(sort(unique(ih0$cause)), collapse = ","),
+                                          "; years ", min(ih0$year), "-", max(ih0$year)))
+  v[[length(v) + 1]] <- dsa_check("V11", "trend inputs (informational)", NA,
+                                   paste0("Reference and every regime: tps_mortality_coherent_forecasted.rds (023, Li et al. 2019 ",
+                                          "coherent forecast reconciled by MinT; Global sex x age x cause x year factors, cumulative ",
+                                          "from 2019, applied once per projected year by 031). The legacy Lee-Carter files ",
+                                          "(tps_bgmx_*_forecasted.rds) are not read by the reference or any DSA regime."))
   # IHME provenance: recompute percent_diff from the raw Foresight downloads.
   fs <- if (nzchar(cfg$ihme_raw_dir) && dir.exists(cfg$ihme_raw_dir)) {
     list.files(cfg$ihme_raw_dir, pattern = "gbd2023_foresight_asr_.*20[+][.]csv$", full.names = TRUE)
@@ -1829,7 +2087,7 @@ dsa_trend_input_checks <- function(sh, paths, cfg) {
                        default = cause)]
     g <- merge(g, g[year == 2019, .(cause, ASMRB = ASMR)], by = "cause")
     g[, pdr := (ASMR - ASMRB) / ASMRB]
-    mm <- merge(ih, g[, .(cause, year, pdr)], by = c("cause", "year"), all = TRUE)
+    mm <- merge(ih0, g[, .(cause, year, pdr)], by = c("cause", "year"), all = TRUE)
     ok <- !anyNA(mm$percent_diff) && !anyNA(mm$pdr) && max(abs(mm$percent_diff - mm$pdr)) < 1e-12
     v[[length(v) + 1]] <- dsa_check("V12", "IHME series reproduces from the raw Foresight downloads", ok,
                                      paste0(length(fs), " files (", meta_txt, "). The download footer cites ",
@@ -1843,78 +2101,61 @@ dsa_trend_input_checks <- function(sh, paths, cfg) {
   rbindlist(v)
 }
 
-# Checks for one trend regime against the common pre-trend state (and, for
-# alternative regimes, against the reference regime).
-dsa_trend_regime_checks <- function(r, x, pre, ref, sh, paths) {
+# Checks for one regime's 031 table `x` (modelled locations) against the
+# reference regime's table `ref` (same locations) and against an independent
+# recomputation of CF from the calibrated 2019 CF, the trend input and 031's
+# probability guard (CF clamped to [0, 1], then to 1 - BG.mx - TP_EPS).
+dsa_trend_regime_checks <- function(r, x, ref, cal19, ser, rrow, tp_eps) {
   v <- list()
-  rel <- function(a, b) max(abs(a - b) / pmax(abs(b), 1e-300))
-  # 05's trend merges turn `year` from double into integer; keys are compared by value.
-  same_keys <- nrow(x) == nrow(pre) && all(vapply(DSA_RATE_KEYS, function(k) all(x[[k]] == pre[[k]]), logical(1)))
-  v[[length(v) + 1]] <- dsa_check("V09", "trend join cardinality (no rows added, dropped or duplicated)",
-                                   same_keys && !anyDuplicated(x, by = DSA_RATE_KEYS),
-                                   paste0(r, ": ", nrow(x), " rows vs pre-trend ", nrow(pre)), nrow(x))
-  h <- x[year <= 2019L, DSA_RATE_COLS, with = FALSE]; h0 <- pre[year <= 2019L, DSA_RATE_COLS, with = FALSE]
-  v[[length(v) + 1]] <- dsa_check("V03", "historical rates unchanged", dsa_same_table(h, h0),
-                                   paste0(r, ": years 2017-2019, ", paste(DSA_RATE_COLS, collapse = "/")))
-  other <- setdiff(DSA_RATE_COLS, c("CF", "BG.mx", "BG.mx.all"))
-  v[[length(v) + 1]] <- dsa_check("V03b", "trend blocks change only CF, BG.mx and BG.mx.all",
-                                   dsa_same_table(x[, other, with = FALSE], pre[, other, with = FALSE]),
-                                   paste0(r, ": ", paste(other, collapse = "/"), " identical to the pre-trend state, all years"))
-  nf <- x[, sum(!is.finite(IR) | !is.finite(CF) | !is.finite(BG.mx) | !is.finite(BG.mx.all))]
-  ng <- x[, sum(IR < 0 | CF < 0 | BG.mx < 0 | BG.mx.all < 0, na.rm = TRUE)]
-  v[[length(v) + 1]] <- dsa_check("V10", "rates finite and non-negative after trend", nf == 0 && ng == 0,
-                                   paste0(r, ": non-finite ", nf, ", negative ", ng, "; CF >= 1 (06 caps at 0.99): ",
-                                          x[, sum(CF >= 1)]), nf + ng)
-  if (r == "reference") {
-    v[[length(v) + 1]] <- dsa_check("V04b", "background trend active in the reference (BG.mx.all changes after 2019)",
-                                     x[year > 2019L, any(BG.mx.all != pre[year > 2019L]$BG.mx.all)],
-                                     sprintf("BG.mx changed in %d rows, BG.mx.all in %d rows",
-                                             x[, sum(BG.mx != pre$BG.mx)], x[, sum(BG.mx.all != pre$BG.mx.all)]))
+  rel <- function(a, b) if (!length(a)) 0 else max(abs(a - b) / pmax(abs(b), 1e-300))
+  same_keys <- nrow(x) == nrow(ref) &&
+    all(vapply(DSA_031_KEYS, function(k) identical(x[[k]], ref[[k]]), logical(1)))
+  v[[length(v) + 1]] <- dsa_check("V09", "regime table has exactly the reference rows (none added, dropped, duplicated or reordered)",
+                                   same_keys && !anyDuplicated(x, by = DSA_031_KEYS),
+                                   paste0(r, ": ", nrow(x), " rows vs reference ", nrow(ref)), nrow(x))
+  if (r != "reference" && same_keys) {
+    v[[length(v) + 1]] <- dsa_check("V03", "historical rates (2000-2019) identical to the reference",
+                                     dsa_same_table(x[year <= 2019L, DSA_RATE_COLS_031, with = FALSE],
+                                                    ref[year <= 2019L, DSA_RATE_COLS_031, with = FALSE]),
+                                     paste0(r, ": ", paste(DSA_RATE_COLS_031, collapse = "/")))
+    other <- setdiff(DSA_RATE_COLS_031, "CF")
+    n_cf <- sum(x$CF != ref$CF)
+    v[[length(v) + 1]] <- dsa_check("V04", "only CF differs from the reference (coherent mortality block, IR, prevalence, population identical)",
+                                     dsa_same_table(x[, other, with = FALSE], ref[, other, with = FALSE]) &&
+                                       n_cf > 0L && all(x[CF != ref$CF, year] > 2019L),
+                                     sprintf("%s: %s identical in every year; CF differs in %d projected rows",
+                                             r, paste(other, collapse = "/"), n_cf))
+  }
+  p <- x[year > 2019L, c(DSA_031_KEYS, "CF", "BG.mx"), with = FALSE]
+  p <- merge(p, cal19[, .(location, sex, cause, age, CF19)], by = c("location", "sex", "cause", "age"),
+             all.x = TRUE, sort = FALSE)
+  share <- if (isTRUE(rrow$run_CF_trend_80)) 0.8 else 1
+  if (!isTRUE(rrow$run_CF_trend)) {
+    p[, cf_raw := CF19]
+    id <- "V05"; lab <- "CF = CF_2019 (no CVD trend), then 031's guard"
+  } else if (isTRUE(rrow$run_CF_trend_ihme)) {
+    p <- merge(p, ser$ihme, by = c("cause", "year"), all.x = TRUE, sort = FALSE)
+    p[, cf_raw := fifelse(is.na(pd_ihme), CF19, CF19 * (1 + pd_ihme * share))]
+    id <- "V07"; lab <- sprintf("CF = CF_2019 x (1 + %s pd_IHME[cause, t]), then 031's guard", format(share))
   } else {
-    v[[length(v) + 1]] <- dsa_check("V04", "background mortality identical to the reference (run_bgmx_trend = TRUE)",
-                                     identical(x$BG.mx, ref$BG.mx) && identical(x$BG.mx.all, ref$BG.mx.all),
-                                     paste0(r, ": BG.mx and BG.mx.all, all years"))
+    p <- merge(p, ser$coherent[, .(sex, age, year, cause, pd_cvd)], by = c("sex", "age", "year", "cause"),
+               all.x = TRUE, sort = FALSE)
+    p[, cf_raw := CF19 * (1 + share * pd_cvd)]
+    id <- "V06"; lab <- sprintf("CF = CF_2019 x (1 + %s pd_cvd[sex, age, cause, t]), then 031's guard", format(share))
   }
-  pd_expected <- function(file, by, mult) {
-    p <- as.data.table(readRDS(file.path(paths$wd_data, file)))[year > 2019]
-    p <- unique(p, by = c(by, "year"))
-    p[, cause := fcase(cause == "Ischemic heart disease", "ihd", cause == "Ischemic stroke", "istroke",
-                       cause == "Intracerebral hemorrhage", "hstroke", cause == "Hypertensive heart disease", "hhd",
-                       default = cause)]
-    e <- merge(pre[, c(DSA_RATE_KEYS, "CF"), with = FALSE], p[, c(by, "year", "percent_diff"), with = FALSE],
-               by = c(by, "year"), all.x = TRUE)
-    setkeyv(e, DSA_RATE_KEYS)
-    e[, fifelse(year > 2019L & !is.na(percent_diff), CF * (1 + percent_diff * mult), CF)]
-  }
-  if (r == "reference") {
-    exp_cf <- pd_expected("tps_bgmx_cvd_forecasted.rds", c("age", "sex", "cause"), 0.8)
-    v[[length(v) + 1]] <- dsa_check("V06", "reference CF = CF_pre x (1 + 0.8 pd), recomputed from the input file",
-                                     rel(x$CF, exp_cf) < 1e-12, sprintf("max relative difference %.2e", rel(x$CF, exp_cf)))
-  }
-  if (r == "trend_full_cvd") {
-    exp_cf <- pd_expected("tps_bgmx_cvd_forecasted.rds", c("age", "sex", "cause"), 1)
-    v[[length(v) + 1]] <- dsa_check("V06", "trend_full_cvd CF = CF_pre x (1 + pd), recomputed from the input file",
-                                     rel(x$CF, exp_cf) < 1e-12, sprintf("max relative difference %.2e", rel(x$CF, exp_cf)))
-    d80 <- ref$CF - pre$CF; d100 <- x$CF - pre$CF
-    dev <- max(abs(d80 - 0.8 * d100))
-    v[[length(v) + 1]] <- dsa_check("V06", "80% vs 100%: (CF_ref - CF_pre) = 0.8 x (CF_full - CF_pre)",
-                                     dev <= 1e-12 * max(abs(pre$CF)), sprintf("max abs deviation %.2e", dev))
-  }
-  if (r == "trend_no_cvd") {
-    v[[length(v) + 1]] <- dsa_check("V05", "trend_no_cvd: CF equals the pre-trend CF in every year",
-                                     identical(x$CF, pre$CF), "no CVD CF trend; background trend as the reference")
-  }
-  if (r == "trend_ihme_cvd") {
-    exp_cf <- pd_expected("tps_bgmx_cvd_ihme.rds", "cause", 1)
-    v[[length(v) + 1]] <- dsa_check("V07", "trend_ihme_cvd CF = CF_pre x (1 + pd_IHME[cause, year]), recomputed",
-                                     rel(x$CF, exp_cf) < 1e-12, sprintf("max relative difference %.2e", rel(x$CF, exp_cf)))
-    f_alt <- dsa_regime_flags(sh$regimes, "trend_ihme_cvd", sh$r00$flags)
-    f_alt$run_CF_trend_80 <- !f_alt$run_CF_trend_80
-    alt <- dsa_slim(dsa_apply_trends(sh$base05$b_pre, f_alt, paths, sh$p05))
-    v[[length(v) + 1]] <- dsa_check("V07", "IHME branch takes precedence over the 80% switch",
-                                     identical(alt$CF, x$CF),
-                                     "trend_ihme_cvd rebuilt with run_CF_trend_80 flipped: identical CF")
-  }
+  p[, cf1 := pmin(pmax(fifelse(is.na(cf_raw), 0, cf_raw), 0), 1)]
+  p[, head := 1 - BG.mx - tp_eps]
+  p[, expected := fifelse(head >= 0 & cf1 > head, head, cf1)]
+  dev <- rel(p$CF, p$expected)
+  v[[length(v) + 1]] <- dsa_check(id, paste0(r, ": ", lab, ", recomputed from the calibrated 2019 CF and the input file"),
+                                   !anyNA(p$CF19) && dev <= 1e-12,
+                                   sprintf("%d projected rows; max relative difference %.1e; %d rows capped by the guard",
+                                           nrow(p), dev, p[, sum(head >= 0 & cf1 > head)]), nrow(p))
+  bad <- x[, sum(!is.finite(IR) | !is.finite(CF) | !is.finite(BG.mx) | !is.finite(BG.mx.all) |
+                   IR < 0 | CF < 0 | BG.mx < 0 | BG.mx.all < 0 | IR > 1 | CF > 1 | BG.mx > 1 |
+                   IR + BG.mx > 1 + 1e-9 | CF + BG.mx > 1 + 1e-9)]
+  v[[length(v) + 1]] <- dsa_check("V10", "rates finite, in [0, 1], IR + BG.mx <= 1 and CF + BG.mx <= 1",
+                                   bad == 0L, paste0(r, ": ", bad, " violating rows"), bad)
   rbindlist(v)
 }
 
@@ -1990,21 +2231,48 @@ dsa_target_checks <- function(targets, sh, trajectories, statin_cfg) {
   rbindlist(v)
 }
 
-dsa_mapping_checks <- function(sh) {
+dsa_mapping_checks <- function(sh, paths) {
   m <- sh$meta
-  v <- list(dsa_check("V14", "income mapping: one valid code for every model country",
+  v <- list(dsa_check("V14", "income-group adherence input: one valid code for every model country",
                       nrow(m) == length(sh$locs) && !anyNA(m$income_code) && all(m$income_code %in% DSA_INCOME_ADHERENCE$income_code) &&
                         !anyDuplicated(m$location),
                       paste(names(table(m$income_code)), table(m$income_code), sep = ":", collapse = ", "), nrow(m)))
   fb <- m[income_source != "World Bank 2026"]
-  v[[2]] <- dsa_check("V14b", "income mapping fallbacks (informational)", NA,
+  v[[2]] <- dsa_check("V14b", "income groups not taken directly from the World Bank 2026 file (informational)", NA,
                       if (nrow(fb)) paste(paste0(fb$location, " -> ", fb$income_code, " [", fb$income_source, "]"), collapse = "; ") else "none")
+  # V13: the reference settings are the executed 06 call, and they equal the
+  # settings the primary report documents (output/paper/paper_params.rds,
+  # written by aim1_report.Rmd). Nothing is compared with hard-coded values.
   ra <- sh$run_args
-  v[[3]] <- dsa_check("V13", "reference = executed 06 call (statins 0.50 by 2030 from 2026, adherence 0.575/0.664, salteff 0, TFA 0 from 2028)",
-                      isTRUE(all.equal(c(ra$statin_target_coverage, ra$statin_start_year, ra$statin_target_year,
-                                         ra$adherence_ir, ra$adherence_cf, ra$salteff, ra$tfa_target_tfa,
-                                         ra$tfa_policy_start_year), c(0.50, 2026, 2030, 0.575, 0.664, 0, 0, 2028))),
-                      paste(names(ra), vapply(ra, function(x) if (is.null(x)) "NULL" else as.character(x), ""), sep = "=", collapse = ", "))
+  f_pp <- file.path(paths$wd_outp_ordinary, "paper", "paper_params.rds")
+  call_txt <- paste(names(ra), vapply(ra, function(x) if (is.null(x)) "NULL" else as.character(x), ""),
+                    sep = "=", collapse = ", ")
+  if (file.exists(f_pp)) {
+    pp <- readRDS(f_pp)
+    nm <- c("statin_target_coverage", "statin_start_year", "statin_target_year", "adherence_ir", "adherence_cf")
+    have <- nm[nm %in% names(pp)]
+    ok <- length(have) == length(nm) &&
+      isTRUE(all.equal(unname(unlist(ra[nm])), unname(unlist(pp[nm])), tolerance = 1e-12))
+    tg <- sh$tg_all
+    ok_bp <- all(c("control_start_year", "control_target_year") %in% names(pp)) &&
+      all(tg$scaleup_start_year == pp$control_start_year) && all(tg$target_year == pp$control_target_year)
+    v[[3]] <- dsa_check("V13", "reference = executed 06 call = settings documented by the primary report (paper_params.rds)",
+                        ok && ok_bp, paste0("06 call: ", call_txt, "; paper_params: ",
+                                            paste(have, unlist(pp[have]), sep = "=", collapse = ", "),
+                                            "; BP scale-up ", pp$control_start_year, "-", pp$control_target_year,
+                                            if (ok_bp) " = 04 target table" else " DIFFERS from the 04 target table"))
+  } else {
+    v[[3]] <- dsa_check("V13", "reference = executed 06 call = settings documented by the primary report (paper_params.rds)",
+                        NA, paste0("paper_params.rds not found; 06 call: ", call_txt))
+  }
+  # Scenario adherence values relative to the reference (a "low" setting above
+  # the reference in either component is reported, not silently relabelled).
+  adh <- sh$manifest[family == "statin_adherence"]
+  pos <- adh[, sprintf("%s: IR %.2f %s %.3f, CF %.2f %s %.3f", dsa_id,
+                       adherence_ir, fifelse(adherence_ir < ra$adherence_ir, "<", fifelse(adherence_ir > ra$adherence_ir, ">", "=")), ra$adherence_ir,
+                       adherence_cf, fifelse(adherence_cf < ra$adherence_cf, "<", fifelse(adherence_cf > ra$adherence_cf, ">", "=")), ra$adherence_cf)]
+  v[[4]] <- dsa_check("V13b", "statin adherence settings relative to the reference (informational)", NA,
+                      paste(pos, collapse = "; "))
   rbindlist(v)
 }
 
@@ -2120,8 +2388,12 @@ dsa_finalize <- function(sh, cfg, paths, statuses, trend_diag, targets, trajecto
   s_reg <- rg[, .(x = sum(dead)), by = .(dsa_id, scenario, region)][, .(x = sum(x)), by = .(dsa_id, scenario)]
   s_inc <- rg[, .(y = sum(dead)), by = .(dsa_id, scenario, location_income)][, .(y = sum(y)), by = .(dsa_id, scenario)]
   sr <- Reduce(function(x, y) merge(x, y, by = c("dsa_id", "scenario")), list(t1, s_reg, s_inc))
-  v[[7]] <- dsa_check("V26", "WHO-region and income-group sums equal global totals (no unmapped country)",
-                      sr[, max(abs(a - x) / a, abs(a - y) / a)] < 1e-10 && !anyNA(rg$region) && !anyNA(rg$location_income))
+  n_uncl <- meta[is.na(location_income), .N]
+  v[[7]] <- dsa_check("V26", "WHO-region and income-group sums (incl. any unclassified group) equal global totals",
+                      sr[, max(abs(a - x) / a, abs(a - y) / a)] < 1e-10 && !anyNA(rg$region),
+                      sprintf("every country has a WHO region; %d countr%s unclassified by income as in aim1_report.Rmd%s",
+                              n_uncl, if (n_uncl == 1L) "y" else "ies",
+                              if (n_uncl) paste0(" (", paste(meta[is.na(location_income), location], collapse = ", "), ")") else ""))
   ec <- econ[, .(ea = sum(deaths_averted)), by = .(dsa_id, scenario)]
   yy <- res_year[, .(dead = sum(dead)), by = .(dsa_id, scenario, location, year)]
   yb <- yy[scenario == "baseline", .(dsa_id, location, year, bau = dead)]
@@ -2170,20 +2442,23 @@ dsa_finalize <- function(sh, cfg, paths, statuses, trend_diag, targets, trajecto
   dsa_save_rds(sh$regimes, file.path(res_dir, "trend_regimes.rds"), paths)
   dsa_save_rds(DSA_INCOME_ADHERENCE, file.path(res_dir, "income_adherence_map.rds"), paths)
   dsa_save_rds(sh$run_args, file.path(res_dir, "reference_run_args.rds"), paths)
+  dsa_save_rds(sh$artefacts, file.path(res_dir, "pipeline_artefacts.rds"), paths)
   results
 }
 
-# Trend diagnostics from one regime's rate table (inputs to the projections):
-# Nx-weighted mean CF and background rates, and the Nx-weighted CF multiplier
-# relative to the common pre-trend state, by year and cause.
-dsa_trend_diag <- function(pre, x, r) {
-  z <- pre[, .(location, year, age, sex, cause, Nx, CF_pre = CF, BGall_pre = BG.mx.all, BG_pre = BG.mx)][
-    x[, .(location, year, age, sex, cause, CF, BG.mx, BG.mx.all)], on = DSA_RATE_KEYS]
-  z[, .(CF_mean = sum(CF * Nx, na.rm = TRUE) / sum(Nx, na.rm = TRUE),
-        CF_ratio_to_pre = sum(CF * Nx, na.rm = TRUE) / sum(CF_pre * Nx, na.rm = TRUE),
-        BGall_ratio_to_pre = sum(BG.mx.all * Nx, na.rm = TRUE) / sum(BGall_pre * Nx, na.rm = TRUE),
-        BG_ratio_to_pre = sum(BG.mx * Nx, na.rm = TRUE) / sum(BG_pre * Nx, na.rm = TRUE)),
-    by = .(year, cause)][, trend_regime := r][]
+# Trend diagnostics from one regime's 031 table (inputs to the projections):
+# Nx-weighted mean CF and the Nx-weighted multipliers of CF, DIS.mx.t0 and
+# BG.mx.all relative to their calibrated 2019 values (the state every
+# projection starts from), by year and cause (model abbreviations).
+dsa_trend_diag <- function(x, cal19, r) {
+  z <- merge(x[year >= 2019L, .(location, sex, cause, age, year, Nx, CF, DIS.mx.t0, BG.mx.all)], cal19,
+             by = c("location", "sex", "cause", "age"), sort = FALSE)
+  z <- z[, .(CF_mean = sum(CF * Nx) / sum(Nx),
+             CF_ratio_to_2019 = sum(CF * Nx) / sum(CF19 * Nx),
+             DIS_ratio_to_2019 = sum(DIS.mx.t0 * Nx) / sum(DIS19 * Nx),
+             BGall_ratio_to_2019 = sum(BG.mx.all * Nx) / sum(BGall19 * Nx)), by = .(year, cause)]
+  z[, cause := names(DSA_SHORT2FULL)[match(cause, DSA_SHORT2FULL)]]
+  z[, trend_regime := r][]
 }
 
 #...........................................................
@@ -2218,10 +2493,10 @@ dsa_verify_countries <- function(sh, cfg) {
   x
 }
 
-dsa_verify_ordinary <- function(sh, cfg, paths, rates_ref) {
+dsa_verify_ordinary <- function(sh, cfg, paths, ref05) {
   v <- list()
   vlocs <- dsa_verify_countries(sh, cfg)
-  ref_env <- dsa_06_setup(paths, sh$p06, data.table::copy(rates_ref[location %in% vlocs]), sh$base05)
+  ref_env <- dsa_06_setup(paths, sh$p06, data.table::copy(ref05$b_rates[location %in% vlocs]), ref05)
   old <- setDTthreads(1L); on.exit(setDTthreads(old), add = TRUE)
   ra <- sh$run_args
   keys <- c("scenario", "location", "year", "age", "sex", "cause")
@@ -2239,30 +2514,12 @@ dsa_verify_ordinary <- function(sh, cfg, paths, rates_ref) {
       dt_hbp_targets = ref_env$dt_hbp_targets, statin_target_coverage = ra$statin_target_coverage,
       statin_start_year = ra$statin_start_year, statin_target_year = ra$statin_target_year,
       adherence_ir = ra$adherence_ir, adherence_cf = ra$adherence_cf,
-      baseline_statin_coverage = ra$baseline_statin_coverage, saltmet = ra$saltmet, salteff = ra$salteff,
-      saltyear1 = ra$saltyear1, saltyear2 = ra$saltyear2, tfa_target_tfa = ra$tfa_target_tfa,
-      tfa_policy_start_year = ra$tfa_policy_start_year))
+      baseline_statin_coverage = ra$baseline_statin_coverage))
     res[, htn_target_scenario := "aim1"]
     c1 <- dsa_cmp_tables(dsa, res, keys, cols)
     v[[length(v) + 1]] <- dsa_check("V20", "DSA reference = live 06 run_multiple_scenarios() on the same inputs",
                                      c1$identical && identical(names(dsa), names(res)),
                                      paste0(Country, ": ", if (c1$identical) "bit-identical; " else "", c1$detail))
-    # V21: the saved ordinary 06 output.
-    f_ord <- file.path(paths$wd_outp_ordinary, "out_model", paste0("model_output_", Country, ".rds"))
-    if (cfg$compare_ordinary && file.exists(f_ord)) {
-      ord <- readRDS(f_ord); setDT(ord)
-      c2 <- dsa_cmp_tables(dsa, ord, keys, cols, tol_rel = 1e-10)
-      fresh <- file.mtime(f_ord) > file.mtime(sh$p06$file) &&
-        file.mtime(f_ord) > file.mtime(file.path(paths$wd_data, "htn_control_targets_by_loc.csv"))
-      v[[length(v) + 1]] <- dsa_check("V21", "DSA reference = saved ordinary output/out_model file (population, deaths, labels, effects)",
-                                       c2$pass && identical(names(dsa), names(ord)),
-                                       paste0(Country, ": ", if (c2$identical) "bit-identical; " else "", c2$detail,
-                                              "; ordinary file ", if (fresh) "newer than the 06 script and the target table"
-                                              else "OLDER than the 06 script or the target table"))
-    } else if (cfg$compare_ordinary) {
-      v[[length(v) + 1]] <- dsa_check("V21", "DSA reference = saved ordinary output/out_model file", NA,
-                                       paste0(Country, ": no ordinary file"))
-    }
     # V22: ordinary 08 results for the country.
     f08 <- file.path(paths$wd_outp_ordinary, "08_vsl_results.rds")
     if (cfg$compare_ordinary && file.exists(f08)) {
@@ -2306,33 +2563,72 @@ dsa_verify_ordinary <- function(sh, cfg, paths, rates_ref) {
   rbindlist(v)
 }
 
-# V01/V02: a regime table built from the common pre-trend state equals 05
-# evaluated in full, in one sandbox, with that regime's switches.
-dsa_verify_05_regime <- function(r, x, sh, paths) {
-  fl <- dsa_regime_flags(sh$regimes, r, sh$r00$flags)
-  full <- dsa_run_05_full(paths, sh$p05, fl)[location %in% sh$locs]
-  ok <- identical(dim(full), dim(x)) && identical(names(full), names(x)) &&
-    isTRUE(all.equal(full, x, check.attributes = FALSE, tolerance = 0))
-  out <- dsa_check(if (r == "reference") "V01" else "V02",
-                   "regime rates (pre-trend state + 05's trend blocks) = 05 evaluated in full with the regime switches",
-                   ok, paste0(r, ": ", nrow(x), " rows x ", ncol(x), " columns, row order and values compared (tolerance 0)"))
-  rm(full); gc(verbose = FALSE)
-  out
+# V21: the DSA reference model output of EVERY modelled country against the
+# saved primary 06 output (output/out_model): the DSA baseline and reference
+# interventions must be the primary model results.
+dsa_verify_out_model <- function(sh, cfg, paths) {
+  keys <- c("scenario", "location", "year", "age", "sex", "cause")
+  cols <- c("well", "sick", "newcases", "dead", "pop", "all.mx", "intervention", "eff_ir", "eff_cf",
+            "htn_target_scenario")
+  od <- file.path(paths$wd_outp_ordinary, "out_model")
+  res <- rbindlist(lapply(sh$locs, function(Country) {
+    f_ord <- file.path(od, paste0("model_output_", Country, ".rds"))
+    if (!file.exists(f_ord)) {
+      return(data.table(location = Country, status = "no primary file", identical = NA, max_rel = NA_real_))
+    }
+    a <- readRDS(file.path(paths$dsa_root, "out_model", "reference", paste0("model_output_", Country, ".rds")))
+    a <- as.data.table(a)[, !"dsa_id"]
+    b <- as.data.table(readRDS(f_ord))
+    c2 <- dsa_cmp_tables(a, b, keys, cols, tol_rel = 1e-10)
+    ok <- c2$pass && identical(names(a), names(b))
+    data.table(location = Country, status = if (ok) "match" else "DIFFERS", identical = c2$identical && ok,
+               max_rel = c2$max_rel)
+  }))
+  n <- nrow(res); n_match <- res[status == "match", .N]; n_none <- res[status == "no primary file", .N]
+  pass <- if (n_none == n) NA else n_match == n
+  mx <- suppressWarnings(max(res$max_rel, na.rm = TRUE))
+  list(detail = res,
+       check = dsa_check("V21", "DSA reference model output = saved primary output/out_model file, every modelled country (tolerance 1e-10)",
+                         pass, sprintf("%d countries: %d match (%d bit-identical), %d differ, %d without a primary file; max relative difference %.1e%s",
+                                       n, n_match, res[identical %in% TRUE, .N], res[status == "DIFFERS", .N], n_none,
+                                       if (is.finite(mx)) mx else NA_real_,
+                                       if (res[status == "DIFFERS", .N]) paste0(" (differ: ", paste(head(res[status == "DIFFERS", location], 10), collapse = ", "), ")") else ""),
+                         n))
 }
 
-# After a full run and render: the DSA reference scalars against the ordinary
-# report's paper scalars (verification only).
-dsa_verify_report <- function(paths) {
+# V30 (after rendering): the DSA reference report scalars against the primary
+# report's output/paper/paper_scalars.rds, entry by entry (numbers, labels and
+# the region/income tables; verification only).
+dsa_verify_report <- function(paths, f_dsa) {
   f_ord <- file.path(paths$wd_outp_ordinary, "paper", "paper_scalars.rds")
-  f_dsa <- file.path(paths$dsa_root, "paper", "paper_scalars_reference.rds")
-  if (!file.exists(f_ord) || !file.exists(f_dsa)) return(dsa_check("V30", "reference report scalars = ordinary report", NA, "files missing"))
+  lab <- "DSA reference report scalars = primary output/paper/paper_scalars.rds (every entry, incl. region/income tables)"
+  if (!file.exists(f_ord) || !file.exists(f_dsa)) return(dsa_check("V30", lab, NA, "files missing"))
   a <- readRDS(f_dsa); b <- readRDS(f_ord)
-  nm <- intersect(names(a), names(b))
-  nm <- nm[vapply(nm, function(n) is.numeric(a[[n]]) && is.numeric(b[[n]]) && length(a[[n]]) == length(b[[n]]), logical(1))]
-  d <- vapply(nm, function(n) max(abs(a[[n]] - b[[n]]) / pmax(abs(b[[n]]), 1)), numeric(1))
-  dsa_check("V30", "DSA reference paper scalars = ordinary output/paper/paper_scalars.rds",
-            all(d < 1e-8), paste0(length(nm), " numeric scalars; max relative difference ", sprintf("%.2e", max(d)),
-                                  if (any(d >= 1e-8)) paste0("; differing: ", paste(nm[d >= 1e-8], collapse = ", ")) else ""))
+  cmp <- function(x, y) {
+    if (is.data.frame(x) && is.data.frame(y)) {
+      if (!identical(names(x), names(y))) return(Inf)
+      k <- names(y)[1]
+      norm_key <- function(z) {
+        z <- data.table::copy(as.data.table(z))
+        z[, (k) := fifelse(is.na(get(k)), "<NA>", as.character(get(k)))]
+        z
+      }
+      x <- norm_key(x); y <- norm_key(y)
+      if (anyDuplicated(x[[k]]) || !setequal(x[[k]], y[[k]])) return(Inf)
+      m <- merge(x, y, by = k, suffixes = c(".a", ".b"))
+      max(vapply(setdiff(names(y), k), function(cc) {
+        max(abs(m[[paste0(cc, ".a")]] - m[[paste0(cc, ".b")]]) / pmax(abs(m[[paste0(cc, ".b")]]), 1))
+      }, numeric(1)))
+    } else if (is.numeric(x) && is.numeric(y)) {
+      if (length(x) != length(y)) Inf else max(abs(x - y) / pmax(abs(y), 1))
+    } else if (identical(as.character(x), as.character(y))) 0 else Inf
+  }
+  nm <- intersect(names(a), names(b)); miss <- setdiff(names(b), names(a))
+  d <- vapply(nm, function(n) cmp(a[[n]], b[[n]]), numeric(1))
+  dsa_check("V30", lab, all(d < 1e-8) && !length(miss),
+            paste0(length(nm), " entries compared; max relative difference ", sprintf("%.2e", max(d)),
+                   if (any(d >= 1e-8)) paste0("; differing: ", paste(nm[d >= 1e-8], collapse = ", ")) else "",
+                   if (length(miss)) paste0("; missing: ", paste(miss, collapse = ", ")) else ""), length(nm))
 }
 
 #...........................................................
@@ -2362,11 +2658,20 @@ dsa_latest_run <- function(paths) {
   trimws(readLines(f, warn = FALSE)[1])
 }
 
+# Where a run's report artefacts (paper/, slides/, Excel tables) go: the
+# manuscript-facing output_dsa/ for a complete full run, otherwise the run's
+# own folder, so pilot and partial runs never overwrite them.
+dsa_artefact_root <- function(paths, run_dir, published) {
+  if (isTRUE(published)) paths$dsa_root else file.path(run_dir, "report")
+}
+
 # The repository path contains spaces ("OneDrive - UW"), which LaTeX cannot
 # resolve, so both documents are compiled in a private copy inside R's temp
 # directory (as 09's psa_render_documents()) and only the final HTML/PDF are
-# copied to scenarios_dsa/. Nothing is written next to the source Rmds.
-dsa_render_documents <- function(run_id = NULL, paths = dsa_paths(), which = c("report", "slides")) {
+# copied out. Nothing is written next to the source Rmds. The executive deck
+# (aim1_executive_slides_dsa.Rmd) is rendered only on request: its static text
+# still describes the earlier DSA build (2025-2050 window, CF adherence 0.664).
+dsa_render_documents <- function(run_id = NULL, paths = dsa_paths(), which = "report") {
   if (is.null(run_id)) run_id <- dsa_latest_run(paths)
   run_dir <- dsa_run_dir(paths, run_id)
   mf <- file.path(run_dir, "run_manifest.rds")
@@ -2375,6 +2680,8 @@ dsa_render_documents <- function(run_id = NULL, paths = dsa_paths(), which = c("
   if (!identical(man$status, "COMPLETE")) {
     stop("DSA run ", run_id, " has status ", man$status, "; refusing to render. See ", run_dir, "/validation/.")
   }
+  published <- dsa_is_published(man$mode, man$complete_manifest)
+  art_root <- dsa_artefact_root(paths, run_dir, published)
   dsa_find_pandoc()
   src <- paths$rmd_dir
   src_before <- list.files(src, all.files = TRUE, no.. = TRUE)
@@ -2390,7 +2697,8 @@ dsa_render_documents <- function(run_id = NULL, paths = dsa_paths(), which = c("
   if ("report" %in% which) {
     rmarkdown::render(file.path(work, "aim1_report_dsa.Rmd"), output_dir = work, intermediates_dir = work,
                       knit_root_dir = work,
-                      params = list(run_dir = run_dir, repo_root = paths$root, render_token = DSA_RENDER_TOKEN),
+                      params = list(run_dir = run_dir, repo_root = paths$root, render_token = DSA_RENDER_TOKEN,
+                                    artefact_root = art_root, published = published),
                       envir = new.env(parent = globalenv()), clean = TRUE, quiet = TRUE)
     f <- file.path(paths$scen_root, paste0("aim1_report_dsa_", run_id, ".html"))
     dsa_assert_write(f, paths)
@@ -2411,12 +2719,12 @@ dsa_render_documents <- function(run_id = NULL, paths = dsa_paths(), which = c("
     writeLines(c("% Generated by 10_deterministic_dsa.R", banner), file.path(work, "dsa_deck_header.tex"))
     rmarkdown::render(file.path(work, "aim1_executive_slides_dsa.Rmd"), output_dir = work,
                       intermediates_dir = work, knit_root_dir = work,
-                      params = list(slides_dir = file.path(paths$dsa_root, "slides"), run_id = run_id,
+                      params = list(slides_dir = file.path(art_root, "slides"), run_id = run_id,
                                     render_token = DSA_RENDER_TOKEN),
                       output_options = list(includes = list(in_header = c("beamer_preamble.tex", "dsa_deck_header.tex"))),
                       envir = new.env(parent = globalenv()), clean = TRUE, quiet = TRUE)
-    f <- file.path(paths$scen_root, paste0("aim1_executive_slides_dsa_", run_id, ".pdf"))
-    dsa_assert_write(f, paths)
+    f <- file.path(if (published) paths$scen_root else art_root, paste0("aim1_executive_slides_dsa_", run_id, ".pdf"))
+    dsa_mkdir(dirname(f), paths)
     stopifnot(file.copy(file.path(work, "aim1_executive_slides_dsa.pdf"), f, overwrite = TRUE))
     out <- c(out, f)
     dsa_log("Rendered %s", f)
@@ -2432,9 +2740,57 @@ dsa_render_documents <- function(run_id = NULL, paths = dsa_paths(), which = c("
 # Main ----
 #...........................................................
 
+# V00b (informational): the saved artefacts were produced in pipeline order
+# (latest file of each: 03 -> 031 -> 06 -> aim1_report.Rmd).
+dsa_chronology_check <- function(a) {
+  g <- function(p) a[grepl(p, file, fixed = TRUE), mtime][1]
+  ord <- c(calibrated_searo = g("calibrated_searo"), adjusted_searo = g("adjusted_searo"),
+           out_model = g("out_model"), paper_scalars = g("paper_scalars"))
+  ok <- !anyNA(ord) && all(diff(as.numeric(ord)) > 0)
+  dsa_check("V00b", "artefact chronology 03 -> 031 -> 06 -> aim1_report.Rmd (informational)", NA,
+            paste0(paste(names(ord), format(ord, "%Y-%m-%d %H:%M"), collapse = " | "),
+                   if (ok) " (in pipeline order)" else " (NOT in pipeline order; V01 and V21 are the binding checks)"))
+}
+
+# Render a COMPLETE run, then (mode=full runs containing the reference) record
+# V30 in its validation files; a V30 failure marks the run VALIDATION_FAILED.
+dsa_render_and_verify <- function(run_id, paths, which) {
+  if (is.null(run_id)) run_id <- dsa_latest_run(paths)
+  run_dir <- dsa_run_dir(paths, run_id)
+  status_file <- file.path(run_dir, "run_manifest.rds")
+  vf <- file.path(run_dir, "validation", "validation.rds")
+  # A run failed only by V30 (a report-level check) may be re-rendered; V30 is recomputed.
+  if (file.exists(status_file) && file.exists(vf)) {
+    man <- readRDS(status_file); v <- readRDS(vf)
+    if (identical(man$status, "VALIDATION_FAILED") && all(v[pass %in% FALSE, check_id] == "V30")) {
+      man$status <- "COMPLETE"; dsa_save_rds(man, status_file, paths)
+    }
+  }
+  out <- dsa_render_documents(run_id, paths, which)
+  man <- readRDS(status_file)
+  if (!identical(man$mode, "full") || !"reference" %in% man$dsa_ids) return(invisible(out))
+  published <- dsa_is_published(man$mode, man$complete_manifest)
+  v30 <- dsa_verify_report(paths, file.path(dsa_artefact_root(paths, run_dir, published), "paper",
+                                            "paper_scalars_reference.rds"))
+  validation <- rbind(readRDS(vf)[check_id != "V30"], v30, fill = TRUE)
+  dsa_save_rds(validation, vf, paths)
+  dsa_fwrite(validation, file.path(run_dir, "validation", "validation.csv"), paths)
+  dsa_log("V30 %s: %s", if (isTRUE(v30$pass)) "PASS" else "FAIL/NA", v30$detail)
+  man$validation <- validation[, .(n = .N, passed = sum(pass %in% TRUE), failed = sum(pass %in% FALSE),
+                                   informational = sum(is.na(pass)))]
+  if (isFALSE(v30$pass)) {
+    man$status <- "VALIDATION_FAILED"
+    dsa_log("WARNING: V30 failed; the rendered reference does not match the primary report. Status set to VALIDATION_FAILED.")
+  }
+  dsa_save_rds(man, status_file, paths)
+  dsa_write_json(man, file.path(run_dir, "run_manifest.json"), paths)
+  invisible(out)
+}
+
 dsa_main <- function(cfg = dsa_config()) {
   paths <- dsa_paths()
-  if (identical(cfg$render, "only")) return(invisible(dsa_render_documents(cfg$run_id, paths)))
+  render_which <- c("report", if (isTRUE(cfg$render_slides)) "slides")
+  if (identical(cfg$render, "only")) return(dsa_render_and_verify(cfg$run_id, paths, render_which))
   t_start <- Sys.time()
   run_dir <- dsa_run_dir(paths, cfg$run_id)
   dsa_mkdir(run_dir, paths)
@@ -2452,13 +2808,25 @@ dsa_main <- function(cfg = dsa_config()) {
   sh <- dsa_prepare_shared(paths, cfg)
   man <- sh$manifest
   sel <- if (is.null(cfg$dsa_ids)) man else man[dsa_id %in% cfg$dsa_ids]
-  dsa_save_rds(man, file.path(paths$dsa_root, "manifest", "dsa_scenario_manifest.rds"), paths)
-  dsa_save_rds(DSA_INCOME_ADHERENCE, file.path(paths$dsa_root, "manifest", "dsa_income_adherence_map.rds"), paths)
-  dsa_save_rds(sh$regimes, file.path(paths$dsa_root, "manifest", "dsa_trend_regimes.rds"), paths)
-  dsa_fwrite(dsa_manifest_display(man), file.path(paths$scen_root, "dsa_scenario_manifest.csv"), paths)
-  dsa_log("Countries: %d | DSA settings: %s", length(sh$locs), paste(sel$dsa_id, collapse = ", "))
+  complete <- setequal(sel$dsa_id, man$dsa_id)
+  published <- dsa_is_published(cfg$mode, complete)
+  dsa_save_rds(man, file.path(run_dir, "manifest", "dsa_scenario_manifest.rds"), paths)
+  dsa_fwrite(dsa_manifest_display(man), file.path(run_dir, "manifest", "dsa_scenario_manifest.csv"), paths)
+  if (published) {
+    dsa_save_rds(man, file.path(paths$dsa_root, "manifest", "dsa_scenario_manifest.rds"), paths)
+    dsa_save_rds(DSA_INCOME_ADHERENCE, file.path(paths$dsa_root, "manifest", "dsa_income_adherence_map.rds"), paths)
+    dsa_save_rds(sh$regimes, file.path(paths$dsa_root, "manifest", "dsa_trend_regimes.rds"), paths)
+    dsa_fwrite(dsa_manifest_display(man), file.path(paths$scen_root, "dsa_scenario_manifest.csv"), paths)
+  }
+  dsa_log("Countries: %d | DSA settings: %s | %s", length(sh$locs), paste(sel$dsa_id, collapse = ", "),
+          if (published) "complete full run: publishes output_dsa/paper and /slides"
+          else "report artefacts stay in this run's folder")
   checks <- list()
-  if (cfg$validate) checks$trend_inputs <- dsa_trend_input_checks(sh, paths, cfg)
+  checks$preflight <- rbind(
+    dsa_check("V00", "every required pipeline artefact is present (the DSA never runs an upstream stage)", TRUE,
+              sprintf("%d required artefacts found; stage 03 reused (00: run_calibration_par = %s)",
+                      sh$artefacts[required == TRUE, .N], sh$r00$run_calibration_par)),
+    dsa_chronology_check(sh$artefacts))
   # Targets, statin configuration and trajectories use 06's own functions.
   fenv <- new.env(parent = globalenv())
   for (e in sh$p06$fun_exprs) eval(e, fenv)
@@ -2468,32 +2836,75 @@ dsa_main <- function(cfg = dsa_config()) {
   clh$cl <- NULL; clh$n <- min(cfg$workers, length(sh$locs))
   on.exit(if (!is.null(clh$cl)) try(parallel::stopCluster(clh$cl), silent = TRUE), add = TRUE)
   on.exit(unlink(file.path(tempdir(), "dsa_task_inputs", cfg$run_id), recursive = TRUE), add = TRUE)
-  pre_slim <- dsa_slim(sh$base05$b_pre)
-  ref_slim <- NULL; rates_ref <- NULL
   statuses <- list(); statin_cfg <- list(); timing <- list(); trend_diag <- list()
   vlocs <- dsa_verify_countries(sh, cfg)
+  set <- sh$r00$settings
+  ser <- dsa_trend_series(paths)
+  # Reference regime first: 031 with the 00 switches on the saved
+  # calibrated_searo must reproduce the saved adjusted_searo (V01); the saved
+  # rows are then the reference input to 05.
+  dsa_log("Reference regime: evaluating 031 on the saved calibrated_searo (stage 03 is not run) ...")
+  run_ref <- dsa_run_031(paths, sh$p031, sh$r00, dsa_regime_row(sh$regimes, "reference"))
+  raw_locs <- dsa_raw_locations(unique(run_ref$rates$location), sh$locs, sh$renames)
+  v01 <- dsa_verify_031_reference(paths, set$adjusted_stub, run_ref$rates, raw_locs)
+  checks$v01 <- v01$check
+  if (!isTRUE(v01$check$pass)) {
+    stop("V01 failed (", v01$check$detail, "): the saved adjusted_searo is not what 031 produces from the saved ",
+         "calibrated_searo with the current 00_run_model.R settings, so the saved pipeline outputs are not a ",
+         "consistent base for the DSA. Re-run 031_calibration_trends.R (about a minute; stage 03 is NOT needed) ",
+         "and the downstream stages, then rerun the DSA.", call. = FALSE)
+  }
+  dsa_log("V01 passed: %s.", v01$check$detail)
+  ref031 <- dsa_slim031(run_ref$rates[location %in% raw_locs])
+  guards <- list(reference = run_ref$guard)
+  rm(run_ref); gc(verbose = FALSE)
+  rates_in_ref <- v01$rates
+  rm(v01)
+  cal19 <- dsa_calibrated_2019(paths, set$calibrated_stub, raw_locs)
+  if (cfg$validate) checks$trend_inputs <- dsa_trend_input_checks(sh, paths, cfg, ser, ref031)
+  ref05 <- NULL
   for (r in unique(c("reference", sel$trend_regime))) {
     t0 <- Sys.time()
-    # Each regime: 05's trend blocks on a fresh copy of the common pre-trend state.
-    rates <- dsa_apply_trends(sh$base05$b_pre, dsa_regime_flags(sh$regimes, r, sh$r00$flags), paths, sh$p05)
-    x_slim <- dsa_slim(rates)
+    rrow <- dsa_regime_row(sh$regimes, r)
     if (r == "reference") {
-      ref_slim <- x_slim
-      rates_ref <- rates[location %in% vlocs]   # kept only for the V20 live-06 check
+      x031 <- ref031
+      rates_in <- rates_in_ref; rm(rates_in_ref)
+    } else {
+      # Each alternative regime: 031 re-evaluated with ONE switch changed.
+      dsa_log("Regime %s: evaluating 031 with %s ...", r, rrow$changed_switch)
+      run_r <- dsa_run_031(paths, sh$p031, sh$r00, rrow)
+      guards[[r]] <- run_r$guard
+      rates_in <- run_r$rates[location %in% raw_locs]
+      rm(run_r); gc(verbose = FALSE)
+      x031 <- dsa_slim031(rates_in)
     }
     if (cfg$validate) {
-      checks[[paste0("trend_", r)]] <- dsa_trend_regime_checks(r, x_slim, pre_slim, ref_slim, sh, paths)
-      if (r == "reference" || cfg$validate_05_regimes) {
-        dsa_log("Regime %s: reproducing it with 05 evaluated in full ...", r)
-        checks[[paste0("v05_", r)]] <- dsa_verify_05_regime(r, rates, sh, paths)
-      }
+      checks[[paste0("trend_", r)]] <- rbind(
+        dsa_trend_regime_checks(r, x031, ref031, cal19, ser, rrow, set$TP_EPS),
+        dsa_check("V10b", "031 probability guard, all locations (informational)", NA,
+                  sprintf("%s: IR capped %d rows, CF capped %d rows, BG.mx shrunk %d rows", r,
+                          guards[[r]][["ir_capped"]], guards[[r]][["cf_capped"]], guards[[r]][["bg_shrunk"]])))
     }
-    trend_diag[[r]] <- dsa_trend_diag(pre_slim, x_slim, r)
-    rm(x_slim)
-    if (!r %in% sel$trend_regime) { rm(rates); gc(verbose = FALSE); next }
+    trend_diag[[r]] <- dsa_trend_diag(x031, cal19, r)
+    if (r != "reference") rm(x031)
+    if (!r %in% sel$trend_regime) { rm(rates_in); gc(verbose = FALSE); next }
     rows <- sel[trend_regime == r]
-    env06 <- dsa_06_setup(paths, sh$p06, rates, sh$base05)   # 06 clamps env06$b_rates in place
-    rm(rates)
+    dsa_log("Regime %s: evaluating 05 on the regime rates ...", r)
+    r05 <- dsa_run_05(paths, sh$p05, rates_in)   # modifies rates_in in place
+    rm(rates_in)
+    miss_l <- setdiff(sh$locs, unique(r05$b_rates$location))
+    if (length(miss_l)) stop("05 output lacks modelled locations (05 renames changed?): ", paste(miss_l, collapse = ", "))
+    if (cfg$validate) {
+      checks[[paste0("v18_", r)]] <- dsa_check("V18", "05's data.in and inc do not depend on the rates",
+                                               dsa_same_table(r05$data.in, sh$base05$data.in) &&
+                                                 dsa_same_table(r05$inc, sh$base05$inc), r)
+    }
+    if (r == "reference") {   # kept only for the V20 live-06 check
+      ref05 <- list(b_rates = r05$b_rates[location %in% vlocs], data.in = r05$data.in, inc = r05$inc,
+                    repYear = r05$repYear)
+    }
+    env06 <- dsa_06_setup(paths, sh$p06, r05$b_rates, r05)   # 06 clamps env06$b_rates in place
+    rm(r05)
     locs06 <- dsa_06_locations(env06$data.in, env06$dt_hbp_targets)
     if (!setequal(locs06, sh$all_locs)) stop("06's location list differs from the one derived from 05's data.in.")
     if (r == "reference" && cfg$validate) {
@@ -2524,26 +2935,40 @@ dsa_main <- function(cfg = dsa_config()) {
     dsa_log("Regime %s finished in %.1f min; failed tasks: %d; max worker memory %.0f MB.", r, timing[[r]], nfail,
             if (nrow(statuses[[r]])) max(statuses[[r]]$mem_mb, na.rm = TRUE) else NA_real_)
   }
+  rm(ref031, cal19); gc(verbose = FALSE)
   if (!is.null(clh$cl)) { parallel::stopCluster(clh$cl); clh$cl <- NULL }
   status_dt <- rbindlist(statuses, fill = TRUE)
   fail <- if (nrow(status_dt)) status_dt[ok == FALSE] else status_dt
   if (nrow(fail)) dsa_fwrite(fail, file.path(paths$dsa_root, "logs", cfg$run_id, "failures.csv"), paths)
   statin_cfg <- rbindlist(statin_cfg)
   trend_diag <- rbindlist(trend_diag)
+  if (cfg$validate) {
+    b <- trend_diag[trend_regime == "reference" & cause == cause[1]]
+    checks$trend_step <- dsa_check("V11b", "coherent other-cause mortality in the reference (informational)", NA,
+      sprintf(paste0("Nx-weighted BG.mx.all relative to its calibrated 2019 value: 2020 %.3f, 2030 %.3f, 2050 %.3f. ",
+                     "031 re-derives the projected other-cause rate as ALL.mx - sum DIS.mx.t0, so the 2020 value ",
+                     "includes that re-anchoring as well as one year of trend; identical in every regime (V04)."),
+              b[year == 2020, BGall_ratio_to_2019], b[year == 2030, BGall_ratio_to_2019], b[year == 2050, BGall_ratio_to_2019]))
+  }
   trajectories <- dsa_trajectories(sel, targets, statin_cfg, sh$pop40, fenv)
   if (cfg$validate) {
     checks$targets <- dsa_target_checks(targets, sh, trajectories, statin_cfg)
-    checks$mapping <- dsa_mapping_checks(sh)
+    checks$mapping <- dsa_mapping_checks(sh, paths)
   }
   manifest_out <- list(run_id = cfg$run_id, dsa_version = DSA_VERSION, mode = cfg$mode,
+                       complete_manifest = complete, published = published,
                        started = format(t_start), countries = sh$locs, n_countries = length(sh$locs),
                        n_eligible_countries = length(sh$all_locs),
                        dsa_ids = sel$dsa_id, trend_regimes = unique(sel$trend_regime),
                        config = cfg[setdiff(names(cfg), "render")], timing_min = timing,
                        failures = if (nrow(fail)) fail else NULL,
                        script06 = basename(sh$p06$file), run_args = sh$run_args,
-                       flags00 = sh$r00$flags, code_md5 = dsa_md5(dsa_code_files(paths, sh$p06$file)),
-                       input_md5 = dsa_md5(dsa_input_files(paths)),
+                       flags00 = sh$r00$flags, trend_method = sh$regimes$trend_method[1],
+                       calibration_deaths_source = sh$r00$calibration_deaths_source,
+                       run_calibration_par_00 = sh$r00$run_calibration_par,
+                       pipeline_artefacts = sh$artefacts,
+                       code_md5 = dsa_md5(dsa_code_files(paths, sh$p06$file)),
+                       input_md5 = dsa_md5(dsa_input_files(paths, set)),
                        git_head = dsa_git(paths, c("rev-parse", "HEAD")), git_status_before = git0,
                        R = R.version.string,
                        packages = vapply(c("data.table", "dplyr", "readxl", "countrycode", "rmarkdown", "knitr"),
@@ -2558,10 +2983,16 @@ dsa_main <- function(cfg = dsa_config()) {
   dsa_log("Finalising (combining checkpoints) ...")
   results <- dsa_finalize(sh, cfg, paths, statuses, trend_diag, targets, trajectories, statin_cfg, checks)
   if (cfg$validate && "reference" %in% sel$dsa_id) {
-    dsa_log("Verifying against the live 06 functions and the ordinary outputs ...")
-    checks$ordinary <- dsa_verify_ordinary(sh, cfg, paths, rates_ref)
+    dsa_log("Verifying against the live 06 functions and the saved primary outputs ...")
+    checks$ordinary <- dsa_verify_ordinary(sh, cfg, paths, ref05)
+    if (cfg$compare_ordinary) {
+      v21 <- dsa_verify_out_model(sh, cfg, paths)
+      checks$v21 <- v21$check
+      dsa_fwrite(v21$detail, file.path(run_dir, "validation", "v21_countries.csv"), paths)
+      dsa_log("V21: %s", v21$check$detail)
+    }
   }
-  rm(rates_ref); gc(verbose = FALSE)
+  rm(ref05); gc(verbose = FALSE)
   validation <- rbindlist(c(checks, list(results$run_checks)), fill = TRUE)
   dsa_save_rds(validation, file.path(run_dir, "validation", "validation.rds"), paths)
   dsa_fwrite(validation, file.path(run_dir, "validation", "validation.csv"), paths)
@@ -2585,14 +3016,8 @@ dsa_main <- function(cfg = dsa_config()) {
   if (nrow(iso)) dsa_log("WARNING: %d file(s) outside output_dsa/ and scenarios_dsa/ changed during the run.", nrow(iso))
   rm(results); gc(verbose = FALSE)
   if (isTRUE(cfg$render) && manifest_out$status == "COMPLETE") {
-    dsa_render_documents(cfg$run_id, paths)
-    if (cfg$mode == "full" && is.null(cfg$dsa_ids)) {
-      v30 <- dsa_verify_report(paths)
-      validation <- rbind(validation, v30, fill = TRUE)
-      dsa_save_rds(validation, file.path(run_dir, "validation", "validation.rds"), paths)
-      dsa_fwrite(validation, file.path(run_dir, "validation", "validation.csv"), paths)
-      dsa_log("V30 %s: %s", if (isTRUE(v30$pass)) "PASS" else "FAIL/NA", v30$detail)
-    }
+    dsa_render_and_verify(cfg$run_id, paths, render_which)
+    manifest_out <- readRDS(status_file)
   }
   dsa_log("Done in %.1f min.", as.numeric(difftime(Sys.time(), t_start, units = "mins")))
   invisible(manifest_out)
