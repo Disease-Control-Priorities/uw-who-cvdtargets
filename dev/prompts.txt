@@ -17,6 +17,8 @@ Goal docs/who_cvd_targets_paper1.Rmd dternministic sensitivity results should co
 
 no need to re run code/00-08* pipeline, even less the 03_calibration_who. that is expensive
 
+results fro manuscript are produced in scenarios/scenarios_aim1/aim1_report.Rmd read for context
+
 export the prompt as a .md file
 
 ###################333

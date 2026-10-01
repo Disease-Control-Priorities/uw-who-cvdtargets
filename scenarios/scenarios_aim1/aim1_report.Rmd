@@ -310,6 +310,13 @@ data.out[intervention %in% c("statins_only", "statins", "Statins"),
 data.out[intervention %in% c("all_interventions"),
          intervention := "All Interventions"]
 
+# Reporting-only: before bp_combined is dropped, keep a small cumulative summary
+# (2026-2050, = cum_start_year below) of the modelled 150-million BP scenario
+# (both subgroups together) and its BAU, by cause, for the manuscript.
+bp_combined_cumul <- data.out[intervention %in% c("b.a.u", "bp_combined") & year >= 2026L,
+                              .(dead = sum(dead, na.rm = TRUE)),
+                              by = .(intervention, cause)]
+
 # Keep only recognised scenarios; bp_combined (= sum of the two BP subgroups, the
 # 150M policy scenario) is excluded from the per-intervention deaths figures and
 # is instead summarised in the HTN control-target tables below.
@@ -1350,12 +1357,13 @@ dt_excel_tab5 <- copy(dt_tab5_fmt)
 # ASMR Under Intervention Scenarios
 
 ```{r asmr-interventions, message=FALSE, warning=FALSE, echo=FALSE, fig.width=12, fig.height=7}
+# Denominator = population alive in the stratum, taken from one cause's rows
+# (pop is replicated across the four cause rows). Summing well + sick over the
+# four causes would count each person four times.
 dt_asmr2 <- data.out[year >= 2019,
                       .(dead = sum(dead, na.rm = TRUE),
-                        well = sum(well, na.rm = TRUE),
-                        sick = sum(sick, na.rm = TRUE)),
+                        Nx   = sum(pop[cause == "ihd"], na.rm = TRUE)),
                       by = .(intervention, age, year)]
-dt_asmr2[, Nx := well + sick]
 
 asmr_int <- calculate_asmr(dt_asmr2, deaths_col = "dead",
                             population_col = "Nx", disagg_var = "intervention")
@@ -2502,6 +2510,545 @@ build_paper_extras(
   control_start_year = 2026, control_target_year = 2030,
   adherence_ir = 0.575, adherence_cf = 0.644, prop_athero_stroke = 0.60
 )
+```
+
+```{r paper-derived, message=FALSE, warning=FALSE, echo=FALSE}
+# ---- Derived quantities quoted in the manuscript (reporting only) -----------
+# Sums, shares and ratios of results already computed above, built once here so
+# that who_cvd_targets_paper1.Rmd only formats values. Written to
+# paper_derived.rds. All cumulative quantities are 2026-2050.
+stopifnot(cum_start_year == 2026L)
+pp_chk <- readRDS(paste0(paper_dir, "paper_params.rds"))
+
+bau_2026_2050 <- data.out[intervention == "b.a.u" & year >= cum_start_year,
+                          sum(dead, na.rm = TRUE)]
+stopifnot("BAU 2026-2050 differs from paper_params" =
+            isTRUE(all.equal(bau_2026_2050, pp_chk$bau_total_deaths_2026)))
+
+# Modelled 150-million BP scenario (both subgroups together), from the summary
+# kept in load-model-output before bp_combined was dropped.
+bpc <- dcast(bp_combined_cumul, cause ~ intervention, value.var = "dead")
+total_bp_combined <- bpc[, sum(b.a.u) - sum(bp_combined)]
+stopifnot("bp_combined BAU differs from the BAU total" =
+            isTRUE(all.equal(bpc[, sum(b.a.u)], bau_2026_2050)))
+
+stat_cause <- dt_merged[intervention == "Improved Statin Uptake",
+                        .(averted = sum(deaths_delayed, na.rm = TRUE)), by = cause]
+
+sex_bau <- data.out[intervention == "b.a.u" & year >= cum_start_year,
+                    .(bau = sum(dead, na.rm = TRUE)), by = sex]
+sex_av  <- dt_merged[intervention == "All Interventions",
+                     .(averted = sum(deaths_delayed, na.rm = TRUE)), by = sex]
+sex_tab <- merge(sex_av, sex_bau, by = "sex")
+sex_tab[, frac_bau := averted / bau]
+agesex_all <- dt_age_sex[as.character(intervention) == "All Interventions"]
+agesex_all[, age_group := as.character(age_group)]
+
+# Average YLLs per death averted (All Interventions): reflects both the age at
+# death and the national UNWPP remaining life expectancy used for YLLs.
+yll_inc <- bod_tab4[as.character(intervention) == "All Interventions" & !is.na(location_income),
+                    .(stratum = as.character(location_income), deaths = Deaths, ylls = YLLs)]
+yll_reg <- bod_tab3[as.character(intervention) == "All Interventions" & !is.na(region),
+                    .(stratum = as.character(region), deaths = Deaths, ylls = YLLs)]
+yll_per_death <- rbind(cbind(stratum_type = "World Bank income group", yll_inc),
+                       cbind(stratum_type = "WHO region", yll_reg))
+yll_per_death[, yll_per_death := ylls / deaths]
+
+# BAU trajectory: deaths, age-standardised mortality (asmr-interventions chunk)
+# and incident / prevalent cases (disease-trends chunk) at the window ends.
+bau_year  <- data.out[intervention == "b.a.u" & year %in% c(cum_start_year, 2050L),
+                      .(deaths = sum(dead, na.rm = TRUE)), by = year]
+asmr_bau  <- asmr_int[as.character(intervention) == "b.a.u" & year %in% c(cum_start_year, 2050L),
+                      .(year, ASMR)]
+cases_bau <- dt_trend[year %in% c(cum_start_year, 2050L), .(year, new_cases, sick)]
+
+# 150-million allocation facts from the target table written by 04 (bp_combined).
+htn_sum <- fread(paste0(wd_data, "htn_control_targets_summary.csv"))[scenario_id == "bp_combined"]
+htn_loc <- fread(paste0(wd_data, "htn_control_targets_by_loc.csv"))[scenario_id == "bp_combined"]
+stopifnot(nrow(htn_sum) == 1L, setequal(unique(htn_loc$location), unique(data.out$location)))
+allocation <- list(
+  scale_factor      = htn_sum$solved_non_diabetes_scale_factor,  # shared factor (joint mode)
+  n_capped_strata   = htn_sum$number_capped_strata,
+  n_bounded_gap     = htn_sum$number_bounded_gap_strata,
+  n_pop_fallback    = htn_sum$number_population_fallback_locations,
+  pop_fallback      = htn_sum$population_fallback_locations,
+  n_excluded        = htn_sum$number_missing_or_excluded_locations,
+  excluded          = htn_sum$missing_or_excluded_locations,
+  n_strata          = nrow(htn_loc),
+  n_zero_baseline   = htn_loc[baseline_control == 0, .N],
+  share_htn_diabetes = htn_loc[subgroup == "htn_diabetes", sum(htn_population_2025)] /
+                       htn_loc[, sum(htn_population_2025)],
+  by_sex = htn_loc[, .(added = sum(additional_controlled_2030),
+                       htn_pop_2025 = sum(htn_population_2025),
+                       controlled_2025 = sum(controlled_2025)), by = sex][
+    , `:=`(share_added = added / sum(added), control_2025 = controlled_2025 / htn_pop_2025)][]
+)
+
+sum_singles <- total_bp + total_bpd + total_stat
+paper_derived <- list(
+  bau_year          = bau_year,
+  asmr_bau          = asmr_bau,
+  cases_bau         = cases_bau,
+  bau_by_cause      = copy(bau_by_cause)[, share := bau_deaths / sum(bau_deaths)][],
+  allocation        = allocation,
+  bau_2026_2050     = bau_2026_2050,
+  frac_bau          = c(all = total_all, bp = total_bp, bpd = total_bpd,
+                        stat = total_stat, bp_combined = total_bp_combined) / bau_2026_2050,
+  sum_singles       = sum_singles,
+  subadditive_gap   = sum_singles - total_all,
+  subadditive_frac  = (sum_singles - total_all) / sum_singles,
+  total_bp_combined = total_bp_combined,
+  bp_subgroup_sum   = total_bp + total_bpd,
+  statin_ihd_is     = stat_cause[cause %in% c("ihd", "istroke"), sum(averted)],
+  statin_other_cvd  = stat_cause[cause %in% c("hstroke", "hhd"), sum(averted)],
+  averted_70plus    = dt_merged[intervention == "All Interventions" & age >= 70,
+                                sum(deaths_delayed, na.rm = TRUE)],
+  sex_tab           = sex_tab,
+  female_80plus     = agesex_all[sex == "Female" & age_group %in% c("80-89", "90+"), sum(deaths_delayed)],
+  male_80plus       = agesex_all[sex == "Male"   & age_group %in% c("80-89", "90+"), sum(deaths_delayed)],
+  female_lt70       = agesex_all[sex == "Female" & age_group == "<70", sum(deaths_delayed)],
+  male_lt70         = agesex_all[sex == "Male"   & age_group == "<70", sum(deaths_delayed)],
+  # deaths averted per 1000 additional people with controlled hypertension (2030)
+  per1000_added_no_diabetes = total_bp  / pp_chk$added_no_diabetes * 1000,
+  per1000_added_diabetes    = total_bpd / pp_chk$added_diabetes    * 1000,
+  yll_per_death     = yll_per_death
+)
+stopifnot(abs(paper_derived$statin_ihd_is + paper_derived$statin_other_cvd - total_stat) < 1,
+          abs(sex_tab[, sum(averted)] - total_all) < 1)
+saveRDS(paper_derived, paste0(paper_dir, "paper_derived.rds"))
+message("Saved paper_derived.rds")
+```
+
+```{r paper-statin-population, message=FALSE, warning=FALSE, echo=FALSE}
+# ---- Statin populations for manuscript Table 1 (reporting only) -------------
+# (a) Modelled statin coverage population: all adults aged >= 40 years in the
+#     modelled countries. The executed statin scenario (06, calculate_statins_impact)
+#     raises coverage of this whole age group from each country's baseline to 50%
+#     by 2030; baseline coverage is statins_current in statin_data.rds (the model
+#     input, NA treated as 0 as in 06), weighted here by the 2025 population >= 40.
+# (b) Provisional descriptive proxy for a readily identifiable eligible group:
+#     people with diabetes aged >= 40 years = sum over sex and the 5-year bands
+#     40-44 ... 80-84, 85+ of UNWPP 2024 population x age-, sex- and
+#     country-specific diabetes prevalence (the bp_data6.csv input that also defines
+#     the model's hypertension-with-diabetes subgroup; file reference year 2015,
+#     held constant). This is NOT the modelled statin denominator and NOT the full
+#     high-CVD-risk population.
+# Denominators: UNWPP 2024 single-year population for 2025 and 2030; locations
+# without a row for that year (Samoa, Tonga) use their latest available year, as
+# 04_define_interventions.R does for 2025. Writes paper_statin_population.rds.
+st_locs <- sort(unique(data.out$location))
+
+# Location names: bp_data6 uses the 05_build_baseline.R name_map (parsed, not copied)
+ex05 <- parse(paste0(wd, "code/05_build_baseline.R"), keep.source = FALSE)
+nm05 <- Filter(function(e) is.call(e) && identical(e[[1]], as.name("<-")) &&
+                 identical(e[[2]], as.name("name_map")), as.list(ex05))
+stopifnot(length(nm05) == 1L)
+env05 <- new.env(); eval(nm05[[1]], env05)
+
+bp6 <- fread(paste0(wd_data, "bp_data6.csv"))
+bp6[, location := fcoalesce(unname(env05$name_map[location_gbd]), location_gbd)]
+dm_prev <- unique(bp6[, .(location, sex, age_band = Age.group, diabetes, input_year = Year)])
+stopifnot(!anyDuplicated(dm_prev, by = c("location", "sex", "age_band")),
+          all(st_locs %in% dm_prev$location))
+dm_input_years <- sort(unique(dm_prev[location %in% st_locs, input_year]))
+
+pop_un <- as.data.table(readRDS(paste0(wd_data, "PopulationsSingleAge0050.rds")))
+setnames(pop_un, "year_id", "year")
+pop_un <- pop_un[location %in% st_locs & age >= 40]
+stopifnot(all(st_locs %in% pop_un$location))
+pop_un[, age_band := fifelse(age >= 85, "85plus",
+                             paste0(5L * (age %/% 5L), "-", 5L * (age %/% 5L) + 4L))]
+pop_year_for <- function(target) {
+  pop_un[, .(year_used = if (any(year == target)) target else max(year[year <= target])),
+         by = location][, target_year := target][]
+}
+pop_years <- rbind(pop_year_for(2025), pop_year_for(2030))
+pop_fallback <- pop_years[year_used != target_year]
+pop_sel <- merge(pop_un, pop_years, by.x = c("location", "year"),
+                 by.y = c("location", "year_used"), allow.cartesian = TRUE)
+pop_band <- pop_sel[, .(pop = sum(Nx)), by = .(location, target_year, sex, age_band)]
+pop_band <- merge(pop_band, dm_prev[, .(location, sex, age_band, diabetes)],
+                  by = c("location", "sex", "age_band"), all.x = TRUE)
+stopifnot("missing diabetes prevalence for a >= 40 age band" = !anyNA(pop_band$diabetes))
+pop_band[, diab := pop * diabetes]
+
+stat_base <- readRDS(paste0(wd_data, "statin_data.rds")); setDT(stat_base)
+stat_base <- stat_base[year == 2026L & location %in% st_locs,
+                       .(statin_baseline = mean(statins_current, na.rm = TRUE)), by = location]
+stat_base <- merge(data.table(location = st_locs), stat_base, by = "location", all.x = TRUE)
+stat_base[!is.finite(statin_baseline), statin_baseline := 0]   # as in 06
+
+loc_stat <- dcast(pop_band[, .(pop40 = sum(pop), diab40 = sum(diab)),
+                           by = .(location, target_year)],
+                  location ~ target_year, value.var = c("pop40", "diab40"))
+loc_stat <- merge(loc_stat, stat_base, by = "location")
+loc_stat <- merge(loc_stat, countries_dt[, .(location, region)], by = "location", all.x = TRUE)
+stopifnot("modelled country without WHO region" = !anyNA(loc_stat$region))
+
+agg_stat <- function(d) d[, .(
+  n_countries          = .N,
+  pop40_2025           = sum(pop40_2025),
+  pop40_2030           = sum(pop40_2030),
+  statin_coverage_2025 = sum(pop40_2025 * statin_baseline) / sum(pop40_2025),
+  statin_target_2030   = 0.50,
+  diab40_2025          = sum(diab40_2025),
+  diab40_2030          = sum(diab40_2030)
+)]
+stat_pop <- rbind(loc_stat[, agg_stat(.SD), by = region],
+                  cbind(region = "Global", agg_stat(loc_stat)))
+stat_pop[, diab40_share_2025 := diab40_2025 / pop40_2025]
+# Aggregation checks: regions sum to the global totals; every country counted once.
+g_row <- stat_pop[region == "Global"]
+stopifnot(abs(stat_pop[region != "Global", sum(diab40_2025)] - g_row$diab40_2025) < 1,
+          abs(stat_pop[region != "Global", sum(diab40_2030)] - g_row$diab40_2030) < 1,
+          abs(stat_pop[region != "Global", sum(pop40_2025)] - g_row$pop40_2025) < 1,
+          g_row$n_countries == length(st_locs),
+          all(stat_base$statin_baseline < 0.50))   # every country scales up to 50%
+
+# Plausibility check of the diabetes input as a POPULATION prevalence: cases aged
+# 20+ it implies (2025) versus GBD 2023 all-age prevalent cases (national all-age
+# prevalence rate, by sex, x UNWPP 2025 all-age population). The model uses the
+# input as the share of hypertensive adults with diabetes, where higher values are
+# expected; the ratio is reported with the proxy.
+gbd_dm <- fread(paste0(wd_raw, "Diabetes/IHME-GBD_2023_DATA-fc30b06c-1.csv"))
+gbd_dm <- gbd_dm[cause_name == "Diabetes mellitus" & age_name == "All ages" &
+                   measure_name == "Prevalence" & metric_name == "Rate" & sex_name != "Both"]
+gbd_dm_names <- c("United States of America" = "United States",
+                  "Bolivia (Plurinational State of)" = "Bolivia",
+                  "United Republic of Tanzania" = "Tanzania", "Türkiye" = "Turkey",
+                  "Côte d'Ivoire" = "Ivory Coast", "Taiwan" = "Taiwan (Province of China)")
+gbd_dm[, location := fcoalesce(unname(gbd_dm_names[location_name]), location_name)]
+stopifnot("modelled country missing from the GBD 2023 diabetes file" = all(st_locs %in% gbd_dm$location))
+pop_all <- as.data.table(readRDS(paste0(wd_data, "PopulationsSingleAge0050.rds")))
+setnames(pop_all, "year_id", "year")
+pop_all <- merge(pop_all[location %in% st_locs], pop_years[target_year == 2025],
+                 by.x = c("location", "year"), by.y = c("location", "year_used"))
+dm_check <- merge(pop_all[, .(pop_all = sum(Nx)), by = .(location, sex)],
+                  gbd_dm[, .(location, sex = sex_name, rate = val / 1e5)], by = c("location", "sex"))
+dm_cases_gbd <- dm_check[, sum(pop_all * rate)]
+pop20 <-as.data.table(readRDS(paste0(wd_data, "PopulationsSingleAge0050.rds")))
+setnames(pop20, "year_id", "year")
+pop20 <- merge(pop20[location %in% st_locs & age >= 20], pop_years[target_year == 2025],
+               by.x = c("location", "year"), by.y = c("location", "year_used"))
+pop20[, age_band := fifelse(age >= 85, "85plus",
+                            paste0(5L * (age %/% 5L), "-", 5L * (age %/% 5L) + 4L))]
+pop20 <- merge(pop20[, .(pop = sum(Nx)), by = .(location, sex, age_band)],
+               dm_prev[, .(location, sex, age_band, diabetes)], by = c("location", "sex", "age_band"))
+stopifnot(!anyNA(pop20$diabetes))
+dm_cases_input_20 <- pop20[, sum(pop * diabetes)]
+rm(pop_all, pop20)
+
+paper_statin_population <- list(
+  by_region          = stat_pop,
+  dm_input_cases_20plus_2025 = dm_cases_input_20,
+  dm_gbd2023_cases_allages   = dm_cases_gbd,
+  dm_input_to_gbd_ratio      = dm_cases_input_20 / dm_cases_gbd,
+  age_band           = "40 years and older (5-year bands 40-44 to 80-84, and 85+)",
+  years              = c(2025L, 2030L),
+  units              = "persons",
+  population_source  = "UN World Population Prospects 2024, single-year population",
+  diabetes_source    = paste0("age-, sex- and country-specific diabetes prevalence in the model's ",
+                              "blood pressure input dataset (bp_data6.csv), held constant"),
+  diabetes_input_year = dm_input_years,
+  population_fallback = pop_fallback,
+  n_countries        = length(st_locs),
+  statin_target_coverage = 0.50,
+  n_countries_baseline_above_target = stat_base[statin_baseline >= 0.50, .N]
+)
+saveRDS(paper_statin_population, paste0(paper_dir, "paper_statin_population.rds"))
+message("Saved paper_statin_population.rds (diabetes aged >= 40, 2025: ",
+        fmt_m(g_row$diab40_2025), " M; 2030: ", fmt_m(g_row$diab40_2030), " M)")
+```
+
+```{r paper-calibration, message=FALSE, warning=FALSE, echo=FALSE, fig.width=11, fig.height=6}
+# ---- Calibration performance, in sample (reporting only; nothing re-estimated) --
+# Evaluates the stage-03 fit at exactly two points: the uncalibrated stage-02 rates
+# (tps_inpt, i.e. identity multipliers) and the saved calibrated rates
+# (calibrated_searo). Both use the calibration's own death/prevalence targets and
+# cohort engine, taken read-only from code/03_calibration_who.R (every statement
+# before the grid search; that part writes nothing) with the settings parsed from
+# code/00_run_model.R. The uncalibrated evaluation must reproduce the saved
+# per-band objective (calibration_diagnostics.csv, base_error) or the chunk stops.
+# The calibrated evaluation applies all selected multipliers jointly, so its
+# objective differs from the per-band values recorded when each band's
+# multiplier was chosen. Writes paper_calibration.rds and aim1_calibration_fit.png.
+stopifnot(is.null(getOption("who_cvd.cal_pilot")))
+cal_env <- new.env(parent = globalenv())
+cal_env$wd_data <- wd_data
+cal_env$wd_raw  <- wd_raw
+cal_settings <- c("MODEL_CAUSES", "AGES", "SEXES", "YEARS_HIST", "CAL_YEAR_START",
+                  "CAL_YEAR_END", "CAL_IR_GRID", "CAL_CF_GRID", "W_DEATHS", "W_PREV",
+                  "CAL_TP_CAP", "N_OUT_CHUNKS", "tps_inpt_stub", "calibrated_stub",
+                  "gbd_target_file", "calibration_deaths_source",
+                  "who_deaths_target_file", "run_calibration_par", "cause_map")
+for (e in parse(paste0(wd, "code/00_run_model.R"), keep.source = FALSE)) {
+  if (is.call(e) && identical(e[[1]], as.name("source")) &&
+      any(grepl("02_load_inputs", deparse(e)))) break
+  if (is.call(e) && identical(e[[1]], as.name("<-")) && is.name(e[[2]]) &&
+      as.character(e[[2]]) %in% cal_settings) eval(e, cal_env)
+}
+stopifnot(all(cal_settings %in% ls(cal_env)))
+
+ex03 <- parse(paste0(wd, "code/03_calibration_who.R"), keep.source = FALSE)
+grid_at <- which(vapply(ex03, function(e)
+  grepl("^grid <- CJ\\(", paste(deparse(e), collapse = "")), logical(1)))
+stopifnot(length(grid_at) == 1L)
+# 03's settings check (vapply(..., exists)) sees only the global environment, so
+# its required settings are exposed there during the evaluation and then removed
+# (any same-named report objects are restored).
+cal_needed  <- setdiff(cal_settings, c("cause_map", "who_deaths_target_file", "run_calibration_par"))
+cal_saved   <- mget(intersect(cal_needed, ls(globalenv())), envir = globalenv())
+for (nm in cal_needed) assign(nm, get(nm, envir = cal_env), envir = globalenv())
+tryCatch(for (i in seq_len(grid_at - 1L)) eval(ex03[[i]], cal_env),
+         finally = {
+           rm(list = cal_needed, envir = globalenv())
+           if (length(cal_saved)) list2env(cal_saved, envir = globalenv())
+         })
+
+cal_keys <- c("location", "sex", "cause", "age_group", "year")
+cal_project <- function(rates) {
+  # identical to score_multiplier() in 03 at multipliers (1, 1), per-cell output
+  d <- copy(rates[year >= cal_env$CAL_YEAR_START & year <= cal_env$CAL_YEAR_END])
+  d[, age_group := cal_env$cal_age_group(age)]
+  d[, `:=`(IR = pmin(IR, cal_env$CAL_TP_CAP), CF = pmin(CF, cal_env$CAL_TP_CAP))]
+  d <- cal_env$init_cohort(d, cal_env$CAL_YEAR_START)
+  d <- cal_env$run_cohort(d, cal_env$CAL_YEAR_START, cal_env$CAL_YEAR_END)
+  sim <- d[, .(Prevalence = sum(sick, na.rm = TRUE), Deaths = sum(dead, na.rm = TRUE)),
+           by = cal_keys]
+  out <- merge(sim, cal_env$targets, by = cal_keys, all.x = TRUE)
+  stopifnot(!anyNA(out$targetDeaths), !anyNA(out$gbdPrev))
+  out
+}
+cal_band_obj <- function(j) j[, .(
+  RMSE_deaths = sqrt(mean((targetDeaths - Deaths)^2)),
+  RMSE_prev   = sqrt(mean((gbdPrev - Prevalence)^2))), by = .(location, sex, cause, age_group)][
+    , objective := cal_env$W_DEATHS * RMSE_deaths + cal_env$W_PREV * RMSE_prev][]
+
+fit_pre <- cal_project(cal_env$b_rates)
+cal_post_rates <- rbindlist(lapply(
+  list.files(wd_data, pattern = "^calibrated_searo_part[0-9]+\\.rds$", full.names = TRUE),
+  readRDS), use.names = TRUE)
+stopifnot(setequal(unique(cal_post_rates$location), unique(cal_env$b_rates$location)))
+fit_post <- cal_project(cal_post_rates)
+
+cal_diag <- fread(paste0(wd_data, "calibration_diagnostics.csv"))
+cal_fac  <- fread(paste0(wd_data, "calibration_factors.csv"))
+obj <- merge(cal_band_obj(fit_pre)[, .(location, sex, cause, age_group, obj_pre = objective)],
+             cal_band_obj(fit_post)[, .(location, sex, cause, age_group, obj_post = objective)],
+             by = c("location", "sex", "cause", "age_group"))
+obj <- merge(obj, cal_diag[, .(location, sex, cause, age_group, base_error, cal_error)],
+             by = c("location", "sex", "cause", "age_group"))
+obj <- merge(obj, cal_fac[, .(location, sex, cause, age_group, ir_mult, cf_mult)],
+             by = c("location", "sex", "cause", "age_group"))
+cal_repro <- obj[, max(abs(obj_pre - base_error) / pmax(base_error, 1))]
+stopifnot("uncalibrated re-evaluation does not reproduce the saved objective" = cal_repro < 1e-8,
+          nrow(obj) == nrow(cal_diag))
+
+# Model location names (05_build_baseline.R renames three GBD names) and region.
+cal_rename <- c("United States of America" = "United States",
+                "Bolivia (Plurinational State of)" = "Bolivia",
+                "United Republic of Tanzania" = "Tanzania")
+cal_mod <- function(d) {
+  d <- copy(d)
+  d[, location := fcoalesce(unname(cal_rename[location]), location)]
+  d
+}
+fit_pre <- cal_mod(fit_pre); fit_post <- cal_mod(fit_post); obj <- cal_mod(obj)
+cal_audit <- cal_mod(cal_env$death_audit)
+mod_locs <- sort(unique(data.out$location))
+stopifnot("modelled countries missing from the calibration" = all(mod_locs %in% obj$location))
+
+fit <- merge(fit_pre[, c(cal_keys, "Deaths", "Prevalence", "targetDeaths", "gbdPrev"), with = FALSE],
+             fit_post[, c(cal_keys, "Deaths", "Prevalence"), with = FALSE],
+             by = cal_keys, suffixes = c("_pre", "_post"))
+fit <- merge(fit, cal_audit[, .(location, sex, cause, age_group, death_target)],
+             by = c("location", "sex", "cause", "age_group"))
+fit <- merge(fit, countries_dt[, .(location, region)], by = "location", all.x = TRUE)
+fit[, modelled := location %in% mod_locs]
+fit[, age_broad := fcase(age_group %in% c("20-24", "25-29", "30-34", "35-39", "40-44"), "20-44",
+                         age_group %in% c("45-49", "50-54", "55-59", "60-64"), "45-64",
+                         age_group %in% c("65-69", "70-74", "75-79"), "65-79",
+                         default = "80+")]
+
+# Weighted absolute percentage error (sum |sim - target| / sum target over
+# location x sex x cause x 5-year age band x year cells) and aggregate bias
+# (sum sim / sum target - 1), before and after calibration.
+fit_metrics <- function(d) d[, .(
+  n_cells          = .N,
+  target_deaths    = sum(targetDeaths),
+  target_prev      = sum(gbdPrev),
+  wape_deaths_pre  = sum(abs(Deaths_pre  - targetDeaths)) / sum(targetDeaths),
+  wape_deaths_post = sum(abs(Deaths_post - targetDeaths)) / sum(targetDeaths),
+  wape_prev_pre    = sum(abs(Prevalence_pre  - gbdPrev)) / sum(gbdPrev),
+  wape_prev_post   = sum(abs(Prevalence_post - gbdPrev)) / sum(gbdPrev),
+  bias_deaths_pre  = sum(Deaths_pre)  / sum(targetDeaths) - 1,
+  bias_deaths_post = sum(Deaths_post) / sum(targetDeaths) - 1,
+  bias_prev_pre    = sum(Prevalence_pre)  / sum(gbdPrev) - 1,
+  bias_prev_post   = sum(Prevalence_post) / sum(gbdPrev) - 1)]
+fm <- fit[modelled == TRUE]
+cause_lbl_cal <- c("Ischemic heart disease" = "IHD", "Ischemic stroke" = "Ischaemic stroke",
+                   "Intracerebral hemorrhage" = "Intracerebral haemorrhage",
+                   "Hypertensive heart disease" = "Hypertensive heart disease")
+cal_fit_tab <- rbindlist(list(
+  cbind(dimension = "All", stratum = "All modelled countries", fit_metrics(fm)),
+  cbind(dimension = "All", stratum = "All calibrated locations", fit_metrics(fit)),
+  fm[, cbind(dimension = "Cause", fit_metrics(.SD)), by = .(stratum = unname(cause_lbl_cal[cause]))],
+  fm[, cbind(dimension = "Sex", fit_metrics(.SD)), by = .(stratum = sex)],
+  fm[, cbind(dimension = "Age group", fit_metrics(.SD)), by = .(stratum = age_broad)],
+  fm[, cbind(dimension = "WHO region", fit_metrics(.SD)), by = .(stratum = region)],
+  fm[, cbind(dimension = "Death target", fit_metrics(.SD)),
+     by = .(stratum = fifelse(death_target == "WHO", "WHO GHE", "GBD 2023 (no WHO data)"))]
+), use.names = TRUE, fill = TRUE)
+setcolorder(cal_fit_tab, c("dimension", "stratum"))
+
+# Country-level distribution of the death and prevalence WAPE.
+loc_fit <- fm[, .(wd_pre  = sum(abs(Deaths_pre  - targetDeaths)) / sum(targetDeaths),
+                  wd_post = sum(abs(Deaths_post - targetDeaths)) / sum(targetDeaths),
+                  wp_pre  = sum(abs(Prevalence_pre  - gbdPrev)) / sum(gbdPrev),
+                  wp_post = sum(abs(Prevalence_post - gbdPrev)) / sum(gbdPrev)), by = location]
+q3 <- function(x) as.numeric(quantile(x, c(0.25, 0.5, 0.75)))
+cal_country <- list(
+  n = nrow(loc_fit),
+  deaths_pre = q3(loc_fit$wd_pre), deaths_post = q3(loc_fit$wd_post),
+  prev_pre = q3(loc_fit$wp_pre), prev_post = q3(loc_fit$wp_post),
+  n_deaths_improved = loc_fit[wd_post < wd_pre, .N],
+  n_prev_improved   = loc_fit[wp_post < wp_pre, .N])
+
+# Objective (weighted RMSE) and selected multipliers, modelled countries.
+om <- obj[location %in% mod_locs]
+at_bound <- function(x, g) abs(x - g) < 1e-9
+cal_objective <- list(
+  n_bands            = nrow(om),
+  n_bands_all        = nrow(obj),
+  pre_total          = om[, sum(base_error)],
+  selected_total     = om[, sum(cal_error)],   # per-band values at selection
+  joint_total        = om[, sum(obj_post)],    # all selected multipliers applied together
+  pre_total_all      = obj[, sum(base_error)],
+  selected_total_all = obj[, sum(cal_error)],
+  joint_total_all    = obj[, sum(obj_post)],
+  selected_reduction = 1 - om[, sum(cal_error)] / om[, sum(base_error)],
+  joint_reduction    = 1 - om[, sum(obj_post)] / om[, sum(base_error)],
+  frac_bands_improved_joint = om[, mean(obj_post < obj_pre)],
+  frac_bands_identity = om[, mean(at_bound(ir_mult, 1) & at_bound(cf_mult, 1))],
+  n_ir_floor   = om[, sum(at_bound(ir_mult, min(cal_env$CAL_IR_GRID)))],
+  n_ir_ceiling = om[, sum(at_bound(ir_mult, max(cal_env$CAL_IR_GRID)))],
+  n_cf_floor   = om[, sum(at_bound(cf_mult, min(cal_env$CAL_CF_GRID)))],
+  n_cf_ceiling = om[, sum(at_bound(cf_mult, max(cal_env$CAL_CF_GRID)))],
+  frac_any_bound = om[, mean(at_bound(ir_mult, min(cal_env$CAL_IR_GRID)) |
+                               at_bound(ir_mult, max(cal_env$CAL_IR_GRID)) |
+                               at_bound(cf_mult, min(cal_env$CAL_CF_GRID)) |
+                               at_bound(cf_mult, max(cal_env$CAL_CF_GRID)))],
+  reproduction_max_rel_diff = cal_repro)
+cal_mult <- om[, .(ir_q1 = quantile(ir_mult, 0.25), ir_med = median(ir_mult), ir_q3 = quantile(ir_mult, 0.75),
+                   cf_q1 = quantile(cf_mult, 0.25), cf_med = median(cf_mult), cf_q3 = quantile(cf_mult, 0.75)),
+               by = .(cause = unname(cause_lbl_cal[cause]))]
+
+# Death-target provenance (location level; no location mixes WHO and GBD cells).
+aud_loc <- cal_audit[, .(src = paste(sort(unique(death_target)), collapse = "+")), by = location]
+aud_m   <- cal_audit[location %in% mod_locs]
+cal_targets <- list(
+  n_locations_calibrated = uniqueN(cal_audit$location),
+  n_locations_who        = aud_loc[src == "WHO", .N],
+  n_locations_gbd        = aud_loc[src == "GBD", .N],
+  n_modelled_who         = aud_loc[location %in% mod_locs & src == "WHO", .N],
+  n_modelled_gbd         = aud_loc[location %in% mod_locs & src == "GBD", .N],
+  modelled_gbd_names     = aud_loc[location %in% mod_locs & src == "GBD", sort(location)],
+  n_target_cells         = nrow(cal_env$targets),
+  n_who_85plus_split     = cal_audit[age_group == "85-89" & who_split_85plus == TRUE, sum(n_who_cells)],
+  who_gbd_ratio          = aud_m[death_target == "WHO",
+                                 .(ratio = sum(who_deaths) / sum(gbd_deaths)),
+                                 by = .(cause = unname(cause_lbl_cal[cause]))],
+  years = c(cal_env$CAL_YEAR_START, cal_env$CAL_YEAR_END),
+  ir_grid = cal_env$CAL_IR_GRID, cf_grid = cal_env$CAL_CF_GRID,
+  w_deaths = cal_env$W_DEATHS, w_prev = cal_env$W_PREV, tp_cap = cal_env$CAL_TP_CAP)
+
+# Other-cause mortality in the stage-02 inputs: share of all-cause deaths in
+# 2009-2019 not represented by the four CVD causes + BG.mx.all (the input
+# BG.mx.all also excludes Alzheimer's disease and other dementias).
+br <- cal_mod(unique(cal_env$b_rates[year >= cal_env$CAL_YEAR_START & year <= cal_env$CAL_YEAR_END,
+                                     .(location, sex, age, year, cause, Nx, ALL.mx, BG.mx.all, DIS.mx.t0)]))
+br <- br[location %in% mod_locs, .(Nx = Nx[1], ALL.mx = ALL.mx[1], BG.mx.all = BG.mx.all[1],
+                                   cvd = sum(DIS.mx.t0)), by = .(location, sex, age, year)]
+cal_other_gap <- br[, sum(Nx * (ALL.mx - cvd - BG.mx.all)) / sum(Nx * ALL.mx)]
+
+# Figure: in-sample fit, modelled countries, global totals by year and cause.
+fig_cal <- rbind(
+  fm[, .(value = sum(targetDeaths), series = "Target"), by = .(cause, year)][, measure := "Deaths"],
+  fm[, .(value = sum(Deaths_pre), series = "Uncalibrated"), by = .(cause, year)][, measure := "Deaths"],
+  fm[, .(value = sum(Deaths_post), series = "Calibrated"), by = .(cause, year)][, measure := "Deaths"],
+  fm[, .(value = sum(gbdPrev), series = "Target"), by = .(cause, year)][, measure := "Prevalent cases"],
+  fm[, .(value = sum(Prevalence_pre), series = "Uncalibrated"), by = .(cause, year)][, measure := "Prevalent cases"],
+  fm[, .(value = sum(Prevalence_post), series = "Calibrated"), by = .(cause, year)][, measure := "Prevalent cases"])
+fig_cal[, cause := factor(unname(cause_lbl_cal[cause]), levels = unname(cause_lbl_cal))]
+fig_cal[, series := factor(series, levels = c("Target", "Uncalibrated", "Calibrated"))]
+g <- ggplot(fig_cal, aes(x = year, y = value / 1e6, colour = series, linetype = series)) +
+  geom_line(linewidth = 0.9) +
+  facet_wrap(vars(measure, cause), nrow = 2, scales = "free_y",
+             labeller = label_wrap_gen(width = 30, multi_line = FALSE)) +
+  scale_colour_manual(values = c(Target = "black", Uncalibrated = "grey55", Calibrated = "#2171b5"),
+                      name = NULL) +
+  scale_linetype_manual(values = c(Target = "solid", Uncalibrated = "dashed", Calibrated = "solid"),
+                        name = NULL) +
+  scale_x_continuous(breaks = c(2010, 2014, 2018)) +
+  expand_limits(y = 0) +
+  labs(x = NULL, y = "Millions") +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank(),
+        panel.spacing.x = unit(1.2, "lines"), strip.text = element_text(face = "bold"))
+print(g)
+ggsave(paste0(wd_outp, "aim1_calibration_fit.png"), plot = g, width = 11, height = 6, dpi = 300)
+
+paper_calibration <- list(
+  fit = cal_fit_tab, country = cal_country, objective = cal_objective,
+  multipliers = cal_mult, targets = cal_targets, other_cause_gap = cal_other_gap,
+  n_modelled = length(mod_locs))
+saveRDS(paper_calibration, paste0(paper_dir, "paper_calibration.rds"))
+message(sprintf("Saved paper_calibration.rds: death WAPE %.1f%% -> %.1f%%, prevalence WAPE %.1f%% -> %.1f%% (modelled countries)",
+                100 * cal_fit_tab[1, wape_deaths_pre], 100 * cal_fit_tab[1, wape_deaths_post],
+                100 * cal_fit_tab[1, wape_prev_pre], 100 * cal_fit_tab[1, wape_prev_post]))
+rm(cal_env, cal_post_rates, fit_pre, fit_post, fit, fm, br); invisible(gc())
+```
+
+```{r paper-forecast, message=FALSE, warning=FALSE, echo=FALSE}
+# ---- Coherent mortality forecast summary (reporting only) -------------------
+# Reads the saved Global forecast and its 2016-2019 holdout diagnostics written by
+# code/023_get_tps_bgmx.R (Lee-Carter base forecasts reconciled by MinT, Li et al.
+# 2019). Reports: (i) the holdout errors of reconciled and unreconciled (base)
+# forecasts; (ii) the projected 2019-2050 change in age-standardised rates (WHO
+# standard population rescaled to ages 20-95+, as elsewhere in this report), by
+# sex; (iii) the additive identity check. Writes paper_forecast.rds.
+fc  <- readRDS(paste0(wd_data, "tps_mortality_coherent_forecasted.rds")); setDT(fc)
+fcv <- readRDS(paste0(wd_data, "tps_mortality_coherent_validation.rds")); setDT(fcv)
+
+fc_wide <- dcast(fc, sex + age + year + ALL.mx + BG.mx.all ~ cause, value.var = "DIS.mx.t0")
+fc_identity <- fc_wide[, max(abs(ALL.mx - (ihd + istroke + hstroke + hhd + BG.mx.all)) / ALL.mx)]
+stopifnot(fc_identity < 1e-8)
+
+fc_long <- melt(fc_wide, id.vars = c("sex", "age", "year"),
+                measure.vars = c("ihd", "istroke", "hstroke", "hhd", "BG.mx.all", "ALL.mx"),
+                variable.name = "component", value.name = "rate")
+fc_long <- merge(fc_long, who_std, by = "age")
+fc_asr <- fc_long[year %in% c(2019L, 2050L), .(asr = sum(rate * weight)),
+                  by = .(sex, component, year)]
+fc_asr <- dcast(fc_asr, sex + component ~ year, value.var = "asr")
+setnames(fc_asr, c("2019", "2050"), c("asr_2019", "asr_2050"))
+fc_asr[, change_2050 := asr_2050 / asr_2019 - 1]
+
+comp_lbl <- c(ihd = "IHD", istroke = "Ischaemic stroke", hstroke = "Intracerebral haemorrhage",
+              hhd = "Hypertensive heart disease", BG.mx.all = "Other causes", ALL.mx = "All causes")
+fc_asr[, component := unname(comp_lbl[as.character(component)])]
+fcv[, component := unname(comp_lbl[as.character(component)])]
+
+paper_forecast <- list(
+  holdout = fcv[, .(sex, component, n, rmse_log, rmse_log_base, rmse_rate, rmse_rate_base)],
+  asr_change = fc_asr,
+  identity_max_rel_error = fc_identity,
+  fit_years = c(min(fc[source == "observed", year]), max(fc[source == "observed", year])),
+  holdout_years = c(2016L, 2019L), training_years = c(2000L, 2015L),
+  forecast_years = c(min(fc[source != "observed", year]), max(fc$year)),
+  ages = range(fc$age))
+saveRDS(paper_forecast, paste0(paper_dir, "paper_forecast.rds"))
+message("Saved paper_forecast.rds (identity max relative error ", signif(fc_identity, 2), ")")
 ```
 
 ```{r export-slides-bod-scalars, message=FALSE, warning=FALSE, echo=FALSE}
