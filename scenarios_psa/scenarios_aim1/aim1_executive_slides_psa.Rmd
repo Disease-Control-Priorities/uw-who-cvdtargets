@@ -1,0 +1,185 @@
+---
+title: "Projected Health Impact of Achieving WHO Targets for Cardiovascular Risk-Factor Control"
+subtitle: "Probabilistic sensitivity analysis: BP and statin intervention-effect parameter uncertainty"
+author: "\\color{blue}Work in Progress"
+institute: "WHO $\\cdot$ University of Washington"
+date: "`r format(Sys.Date(), '%B %Y')`"
+params:
+  data_dir: "data"
+  render_token: ""
+output:
+  beamer_presentation:
+    theme: "default"
+    keep_tex: false
+    latex_engine: xelatex
+    slide_level: 2
+    toc: false
+classoption: "aspectratio=169"
+---
+
+```{r load, include=FALSE}
+# Reads only the PSA run's CSV/JSON files (no recomputation). Render through
+# code/09_uncertainty_psa.R, which supplies the beamer preamble and the
+# PRELIMINARY / TECHNICAL CHECK banner header.
+suppressPackageStartupMessages({
+  library(data.table); library(ggplot2); library(knitr); library(kableExtra); library(jsonlite)
+})
+if (!identical(params$render_token, "rendered-by-09_uncertainty_psa")) {
+  stop("Render through psa_render_documents() (code/09_uncertainty_psa.R).")
+}
+dd <- params$data_dir
+rd <- function(f) fread(file.path(dd, f), encoding = "UTF-8")
+man <- fromJSON(file.path(dd, "run_manifest.json"))
+reg <- rd("parameter_register.csv"); pdraws <- rd("parameter_draws.csv")
+md <- rd("mortality_draws.csv"); sm <- rd("mortality_summary.csv")
+tab_g <- rd("table_global_interventions.csv"); tab_r <- rd("table_who_region_all_interventions.csv")
+val <- if (file.exists(file.path(dd, "validation_log.csv"))) rd("validation_log.csv") else NULL
+n_mc <- man$n_mc_draws_successful
+reportable <- isTRUE(man$reportable)
+tier <- if (is.null(man$interval_tier)) (if (reportable) "preliminary" else "technical") else man$interval_tier
+n_mc_f <- format(n_mc, big.mark = ",")
+cmp <- if (file.exists(file.path(dd, "manuscript_comparison.csv"))) rd("manuscript_comparison.csv") else NULL
+ui <- if (reportable) "95\\% UI" else "technical-check interval"
+int_order <- c("HTN Control (No Diabetes)", "HTN Control (Diabetes)", "Improved Statin Uptake", "All Interventions")
+int_cols <- c("HTN Control (No Diabetes)" = "#1f78b4", "HTN Control (Diabetes)" = "#a6cee3",
+              "Improved Statin Uptake" = "#e31a1c", "All Interventions" = "#6a3d9a")
+region_order <- c("Western Pacific", "South-East Asia", "Europe", "Americas", "Eastern Mediterranean", "Africa")
+f2 <- function(x, d = 2, s = 1) formatC(round(x / s, d), format = "f", digits = d, big.mark = ",")
+S <- function(geo, sid, m) sm[who_region == geo & scenario_id == sid & metric == m]
+uiM <- function(x, d = 2) sprintf("%s [%s--%s]", f2(x$point, d, 1e6), f2(x$lower, d, 1e6), f2(x$upper, d, 1e6))
+g_all <- S("Global", "all_interventions", "deaths_averted")
+g_pct <- S("Global", "all_interventions", "percent_averted")
+g_base <- S("Global", "all_interventions", "baseline_deaths")
+tex <- function(x) gsub("%", "\\\\%", gsub("&", "\\\\&", x))
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.align = "center",
+                      fig.height = 3.4, fig.width = 8.5, out.width = "\\linewidth", dev = "cairo_pdf")
+```
+
+## Key Result
+
+\begin{block}{All WHO targets combined (Targets 1 + 2 + 3), `r man$n_countries` countries, 2026--2050}
+\Large \textbf{`r uiM(g_all)` million} CVD deaths averted \normalsize\\[4pt]
+`r f2(g_pct$point, 1)`\% [`r f2(g_pct$lower, 1)`--`r f2(g_pct$upper, 1)`] of the `r f2(g_base$point, 1, 1e6)` million deaths projected under business-as-usual
+\end{block}
+
+\begin{columns}[T]
+\begin{column}{0.5\textwidth}
+\begin{exampleblock}{Reading the numbers}
+\footnotesize Point = deterministic model. Brackets = `r switch(tier, final = "95\\% uncertainty interval", preliminary = "preliminary 95\\% uncertainty interval", "technical-check interval")`: 2.5th--97.5th percentiles of `r n_mc_f` matched draws of the \textbf{BP and statin intervention-effect parameters}.
+\end{exampleblock}
+\end{column}
+\begin{column}{0.46\textwidth}
+\begin{alertblock}{Not total uncertainty}
+\footnotesize Coverage, targets, adherence, epidemiology, calibration and secular trends are fixed. `r if (tier == "final") paste0("Point estimates equal the manuscript central estimates", if (!is.null(cmp) && all(cmp$match)) " (all checked values match)" else "", ".") else paste(n_mc, "draws give limited tail precision; intervals are preliminary, not converged.")`
+\end{alertblock}
+\end{column}
+\end{columns}
+
+## Deaths Averted by Intervention, 2026--2050
+
+```{r tab-global, results='asis'}
+tg <- copy(tab_g)
+setnames(tg, c("Intervention", "WHO Target", "Deaths averted (M)", "Per year (thousands)"))
+tg[, `WHO Target` := tex(`WHO Target`)]
+kable(tg, format = "latex", booktabs = TRUE, linesep = "", escape = FALSE, align = "llrr") |>
+  kable_styling(latex_options = c("hold_position"), font_size = 8, full_width = FALSE) |>
+  column_spec(1, bold = TRUE, width = "2.9cm") |> column_spec(2, width = "5.3cm") |>
+  column_spec(3, width = "2.5cm") |> column_spec(4, width = "2.5cm") |>
+  row_spec(4, background = "#ece5f5")
+```
+
+\vspace{4pt}
+\scriptsize Point [`r ui`, `r n_mc` draws]. Within each draw: deaths summed over countries, four CVD causes, sexes, ages 20--95 and 2026--2050; per year = cumulative / 25. BP rows vary with the BPLTTC HRs, statins with the CTT RRs, All Interventions with both. The device-availability target is not separately simulated.
+
+## Deaths Averted by WHO Region (All Interventions)
+
+```{r tab-region, results='asis'}
+tr <- copy(tab_r)
+setnames(tr, c("Region", "Projected deaths", "Baseline deaths", "Deaths averted", "Averted / year", "\\% averted"))
+kable(tr, format = "latex", booktabs = TRUE, linesep = "", escape = FALSE, align = "lrrrrr") |>
+  kable_styling(latex_options = c("hold_position", "scale_down"), font_size = 7, full_width = FALSE) |>
+  column_spec(1, bold = TRUE)
+```
+
+\vspace{4pt}
+\scriptsize Point [`r ui`]. Baseline deaths are identical in every draw (no sampled parameter), so no interval is shown. Estimands are formed within each draw before taking percentiles; regions sum to the global total in every draw.
+
+## Spread of Deaths Averted Across Draws
+
+```{r fig-dist, fig.height=3.5}
+gd <- md[geography_level == "global" & draw_id > 0L]
+gd[, intervention := factor(intervention, levels = int_order)]
+gp <- sm[geography_level == "global" & metric == "deaths_averted"]
+gp[, intervention := factor(intervention, levels = int_order)]
+ggplot(gd, aes(x = deaths_averted / 1e6, fill = intervention)) +
+  geom_histogram(bins = 20, colour = "white", alpha = 0.85) +
+  geom_vline(data = gp, aes(xintercept = point / 1e6), linewidth = 0.7) +
+  geom_vline(data = gp, aes(xintercept = lower / 1e6), linetype = "dashed") +
+  geom_vline(data = gp, aes(xintercept = upper / 1e6), linetype = "dashed") +
+  facet_wrap(~intervention, scales = "free", nrow = 1) +
+  scale_fill_manual(values = int_cols, guide = "none") +
+  labs(x = "Deaths averted, 2026-2050 (millions)", y = "Draws",
+       caption = sprintf("Solid = deterministic point; dashed = 2.5th / 97.5th percentiles of %d draws", n_mc)) +
+  theme_minimal(base_size = 10) + theme(panel.grid.minor = element_blank())
+```
+
+## What Was Sampled
+
+\begin{columns}[T]
+\begin{column}{0.5\textwidth}
+\scriptsize
+\textbf{BP effects (15 parameters)}
+\begin{itemize}\scriptsize
+  \item BPLTTC 2021 Appendix S6 HR per 5 mmHg: IHD, stroke, heart failure, baseline SBP 130--139 to 170+
+  \item Log-normal from the 95\% CIs; effect workbook rebuilt per draw; feeds both diabetes subgroups
+\end{itemize}
+\textbf{Statin effects (4 parameters)}
+\begin{itemize}\scriptsize
+  \item Log-normal, centred on the model values; log-scale SD from CTT confidence limits (95\% or 99\%)
+  \item Every RR-dependent statin term, incl.\ the baseline-coverage denominator, rebuilt per draw
+  \item One vector per draw, shared by all countries and scenarios; independent (no published covariance)
+\end{itemize}
+\end{column}
+\begin{column}{0.47\textwidth}
+```{r statin-mini, results='asis'}
+stt <- reg[family %like% "^Statin efficacy"]
+x <- stt[, .(Parameter = gsub("_", "\\\\_", sub(" in calculate_statins_impact\\(\\)", "", model_variable)),
+             Model = sprintf("%.2f", model_point),
+             `Source RR (CI)` = sprintf("%.2f (%.2f--%.2f) %d\\%%", source_point, ci_lower, ci_upper, round(100 * ci_level)),
+             Ref = fifelse(grepl("2015", source), "CTT 2015", "CTT 2010"))]
+kable(x, format = "latex", booktabs = TRUE, linesep = "", escape = FALSE, align = "lrrl") |>
+  kable_styling(latex_options = "hold_position", font_size = 7, full_width = FALSE)
+```
+\vspace{2pt}
+\scriptsize CF RRs are trial mortality endpoints used as case-fatality multipliers --- a \textbf{modelling assumption}. The IHD-incidence value 0.74 differs from the all-participant CTT estimate (0.76) and is kept; its precision is borrowed from that estimate.
+\end{column}
+\end{columns}
+
+## Validation and Interpretation
+
+\begin{columns}[T]
+\begin{column}{0.5\textwidth}
+\textbf{Validation (`r if (!is.null(val)) sum(!is.na(val$pass)) else 0` hard checks, `r if (isTRUE(man$validation_all_pass)) "all passed" else "see log"`)}
+\begin{itemize}\footnotesize
+  \item Draw 0 reproduces the saved deterministic model output for every country, scenario and state cell
+  \item Batched engine = the model's own code re-run with each test draw's parameters
+  \item BP-only perturbations move only BP scenarios and All Interventions; statin-only, only statins and All Interventions
+  \item `r v6 <- if (is.null(val)) NULL else val[grepl("^V6", check)]; if (!is.null(v6) && nrow(v6) && all(v6$pass %in% TRUE)) "Draw-0 totals match the deterministic report (global and regional)" else "Draw-0 comparison with the deterministic report: not run for this geography"`
+  \item Regions sum to global in every draw; `r n_mc_f` of `r format(man$n_mc_draws_requested, big.mark = ",")` draws complete
+  \item `r if (!is.null(cmp) && nrow(cmp) && all(cmp$match)) sprintf("Draw 0 reproduces all %d manuscript central estimates checked", nrow(cmp)) else "Manuscript comparison: not run for this geography"`
+\end{itemize}
+\end{column}
+\begin{column}{0.47\textwidth}
+\begin{alertblock}{Interpretation}
+\footnotesize
+\begin{itemize}
+  \item Intervals reflect \textbf{intervention-effect parameter uncertainty only}
+  \item `r if (tier == "final") paste0(n_mc_f, " draws; endpoint precision reported in the PSA report") else paste0("Preliminary: ", n_mc, " draws; tail endpoints are imprecise (see report)")`
+  \item Point estimates are unchanged from the deterministic analysis
+\end{itemize}
+\end{alertblock}
+\end{column}
+\end{columns}
+
+\vspace{6pt}
+\scriptsize Run `r gsub("_", "\\\\_", man$run_id)`; seed `r man$seed`; `r man$n_countries` countries; model `r gsub("_", "\\\\_", man$script06)`.

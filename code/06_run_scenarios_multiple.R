@@ -92,7 +92,9 @@ calculate_antihypertensive_split <- function(intervention_rates,
                                              target_rows,
                                              active_no_diabetes = TRUE,
                                              active_diabetes = TRUE,
-                                             etihad_rr_table = ETIHAD_RR_BIN) {
+                                             etihad_rr_table = ETIHAD_RR_BIN,
+                                             bp_baseline = NULL,
+                                             diabetes_age_prepared = NULL) {
   cat(" - Calculating mutually exclusive antihypertensive subgroup impacts\n")
   validate_htn_target_table(target_rows)
   if (uniqueN(target_rows$location) != 1L ||
@@ -131,17 +133,26 @@ calculate_antihypertensive_split <- function(intervention_rates,
     targets_wide[, target_control_diabetes := baseline_control_diabetes]
   }
   
-  bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
-  dt_baseline <- calculate_baseline_incidence_gbd(
-    copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
-  )
+  if (is.null(bp_baseline)) {
+    bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
+    dt_baseline <- calculate_baseline_incidence_gbd(
+      copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
+    )
+  } else {
+    # All subsequent merges/updates are local to this scenario.
+    dt_baseline <- copy(bp_baseline)
+  }
   
-  diabetes_age <- expand_to_single_year_ages(DT.in)
-  diabetes_age <- unique(diabetes_age[, .(
-    location, Year, age, sex, bp_cat,
-    diabetes_share_among_htn_assumed_age_specific = diabetes
-  )])
-  setnames(diabetes_age, "Year", "year")
+  if (is.null(diabetes_age_prepared)) {
+    diabetes_age <- expand_to_single_year_ages(DT.in)
+    diabetes_age <- unique(diabetes_age[, .(
+      location, Year, age, sex, bp_cat,
+      diabetes_share_among_htn_assumed_age_specific = diabetes
+    )])
+    setnames(diabetes_age, "Year", "year")
+  } else {
+    diabetes_age <- diabetes_age_prepared
+  }
   if (anyNA(diabetes_age$diabetes_share_among_htn_assumed_age_specific) ||
       any(diabetes_age$diabetes_share_among_htn_assumed_age_specific < 0 |
           diabetes_age$diabetes_share_among_htn_assumed_age_specific > 1)) {
@@ -717,326 +728,6 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   # diabetes prevalence nor raisedBP is applied twice.
   
   #...........................................................
-  ## Sodium reduction  ----
-  #...........................................................
-  # Prepare sodium data (run once at setup)
-  ## Sodium reduction
-  # prepare_sodium_data <- function(data.in, wd_data) {
-  #   dt_sodium_scenarios <- readRDS(file = paste0(wd_data, "Sodium/", "sodium_policy_scenarios.rds"))
-  #   dt_sodium_scenarios <- dt_sodium_scenarios[year == 2024, .(location, sodium_current)]
-  #   
-  #   data.in <- merge(data.in, dt_sodium_scenarios, by = "location", all.x = TRUE)
-  #   data.in[!is.na(sodium_current), salt := sodium_current * 2.5]
-  #   data.in[, sodium_current := NULL]
-  #   
-  #   return(data.in)
-  # }
-  
-  prepare_sodium_data <- function(data.in, wd_data) {
-    dt_sodium_scenarios <- readRDS(file = paste0(wd_data,"sodium_policy_scenarios.rds"))
-    dt_sodium_scenarios <- dt_sodium_scenarios[year == 2024, .(location, sodium_current)]
-    
-    data.in <- merge(data.in, dt_sodium_scenarios, by = "location", all.x = TRUE)
-    data.in[!is.na(sodium_current), salt := sodium_current]
-    data.in[, sodium_current := NULL]
-    
-    return(data.in)
-  }
-  
-  data.in <- prepare_sodium_data(data.in,wd_data)
-  
-  apply_salt_reduction <- function(DT.in, salteff, saltmet, saltyear1 = 2026, saltyear2) {
-    if (saltmet == "percent") {
-      DT.in[, salt_target := salt * (1 - salteff)]
-      DT.in[salt_target<2, salt_target:=2]
-      DT.in[salt > 0, salt := salt - salt_target]
-      DT.in[salt < 2, salt := 2]
-    } else if (saltmet == "target") {
-      DT.in[, salt := salt - salteff]
-      DT.in[salt < 0, salt := 0]
-    } else if (saltmet == "app") {
-      DT.in[, salt := salteff]
-    }
-    
-    if (salteff != 0) {
-      DT.in[Year >= saltyear1 & Year <= saltyear2, 
-            Mean := Mean - (((2.8 * raisedBP) + ((1 - raisedBP) * 1.0)) * 
-                              salt * (Year - saltyear1 + 1) / (saltyear2 - saltyear1 + 1))]
-      
-      DT.in[Year > saltyear2, 
-            Mean := Mean - (((2.8 * raisedBP) + ((1 - raisedBP) * 1.0)) * salt)]
-    }
-    
-    return(DT.in)
-  }
-  
-  
-  # Sodium should also use ETIHAD effect sizes for consistency
-  calculate_sodium_impact_etihad <- function(intervention_rates, 
-                                             Country, 
-                                             DT.in, 
-                                             salteff,
-                                             saltmet,
-                                             saltyear1 = 2026,
-                                             saltyear2 = 2050,
-                                             dt_gbd_rr) {
-    cat(" - Calculating sodium impact using ETIHAD effect sizes\n")
-    
-    # Step 1: Get baseline BP distribution (no sodium intervention)
-    bp_prob_base <- get.bp.prob(DT.in, rx = 0, drugaroc = "baseline")
-    
-    # Step 2: Calculate baseline bin-specific incidence using GBD RRs
-    dt_baseline <- calculate_baseline_incidence_gbd(
-      copy(bp_prob_base), intervention_rates, Country, dt_gbd_rr
-    )
-    
-    # Step 3: Calculate sodium reduction and BP shift over time
-    # Merge salt data from DT.in
-    salt_info <- unique(DT.in[, .(age, sex, salt, raisedBP, Year,aroc)])
-    setnames(salt_info, "Year", "year")
-    
-    # function to split age "20-24" into 20:24
-    expand_age <- function(x){
-      if (x == "85plus") return(85:95)  # adjust as needed
-      bounds <- as.numeric(unlist(strsplit(x, "-")))
-      seq(bounds[1], bounds[2])
-    }
-    
-    # expand table
-    dt_expanded <- salt_info[, .(
-      age_single = expand_age(age)
-    ), by = .(age, sex, salt, raisedBP,aroc,year)]
-    
-    # reorder columns
-    dt_expanded <- dt_expanded[, .(age = age_single, sex, salt, raisedBP,aroc,year)]
-    
-    dt_baseline <- merge(dt_baseline, dt_expanded, by = c("age", "sex", "year"), all.x = TRUE)
-    
-    # Calculate target salt reduction based on method
-    if (saltmet == "percent") {
-      # salteff is percentage reduction (e.g., 0.3 = 30% reduction)
-      dt_baseline[, salt_target := salt * salteff]
-    } else if (saltmet == "target") {
-      # salteff is absolute target reduction in grams
-      dt_baseline[, salt_target := pmin(salt, salteff)]
-    } else if (saltmet == "app") {
-      # salteff is target intake level
-      dt_baseline[, salt_target := pmax(0, salt - salteff)]
-    }
-    
-    # Apply minimum salt intake of 2g
-    
-    dt_baseline[, salt_target := ifelse(salt - salt_target < 2, salt - 2, salt_target)]
-    
-    # Step 4: Apply linear progressive decline in sodium intake
-    # During scale-up period (saltyear1 to saltyear2): linear progression
-    dt_baseline[year >= saltyear1 & year <= saltyear2,
-                salt_reduction := salt_target * (year - saltyear1 + 1) / (saltyear2 - saltyear1 + 1)]
-    
-    # After scale-up period: full reduction achieved
-    dt_baseline[year > saltyear2,
-                salt_reduction := salt_target]
-    
-    # Before intervention: no reduction
-    dt_baseline[year < saltyear1,
-                salt_reduction := 0]
-    
-    dt_baseline[is.na(salt_reduction) | salt_reduction < 0, salt_reduction := 0]
-    
-    # # Step 4: Apply progressive decline in sodium intake
-    
-    # Apply Filippini dose-response to get SBP reduction
-    # Progressive BP lowering as sodium intake decreases
-    dt_baseline[, sbp_reduction := ((2.8 * raisedBP) + ((1 - raisedBP) * 1.0)) * salt_reduction]
-    
-    # Step 5: Calculate ETIHAD effect sizes based on BP reduction
-    # Number of 10 mmHg reductions achieved through sodium intervention
-    #dt_baseline[, n_steps_sodium := sbp_reduction / 10]
-    
-    # Get ETIHAD relative risks per cause
-    dt_baseline <- merge(dt_baseline, ETIHAD_RR, by = c("bp_cat","cause"), all.x = TRUE)
-    
-    etihad_effects <- dt_baseline[,list(N=mean(pop)),by=list(location,year,age,sex,bp_cat, cause)]
-    
-    diabetes_prop <- expand_to_single_year_ages(DT.in)
-    diabetes_prop <- diabetes_prop[,c("location","Year","age","sex","bp_cat", "diabetes"),with=F]
-    
-    setnames(diabetes_prop, "Year", "year")
-    
-    # merge diabetes proportion
-    etihad_effects <- merge(etihad_effects,diabetes_prop,all.x = T)
-    
-    etihad_effects[, etihad_effect := calculate_etihad_cumulative_rr(bp_cat, cause,diabetes_weight = diabetes)]
-    
-    etihad_effects[,c("diabetes","N"):=NULL]
-    # Merge ETIHAD effects into baseline data
-    dt_baseline <- merge(dt_baseline, etihad_effects, 
-                         by = c("location","year","age","sex","bp_cat", "cause"), all.x = TRUE)
-    
-    # Effect size from sodium intervention
-    
-    dt_baseline[, etihad_effect := (1-rr_per_10mmhg)]
-    dt_baseline[, etihad_effect_sodium := etihad_effect * 0.1 * sbp_reduction]
-    
-    # Step 6: Apply effect sizes to incidence
-    # IR_bin_new = IR_bin * (1 - effect_size)
-    dt_baseline[, IR_bin_new := IR_bin * (1 - etihad_effect_sodium)]
-    
-    # Step 7: Calculate population-weighted average incidence
-    # Using BASELINE population proportions (prob) - these stay constant
-    dt_baseline[, IR_new := sum(IR_bin_new * prob), 
-                by = .(age, sex, location, cause, year)]
-    
-    # Before intervention: no effect
-    dt_baseline[year < saltyear1, IR_new := IR]
-    
-    # Step 8: Calculate effect ratio
-    dt_baseline[, eff_ir := IR_new / IR]
-    
-    # Step 9: Apply case fatality reduction
-    # CF reduction factors from ETIHAD (different from IR reductions)
-    cf_etihad <- data.table(
-      cause = c("ihd", "istroke", "hstroke", "hhd", "aod"),
-      cf_reduction_per_control = c(0.24, 0.36, 0.76, 0.20, 0.047)
-    )
-    
-    dt_baseline <- merge(dt_baseline, cf_etihad, by = "cause", all.x = TRUE)
-    
-    # Apply CF Trend AROC reduction (except for AOD in younger ages)
-    #dt_baseline[, CF_new := CF * (1 - cf_reduction_per_control * control_agg)] 
-    #dt_baseline[, CF_new := CF * (1 - cf_reduction_per_control * aroc)]
-    
-    # ?? Test
-    # dt_baseline[, CF_new := CF * (1 - cf_reduction_per_control * (1 - eff_ir))]
-    
-    #dt_baseline[, CF_new := (CF * eff_ir) + ((CF * (1 - cf_reduction_per_control)) * (1 - eff_ir))]
-    #dt_baseline[cause == "aod" & age < 60, CF_new := CF]
-    
-    # No secondary effect on case fatality from sodium reduction
-    dt_baseline[, CF_new := CF]
-    dt_baseline[, eff_cf := CF_new / CF]
-    
-    # Step 10: Collapse to final output (remove BP bin dimension)
-    dt_final <- unique(dt_baseline[, .(
-      age, sex, location, cause, year,
-      IR = IR_new, CF = CF_new,
-      BG.mx, BG.mx.all, PREVt0, DIS.mx.t0, Nx, ALL.mx,
-      eff_ir, eff_cf
-    )])
-    
-    setorder(dt_final, year, sex, location, cause, age)
-    
-    cat("  - ETIHAD effect sizes applied successfully to sodium intervention\n")
-    cat("  - Sodium reduction scales linearly from 0 (", saltyear1, ") to full reduction (", saltyear2, ")\n")
-    cat("  - Using", saltmet, "method with salteff =", salteff, "\n")
-    
-    return(dt_final)
-  }
-  
-  #...........................................................
-  ## TFA Policy ----
-  #...........................................................
-  
-  dt_tfa_scenarios <- as.data.table(readRDS(file = paste0(wd_data,"tfa_policy_scenarios.rds")))
-  
-  # subset from base year   
-  dt_tfa_scenarios <- dt_tfa_scenarios[year>=2017,]
-  
-  # Convert to percent scale
-  dt_tfa_scenarios[, tfa_current := tfa_current * 100]
-  dt_tfa_scenarios[, tfa_target  := tfa_target * 100]
-  
-  # Function to calculate IHD mortality reduction from trans fat intake reduction
-  
-  calculate_tfa_impact <- function(dt_tfa_scenarios,
-                                   intervention_rates,
-                                   Country,
-                                   target_tfa = 0,
-                                   policy_start_year = 2027) {
-    cat("  - Calculating TFA impact\n")
-    
-    #..................................
-    # STEP 1: Subset country-specific intervention table
-    #..................................
-    
-    dt <- intervention_rates[location == Country]
-    
-    #..................................
-    # STEP 2: Merge in country-specific trans-fat exposure levels
-    #..................................
-    
-    dt <- merge(dt, dt_tfa_scenarios[location == Country],
-                by = c("location", "year"), all.x = TRUE)
-    
-    #..................................
-    # STEP 3: Compute reduction in TFA exposure (delta)
-    #  - Before policy start year then no reduction
-    #  - After policy start year  then  difference between current and target
-    #..................................
-    
-    dt[, delta := 0]
-    dt[year >= policy_start_year, delta := pmax(tfa_current - target_tfa, 0)]
-    
-    #..................................
-    # STEP 4: Assign age-specific relative risk (RR) per 1% of energy from TFA
-    #  These correspond to GBD-based RR gradients across age groups
-    #..................................
-    
-    dt[, rr_per_1percent := fcase(
-      age >= 20 & age <= 24, 1.21,
-      age >= 25 & age <= 29, 1.20,
-      age >= 30 & age <= 34, 1.19,
-      age >= 35 & age <= 39, 1.18,
-      age >= 40 & age <= 44, 1.17,
-      age >= 45 & age <= 49, 1.16,
-      age >= 50 & age <= 54, 1.15,
-      age >= 55 & age <= 59, 1.14,
-      age >= 60 & age <= 64, 1.13,
-      age >= 65 & age <= 69, 1.11,
-      age >= 70 & age <= 74, 1.10,
-      age >= 75 & age <= 79, 1.09,
-      age >= 80, 1.07,
-      default = 1
-    )]
-    
-    #..................................
-    # STEP 5: Convert TFA reduction to mortality effect size
-    #
-    # The denominator ensures:
-    #  - Effect size stays in [0,1]
-    #  - Consistent scaling across heterogeneous baseline exposures
-    #..................................
-    
-    dt[, effect_size := (delta * (rr_per_1percent - 1)) /
-         ((tfa_current * (rr_per_1percent - 1)) + 1)]
-    
-    dt[is.na(effect_size) | effect_size < 0, effect_size := 0]
-    dt[effect_size > 1, effect_size := 1]
-    
-    #..................................
-    # STEP 6: Apply case fatality (CF) reduction ONLY for Ischemic Heart Disease
-    #
-    # TFA policy has no measured effect on:
-    #   - incidence
-    #   - non-IHD mortality
-    #
-    # So: apply effect ONLY to CF of IHD.
-    #..................................
-    
-    dt[, CF_0 := CF]
-    dt[cause == "ihd", CF := CF * (1 - effect_size)]
-    
-    dt[, eff_cf := eff_cf * (1 - effect_size)]
-    
-    dt[, c("tfa_current", "tfa_target", "CF_0", "delta", 
-           "effect_size", "rr_per_1percent") := NULL]
-    
-    setorder(dt, year, sex, location, cause, age)
-    return(dt)
-  }
-  
-  
-  #...........................................................
   ## Statins ----
   #...........................................................
   
@@ -1263,13 +954,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   
   # #Test
   # Country <-"China"
-  # saltmet <-"percent"
-  # salteff <- 0.3
-  # saltyear1 <- 2025
-  # saltyear2 <- 2030
   # drugcov <- "p75"
-  # intervention <- "sodium"
-  # interventions <- c("statins","tfa")
   #
   # baseline_ctrl  <- 0.1585683
   # #baseline_ctrl  <- 0
@@ -1281,12 +966,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   # coverage_0 <- baseline_ctrl
   # target_year <- control_target_year
   # start_year <- control_start_year
-  #
-  #
-  # tfa
-  # tfa_target_tfa        <- 0         # target % energy from TFA
-  # tfa_policy_start_year <- 2026      # flexible start year
-  
+
   # baseline_statin_coverage <- 0.04737402
   # statin_target_coverage <- 0.60
   # statin_start_year      <- 2025
@@ -1294,10 +974,42 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   # adherence <- 1
   # prop_athero_stroke <- 0.6
   
+  # Build immutable country inputs once for the six scenario projections.
+  prepare_country_context <- function(Country, make_bp_baseline = TRUE) {
+    base_rates <- b_rates[location == Country & year >= 2017]
+    DT <- unique(data.in[location == Country][, Year := 2017][,
+                                                              -c("Lower95", "Upper95")])
+    DT.in <- as.data.table(left_join(
+      DT[rep(seq_len(nrow(DT)), 34L)][, Year := repYear(.I)],
+      inc %>% select(-location),
+      by = c("iso3", "Year")
+    ))
+    DT.in[, c("aroc", "aroc2", "p_change", "p_change2", "a_change",
+              "a_change2", "ideal", "drugaroc") := 0]
+    bp_baseline <- diabetes_age <- NULL
+    if (make_bp_baseline) {
+      baseline_rates <- copy(base_rates)
+      baseline_rates[, `:=`(eff_ir = 1, eff_cf = 1,
+                            intervention = "baseline")]
+      bp_prob <- get.bp.prob(copy(DT.in), rx = 0, drugaroc = "baseline")
+      bp_baseline <- calculate_baseline_incidence_gbd(
+        copy(bp_prob), baseline_rates, Country, dt_gbd_rr
+      )
+      diabetes_age <- expand_to_single_year_ages(copy(DT.in))
+      diabetes_age <- unique(diabetes_age[, .(
+        location, Year, age, sex, bp_cat,
+        diabetes_share_among_htn_assumed_age_specific = diabetes
+      )])
+      setnames(diabetes_age, "Year", "year")
+    }
+    list(base_rates = base_rates, DT.in = DT.in,
+         bp_baseline = bp_baseline, diabetes_age = diabetes_age)
+  }
+  
   project.all <- function(Country,
                           interventions = c("antihypertensive_no_diabetes",
                                             "antihypertensive_diabetes",
-                                            "sodium", "tfa", "statins"),
+                                            "statins"),
                           # Aim 2 BP-control targets are selected by scenario_id from
                           # the long table produced by 04_define_interventions.R.
                           htn_scenario_id,
@@ -1308,16 +1020,9 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
                           statin_target_year,
                           adherence_ir = adherence_ir,
                           adherence_cf = adherence_cf,
-                          # explicit sodium reduction parameters
-                          saltmet = "percent",
-                          salteff = 0.3,
-                          saltyear1 = 2026,
-                          saltyear2 = 2030,
-                          # explicit TFA policy parameters
-                          tfa_target_tfa        = 0,
-                          tfa_policy_start_year = 2027,
                           # implicit statins parameter
-                          baseline_statin_coverage = NULL
+                          baseline_statin_coverage = NULL,
+                          country_context = NULL
   ) {
     
     cat("\n========================================\n")
@@ -1329,33 +1034,23 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     # "antihypertensive" / "antihypertensive_diabetes" broken pair).
     valid_interventions <- c(
       "antihypertensive_no_diabetes", "antihypertensive_diabetes",
-      "sodium", "tfa", "statins"
+      "statins"
     )
     if (!all(interventions %in% valid_interventions)) {
       stop("Invalid intervention(s). Must be one or more of: ",
            paste(valid_interventions, collapse = ", "))
     }
     
-    # Preliminaries
-    base_rates <- b_rates[location == Country & year >= 2017]
-    
-    # Get BP distribution data
-    DT <- unique(data.in[location == Country][, Year := 2017][, -c("Lower95", "Upper95")])
-    DT.in <- as.data.table(left_join(
-      DT[rep(seq(1, nrow(DT)), 34)][, Year := repYear(.I)],
-      inc %>% select(-location),
-      by = c("iso3", "Year")
-    ))
-    
-    # Force all AROC-related variables in DT.in to zero (no checks)
-    DT.in[, c("aroc",
-              "aroc2",
-              "p_change",
-              "p_change2",
-              "a_change",
-              "a_change2",
-              "ideal",
-              "drugaroc") := 0]
+    # Accept a shared context for batch runs; preserve stand-alone calls.
+    if (is.null(country_context)) {
+      country_context <- prepare_country_context(
+        Country, make_bp_baseline = any(c(
+          "antihypertensive_no_diabetes", "antihypertensive_diabetes"
+        ) %in% interventions)
+      )
+    }
+    base_rates <- country_context$base_rates
+    DT.in <- country_context$DT.in
     
     #...............................................................
     # Aim 2 BP-control subgroup targets (long scenario table, by scenario_id).
@@ -1377,10 +1072,6 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
       validate_htn_target_table(htn_target_rows)
       cat("  HTN scenario:", htn_scenario_id, "\n")
     }
-    
-    #...............................................................
-    # Baseline for sodium intervention
-    DT.in.sodium <- copy(DT.in)
     
     #...............................................................
     # Baseline for statins intervention
@@ -1428,6 +1119,8 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
         DT.in = DT.in,
         dt_gbd_rr = dt_gbd_rr,
         target_rows = htn_target_rows,
+        bp_baseline = country_context$bp_baseline,
+        diabetes_age_prepared = country_context$diabetes_age,
         active_no_diabetes =
           "antihypertensive_no_diabetes" %in% interventions,
         active_diabetes = "antihypertensive_diabetes" %in% interventions
@@ -1446,26 +1139,8 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     }
     
     #..................................
-    ## Apply Sodium Intervention ----
-    #..................................
-    if ("sodium" %in% interventions) {
-      cat("\n=== Applying Sodium Intervention ===\n")
-      
-      intervention_rates_sodium <- calculate_sodium_impact_etihad(
-        intervention_rates_bau, Country, DT.in.sodium, salteff, saltmet,
-        saltyear1, saltyear2, dt_gbd_rr)
-      
-      intervention_effects[["sodium"]] <-
-        intervention_rates_sodium[, .(age, sex, location, cause, year,
-                                      eff_ir_salt = eff_ir, eff_cf_salt = eff_cf)]
-      
-      applied_interventions <- c(applied_interventions, "Salt")
-    }
-    
-    #..................................
-    ## Combine BP-related interventions (Antihypertensive split + Sodium) ----
-    ## Only genuinely INDEPENDENT interventions are combined multiplicatively here;
-    ## the two BP subgroups were already combined additively inside the split.
+    ## Combine BP-related interventions (Antihypertensive split) ----
+    ## The two BP subgroups were already combined additively inside the split.
     #..................................
     if (length(intervention_effects) > 0) {
       cat("\n=== Combining BP-related intervention effects ===\n")
@@ -1481,20 +1156,10 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
         )
       }
       
-      if (has_bp && "sodium" %in% interventions) {
-        intervention_rates[, `:=`(
-          eff_ir = eff_ir_bp * eff_ir_salt,
-          eff_cf = eff_cf_bp * eff_cf_salt
-        )]
-      } else if (has_bp) {
+      if (has_bp) {
         intervention_rates[, `:=`(
           eff_ir = eff_ir_bp,
           eff_cf = eff_cf_bp
-        )]
-      } else if ("sodium" %in% interventions) {
-        intervention_rates[, `:=`(
-          eff_ir = eff_ir_salt,
-          eff_cf = eff_cf_salt
         )]
       }
       
@@ -1509,27 +1174,10 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
       )]
       
       # Clean up temporary effect columns
-      effect_cols <- grep("^eff_(ir|cf)_(bp|salt)$", names(intervention_rates), value = TRUE)
+      effect_cols <- grep("^eff_(ir|cf)_bp$", names(intervention_rates), value = TRUE)
       intervention_rates[, (effect_cols) := NULL]
       
       cat("  Combined effects applied to CF and IR\n")
-    }
-    
-    #..................................
-    ## Apply TFA Intervention ----
-    #..................................
-    if ("tfa" %in% interventions) {
-      cat("\n=== Applying TFA Intervention ===\n")
-      
-      intervention_rates <- calculate_tfa_impact(
-        dt_tfa_scenarios      = dt_tfa_scenarios,
-        intervention_rates    = intervention_rates,
-        Country               = Country,
-        target_tfa            = tfa_target_tfa,
-        policy_start_year     = tfa_policy_start_year
-      )
-      
-      applied_interventions <- c(applied_interventions, "TFA")
     }
     
     #..................................
@@ -1668,28 +1316,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   #   interventions = c("antihypertensive", "statins"),
   #   drugcov = "p75"
   # )
-  # 
-  # # Run sodium + TFA + statins
-  # results_sodium_tfa_statins <- project.all(
-  #   Country = "China",
-  #   interventions = c("sodium", "tfa", "statins"),
-  #   saltmet = "percent",
-  #   salteff = 0.3,
-  #   saltyear1 = 2025,
-  #   saltyear2 = 2030
-  # )
-  # 
-  # ##Run all four interventions
-  # results_all <- project.all(
-  #   Country = "China",
-  #   interventions = c("antihypertensive", "sodium", "tfa", "statins"),
-  #   saltmet = "percent",
-  #   salteff = 0.3,
-  #   saltyear1 = 2025,
-  #   saltyear2 = 2030,
-  #   drugcov = "p75"
-  # )
-  # # 
+  # #
   # # # Run baseline (no interventions) - useful for comparison
   # results_baseline <- project.all(
   #   Country = "China",
@@ -1709,15 +1336,16 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
                                      statin_target_year,
                                      adherence_ir = 1,
                                      adherence_cf = 1,
-                                     saltmet = "percent",
-                                     salteff = 0.3,
-                                     saltyear1 = 2026,
-                                     saltyear2 = 2030,
-                                     tfa_target_tfa        = 0,
-                                     tfa_policy_start_year = 2027,
                                      baseline_statin_coverage = NULL) {
-    
-    results <- list()
+
+    results <- vector("list", length(scenario_list))
+    names(results) <- names(scenario_list)
+    country_context <- prepare_country_context(
+      Country, make_bp_baseline = any(vapply(scenario_list, function(scenario) {
+        any(c("antihypertensive_no_diabetes",
+              "antihypertensive_diabetes") %in% scenario)
+      }, logical(1)))
+    )
     
     for (scenario_name in names(scenario_list)) {
       cat("\n##########################################\n")
@@ -1734,13 +1362,8 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
         statin_target_year       = statin_target_year,
         adherence_ir             = adherence_ir,
         adherence_cf             = adherence_cf,
-        saltmet   = saltmet,
-        salteff   = salteff,
-        saltyear1 = saltyear1,
-        saltyear2 = saltyear2,
-        tfa_target_tfa        = tfa_target_tfa,
-        tfa_policy_start_year = tfa_policy_start_year,
-        baseline_statin_coverage = baseline_statin_coverage
+        baseline_statin_coverage = baseline_statin_coverage,
+        country_context = country_context
       )
     }
     
@@ -1760,7 +1383,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     statins_only        = "statins",
     all_interventions   = c("antihypertensive_no_diabetes",
                             "antihypertensive_diabetes",
-                            "sodium", "tfa", "statins")
+                            "statins")
   )
   
   # Map each scenario to the long-table scenario_id whose BP targets it consumes.
@@ -1948,22 +1571,15 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   # 1. Define intervention parameters BEFORE starting the cluster. The scenarios /
   #    htn_scenario_ids objects are defined above (with run_multiple_scenarios).
   
-  ## explicit sodium reduction parameters
-  saltmet <- "percent"
-  salteff <- 0.3
-  saltyear1 <- 2026
-  saltyear2 <- 2030
-  
-  ## TFA explicit params
-  tfa_target_tfa        <- 0         # target % energy from TFA
-  tfa_policy_start_year <- 2028      # flexible start year (effect lagged two years)
-  
   ## Statins explicit params (match calculate_statins_impact)
+  # Statins adherence from Basios et al 2025  
+  # https://academic.oup.com/eurjpc/advance-article/doi/10.1093/eurjpc/zwaf769/8381680
+  
   statin_target_coverage <- 0.50
   statin_start_year      <- 2026
-  statin_target_year     <- 2050
+  statin_target_year     <- 2030
   adherence_ir <-  0.575
-  adherence_cf <- 0.664
+  adherence_cf <- 0.644
   
   # Validate the long Aim 2 target table and confirm every BP scenario_id we need
   # is present. Targets come from 04_define_interventions.R; script 06 never
@@ -1977,7 +1593,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   }
   
   # 2. Detect and start cluster
-  ncores <- 6
+  ncores <- 10
   cl     <- makeCluster(ncores)
   registerDoParallel(cl)
   
@@ -1985,6 +1601,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     cl,
     varlist = c(
       "project.all",
+      "prepare_country_context",
       "run_multiple_scenarios",
       "get.bp.prob",
       "get_gbd_relative_risks",
@@ -2000,8 +1617,6 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
       "aim2_subgroup_incidence_multiplier",
       "validate_htn_target_table",
       "calculate_antihypertensive_split",
-      "calculate_sodium_impact_etihad",
-      "calculate_tfa_impact",
       "calculate_statins_impact",
       "repYear",
       "data.in",
@@ -2011,7 +1626,6 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
       "dt_gbd_rr",
       "ETIHAD_RR",
       "ETIHAD_RR_BIN",
-      "dt_tfa_scenarios",
       "dt_statin_scenarios",
       "dt_af_statins",
       "scenarios",
@@ -2024,6 +1638,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   clusterEvalQ(cl, {
     library(data.table)
     library(dplyr)
+    setDTthreads(1L)  # one data.table thread per country worker
   })
   
   # 3. Model countries: intersect model inputs with the validated policy target
@@ -2034,6 +1649,15 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   locs <- intersect(model_locs, target_locs)
   locs <- locs[!locs %in% c("Greenland", "Bermuda")]  # legacy model exclusions
   excluded_from_jobs <- setdiff(model_locs, locs)
+  # Use options(who_cvd.pilot_country = "Colombia") to test one complete
+  # country before committing to the full batch; default runs every country.
+  pilot_country <- getOption("who_cvd.pilot_country", NULL)
+  if (!is.null(pilot_country)) {
+    if (length(pilot_country) != 1L || !pilot_country %in% locs) {
+      stop("who_cvd.pilot_country must identify one eligible country.")
+    }
+    locs <- pilot_country
+  }
   if (length(excluded_from_jobs)) {
     cat("Locations excluded from Aim 1 jobs (no BP target / legacy exclusion):",
         paste(excluded_from_jobs, collapse = ", "), "\n")
@@ -2063,6 +1687,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     cat("Time    :", as.character(Sys.time()), "\n")
     cat("==============================\n")
     
+    country_error <- NULL
     res <- tryCatch({
       run_multiple_scenarios(
         Country             = country,
@@ -2072,18 +1697,13 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
         statin_target_coverage   = 0.50,
         statin_start_year        = 2026,
         statin_target_year       = 2030,
-        adherence_ir             = 1,
-        adherence_cf             = 1,
-        baseline_statin_coverage = NULL,
-        saltmet   = "percent",
-        salteff   = 0,                       # no sodium reduction (unchanged)
-        saltyear1 = 2026,
-        saltyear2 = 2030,
-        tfa_target_tfa        = 0,
-        tfa_policy_start_year = 2028
+        adherence_ir             = 0.575,
+        adherence_cf             = 0.644,
+        baseline_statin_coverage = NULL
       )
     }, error = function(e) {
-      cat("ERROR in", country, ":", e$message, "\n")
+      country_error <<- conditionMessage(e)
+      cat("ERROR in", country, ":", country_error, "\n")
       return(NULL)
     })
     
@@ -2104,7 +1724,7 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
     }
     
     sink()
-    res
+    list(ok = !is.null(res), error = country_error)
   }
   
   time_end <- Sys.time()
@@ -2113,10 +1733,24 @@ if (isTRUE(getOption("who_cvd.execute_06", TRUE))) {
   stopCluster(cl)
   
   # Check which countries succeeded
-  successful <- sapply(results_list, function(x) !is.null(x))
+  successful <- vapply(results_list, function(result) {
+    is.list(result) && isTRUE(result$ok)
+  }, logical(1))
   cat("\nSuccessful runs:", sum(successful), "out of", length(locs), "\n")
   if (any(!successful)) {
     cat("Failed countries:", paste(locs[!successful], collapse = ", "), "\n")
+    failed_indices <- which(!successful)
+    for (idx in head(failed_indices, 5L)) {
+      result <- results_list[[idx]]
+      message <- if (inherits(result, "error")) {
+        conditionMessage(result)
+      } else if (is.list(result) && !is.null(result$error)) {
+        result$error
+      } else {
+        "No error message returned; inspect the country log."
+      }
+      cat("  ", locs[idx], ": ", message, "\n", sep = "")
+    }
   }
   
   # Combine all results (if not too large)

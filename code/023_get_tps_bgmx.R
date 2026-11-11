@@ -451,3 +451,362 @@ saveRDS(dt, file = paste0(wd_data,"tps_bgmx_cvd_ihme.rds"))
 
 
 
+## Coherent all-cause / modeled-cause / other-cause forecast -----------------
+# Li et al. (2019), Insurance: Mathematics and Economics 86:122-133,
+# doi:10.1016/j.insmatheco.2019.02.011, sections 3.2 and 4.1: a Lee-Carter base
+# forecast for every series in the hierarchy, then MinT reconciliation by sex
+# and age on the rate scale. This is a separate forecast; the four trend files
+# above are unchanged.
+#
+# The modeled causes are the four CVD causes in cause_map (00_run_model.R);
+# dementia is not part of this project. Hierarchy at every sex/age/year:
+#   ALL.mx = ihd + istroke + hstroke + hhd + BG.mx.all
+# Inputs from tps_inpt (021/022):
+#   DIS.mx.t0 = GBD deaths from the cause / population (a population rate,
+#               not a case-fatality hazard among prevalent cases)
+#   BG.mx     = ALL.mx - DIS.mx.t0 of the cause on that row
+# BG.mx.all is built here as ALL.mx - sum(CVD). The BG.mx.all column in
+# tps_inpt is not used: 021_get_base_rates.R defines its own cause_map with
+# Alzheimer's disease and other dementias, so that column also excludes
+# dementia deaths. The difference is reported below.
+
+coherent_cause_map <- c(
+  "Ischemic heart disease" = "ihd", "ihd" = "ihd",
+  "Ischemic stroke" = "istroke", "istroke" = "istroke",
+  "Intracerebral hemorrhage" = "hstroke", "hstroke" = "hstroke",
+  "Hypertensive heart disease" = "hhd", "hhd" = "hhd"
+)
+coherent_cvd_causes <- c("ihd", "istroke", "hstroke", "hhd")
+coherent_bottom <- c(coherent_cvd_causes, "BG.mx.all")
+coherent_components <- c("ALL.mx", coherent_bottom)
+coherent_sexes <- c("Female", "Male")
+coherent_years <- 2000:2019
+coherent_ages <- 20:95
+coherent_until <- 2050L
+coherent_training_end <- 2015L
+coherent_holdout_years <- (coherent_training_end + 1L):max(coherent_years)
+coherent_keys <- c("location", "sex", "year", "age")
+# Relative tolerance for the additive identities (some rates are ~1e-7).
+coherent_rel_tol <- 1e-10
+
+# Read the calibration parts by name: on a rerun, the pattern = "tps" listing
+# at the top of this script also returns the trend files and these outputs.
+coherent_files <- list.files(wd_data, pattern = "^tps_inpt_part[0-9]+\\.rds$",
+                             full.names = TRUE)
+if (!length(coherent_files)) {
+  stop("Coherent forecast: no tps_inpt_part*.rds files in ", wd_data)
+}
+coherent_input <- data.table::rbindlist(lapply(coherent_files, readRDS),
+                                        use.names = TRUE, fill = TRUE)
+coherent_cols <- c(coherent_keys, "cause", "Nx", "ALL.mx", "DIS.mx.t0",
+                   "BG.mx", "BG.mx.all")
+coherent_missing_cols <- setdiff(coherent_cols, names(coherent_input))
+if (length(coherent_missing_cols)) {
+  stop("Coherent forecast: tps_inpt lacks columns ",
+       paste(coherent_missing_cols, collapse = ", "))
+}
+coherent_input <- coherent_input[year %in% coherent_years &
+                                   age %in% coherent_ages, ..coherent_cols]
+coherent_input[, `:=`(year = as.integer(year), age = as.integer(age),
+                      cause = trimws(as.character(cause)))]
+coherent_unknown <- setdiff(unique(coherent_input$cause),
+                            names(coherent_cause_map))
+if (length(coherent_unknown)) {
+  stop("Coherent forecast: unexpected causes in tps_inpt (",
+       paste(coherent_unknown, collapse = "; "),
+       "); the hierarchy expects rows for the four CVD causes only.")
+}
+coherent_input[, cause := unname(coherent_cause_map[cause])]
+
+# Input checks. Nothing is imputed, and a location with an incomplete grid
+# stops the run rather than being dropped (which would shift the Global
+# population between years).
+coherent_bad_values <- coherent_input[,
+  lapply(.SD, function(v) sum(!is.finite(v) | v < 0)),
+  .SDcols = c("Nx", "ALL.mx", "DIS.mx.t0", "BG.mx")]
+if (any(unlist(coherent_bad_values) > 0L)) {
+  stop("Coherent forecast: missing, non-finite or negative inputs (rows): ",
+       paste(names(coherent_bad_values), unlist(coherent_bad_values),
+             sep = " = ", collapse = ", "))
+}
+if (!all(coherent_input$sex %in% coherent_sexes)) {
+  stop("Coherent forecast: unexpected sex labels ",
+       paste(setdiff(unique(coherent_input$sex), coherent_sexes), collapse = ", "))
+}
+if (anyDuplicated(coherent_input, by = c(coherent_keys, "cause"))) {
+  stop("Coherent forecast: duplicate location/sex/year/age/cause rows.")
+}
+coherent_incomplete <- coherent_input[, .N, by = location][
+  N != length(coherent_sexes) * length(coherent_years) *
+    length(coherent_ages) * length(coherent_cvd_causes), location]
+if (length(coherent_incomplete)) {
+  stop("Coherent forecast: incomplete sex/year/age/cause grid for ",
+       paste(coherent_incomplete, collapse = ", "))
+}
+coherent_spread <- coherent_input[, .(ALL = max(ALL.mx) - min(ALL.mx),
+                                      Nx = max(Nx) - min(Nx)),
+                                  by = coherent_keys][ALL > 0 | Nx > 0]
+if (nrow(coherent_spread)) {
+  stop("Coherent forecast: Nx or ALL.mx differ across cause rows in ",
+       nrow(coherent_spread), " location/sex/year/age cells.")
+}
+coherent_bg_mismatch <- coherent_input[abs(BG.mx + DIS.mx.t0 - ALL.mx) >
+                                         coherent_rel_tol * ALL.mx, .N]
+if (coherent_bg_mismatch) {
+  stop("Coherent forecast: BG.mx != ALL.mx - DIS.mx.t0 in ", coherent_bg_mismatch,
+       " rows, so DIS.mx.t0 is not a population death rate.")
+}
+
+coherent_loc <- data.table::dcast(coherent_input,
+                                  location + sex + year + age ~ cause,
+                                  value.var = "DIS.mx.t0")
+coherent_loc <- merge(coherent_loc,
+                      coherent_input[cause == coherent_cvd_causes[1L],
+                                     c(coherent_keys, "Nx", "ALL.mx", "BG.mx.all"),
+                                     with = FALSE],
+                      by = coherent_keys)
+data.table::setnames(coherent_loc, "BG.mx.all", "BG.mx.all_tps_inpt")
+coherent_loc[, BG.mx.all := ALL.mx - (ihd + istroke + hstroke + hhd)]
+coherent_negative <- coherent_loc[BG.mx.all < 0]
+if (nrow(coherent_negative)) {
+  stop("Coherent forecast: the four CVD rates exceed ALL.mx in ",
+       nrow(coherent_negative), " cells (first: ",
+       paste(unlist(coherent_negative[1L, coherent_keys, with = FALSE]),
+             collapse = ", "), ").")
+}
+coherent_gap <- coherent_loc[, (BG.mx.all - BG.mx.all_tps_inpt) / ALL.mx]
+if (any(abs(coherent_gap) > coherent_rel_tol)) {
+  message("Coherent forecast: tps_inpt BG.mx.all differs from ALL.mx - sum(CVD) ",
+          "in ", sum(abs(coherent_gap) > coherent_rel_tol), " of ",
+          length(coherent_gap), " cells (median ",
+          signif(100 * stats::median(coherent_gap), 2), "%, max ",
+          signif(100 * max(abs(coherent_gap)), 2), "% of ALL.mx). ",
+          "This forecast uses ALL.mx - sum(CVD).")
+}
+coherent_loc[, BG.mx.all_tps_inpt := NULL]
+# Zero-population cells are valid: they add no exposure and no deaths to the
+# population-weighted Global rates. They are reported, not imputed or removed.
+coherent_zero_nx <- coherent_loc[Nx == 0, .N, by = location][order(-N)]
+if (nrow(coherent_zero_nx)) {
+  message("Coherent forecast: ", sum(coherent_zero_nx$N),
+          " location/sex/year/age cells have Nx = 0 and carry zero weight (",
+          paste(coherent_zero_nx$location, coherent_zero_nx$N, collapse = ", "),
+          ").")
+}
+
+# Global rate = total deaths / total population, so the identity carries over.
+coherent_wide <- coherent_loc[, c(list(Nx = sum(Nx)),
+                                  lapply(.SD, function(rate) sum(rate * Nx) / sum(Nx))),
+                              by = .(sex, year, age), .SDcols = coherent_components]
+data.table::setorder(coherent_wide, sex, year, age)
+rm(coherent_input, coherent_loc)
+if (nrow(coherent_wide) != length(coherent_sexes) * length(coherent_years) *
+    length(coherent_ages) || coherent_wide[, any(!(Nx > 0))]) {
+  stop("Coherent forecast: Global population is missing or zero in some cells.")
+}
+coherent_obs_error <- coherent_wide[, max(abs(ALL.mx - rowSums(.SD)) / ALL.mx),
+                                    .SDcols = coherent_bottom]
+if (!(coherent_obs_error <= coherent_rel_tol)) {
+  stop("Coherent forecast: observed Global rates break the all-cause identity ",
+       "(max relative error ", signif(coherent_obs_error, 3), ").")
+}
+
+# Lee-Carter on log rates, with the same damped-trend ETS for kt as the trend
+# files above. No floor: a non-positive rate stops the forecast.
+coherent_lc <- function(panel, component, end_year, forecast_end) {
+  wide <- data.table::dcast(panel[year <= end_year], age ~ year,
+                            value.var = component)
+  mat <- as.matrix(wide[, -1L, with = FALSE])
+  rownames(mat) <- wide$age
+  if (!identical(as.integer(wide$age), coherent_ages) ||
+      !identical(colnames(mat), as.character(2000:end_year)) || anyNA(mat)) {
+    stop("Coherent forecast: incomplete Lee-Carter matrix for ", component)
+  }
+  if (any(mat <= 0)) {
+    stop("Coherent forecast: ", component, " has ", sum(mat <= 0),
+         " non-positive Global rates; the log-rate model is undefined.")
+  }
+  log_rates <- log(mat)
+  ax <- rowMeans(log_rates)
+  decomposition <- svd(sweep(log_rates, 1L, ax, "-"), nu = 1L, nv = 1L)
+  bx <- decomposition$u[, 1L]
+  kt <- decomposition$d[1L] * decomposition$v[, 1L]
+  kt_fit <- forecast::ets(kt, model = "AAN", damped = TRUE)
+  future_kt <- as.numeric(forecast::forecast(kt_fit,
+                                             h = forecast_end - end_year)$mean)
+  fitted <- exp(ax + bx %o% kt)
+  future <- exp(ax + bx %o% future_kt)
+  dimnames(fitted) <- dimnames(mat)
+  dimnames(future) <- list(rownames(mat),
+                           as.character((end_year + 1L):forecast_end))
+  list(fitted = fitted, future = future)
+}
+
+coherent_fit <- function(panel, end_year, forecast_end) {
+  if (max(panel$year) != end_year) {
+    stop("Coherent forecast: training data do not end in ", end_year)
+  }
+  fits <- lapply(coherent_components, function(component) {
+    coherent_lc(panel, component, end_year, forecast_end)
+  })
+  names(fits) <- coherent_components
+  # LC fitted-value residual covariance is a proxy for the unknown covariance
+  # of base forecast errors in Li et al.'s MinT formula. It is not a rolling
+  # one-step error estimate. Shrink half toward its diagonal: 16-20 years
+  # cannot identify a stable unrestricted covariance across all components.
+  # No additive jitter: error variances run from ~1e-15 (hhd, age 20) to ~5e-6.
+  covariance <- lapply(seq_along(coherent_ages), function(i) {
+    observed <- panel[age == coherent_ages[i]][order(year)]
+    errors <- sapply(coherent_components, function(component) {
+      observed[[component]] - fits[[component]]$fitted[i, ]
+    })
+    W <- stats::cov(errors)
+    W <- 0.5 * W + 0.5 * diag(diag(W), nrow(W))
+    if (anyNA(W) || any(diag(W) <= 0)) {
+      stop("Coherent forecast: degenerate error covariance at age ",
+           coherent_ages[i])
+    }
+    W
+  })
+  list(fits = fits, covariance = covariance)
+}
+
+# MinT (Li et al. eqs. 16 and 22) in its equivalent constraint form,
+# y~ = y^ - W C'(C W C')^-1 C y^, where C y = 0 is the identity
+# ALL.mx - sum(bottom) = 0. This avoids inverting W, whose condition number
+# reaches ~1e6.
+coherent_C <- matrix(c(1, rep(-1, length(coherent_bottom))), nrow = 1L,
+                     dimnames = list(NULL, coherent_components))
+
+coherent_reconcile <- function(fit, years, label) {
+  data.table::rbindlist(lapply(seq_along(coherent_ages), function(i) {
+    base <- do.call(rbind, lapply(fit$fits, function(f) {
+      f$future[i, as.character(years)]
+    }))
+    WC <- fit$covariance[[i]] %*% t(coherent_C)
+    reconciled <- base - WC %*% solve(coherent_C %*% WC, coherent_C %*% base)
+    bottom <- reconciled[coherent_bottom, , drop = FALSE]
+    total <- colSums(bottom)
+    if (max(abs(reconciled["ALL.mx", ] - total) / total) > coherent_rel_tol) {
+      stop("Coherent forecast: MinT output is not coherent (", label,
+           ", age ", coherent_ages[i], ").")
+    }
+    # Linear MinT does not bound rates below. Stop rather than truncate, which
+    # would break the identity.
+    if (any(!(bottom >= 0))) {
+      negative <- which(!(bottom >= 0), arr.ind = TRUE)[1L, ]
+      stop("Coherent forecast: negative reconciled ",
+           coherent_bottom[negative[1L]], " rate (", label, ", age ",
+           coherent_ages[i], ", ", years[negative[2L]], ").")
+    }
+    out <- data.table::as.data.table(t(bottom))
+    out[, `:=`(year = years, age = coherent_ages[i], ALL.mx = total)]
+    out
+  }))
+}
+
+coherent_by_sex <- lapply(coherent_sexes, function(sx) {
+  panel <- coherent_wide[sex == sx]
+  # Holdout: fit on 2000-2015 only, forecast and reconcile 2016-2019, and
+  # compare cell by cell with the observed 2016-2019 Global rates.
+  holdout_fit <- coherent_fit(panel[year <= coherent_training_end],
+                              coherent_training_end, max(coherent_holdout_years))
+  holdout <- data.table::melt(
+    coherent_reconcile(holdout_fit, coherent_holdout_years,
+                       paste(sx, "holdout")),
+    id.vars = c("year", "age"), variable.name = "component",
+    value.name = "reconciled", variable.factor = FALSE)
+  base <- data.table::rbindlist(lapply(coherent_components, function(component) {
+    m <- holdout_fit$fits[[component]]$future
+    data.table::data.table(component = component,
+                           age = rep(as.integer(rownames(m)), ncol(m)),
+                           year = rep(as.integer(colnames(m)), each = nrow(m)),
+                           base = as.vector(m))
+  }))
+  actual <- data.table::melt(
+    panel[year %in% coherent_holdout_years, c("year", "age", coherent_components),
+          with = FALSE],
+    id.vars = c("year", "age"), variable.name = "component",
+    value.name = "observed", variable.factor = FALSE)
+  holdout <- merge(merge(holdout, base, by = c("component", "year", "age")),
+                   actual, by = c("component", "year", "age"))
+  if (nrow(holdout) != length(coherent_components) * length(coherent_ages) *
+      length(coherent_holdout_years) || anyNA(holdout)) {
+    stop("Coherent forecast: holdout forecasts and observations do not align.")
+  }
+  diagnostics <- holdout[, .(
+    n = .N,
+    rmse_rate = sqrt(mean((reconciled - observed)^2)),
+    rmse_rate_base = sqrt(mean((base - observed)^2)),
+    rmse_log = sqrt(mean((log(reconciled) - log(observed))^2)),
+    rmse_log_base = sqrt(mean((log(base) - log(observed))^2))),
+    by = component]
+  final_fit <- coherent_fit(panel, max(coherent_years), coherent_until)
+  projection <- coherent_reconcile(final_fit,
+                                   (max(coherent_years) + 1L):coherent_until,
+                                   paste(sx, "projection"))
+  projection[, sex := sx]
+  diagnostics[, sex := sx]
+  list(projection = projection, diagnostics = diagnostics)
+})
+
+coherent_future <- data.table::rbindlist(
+  lapply(coherent_by_sex, `[[`, "projection"), use.names = TRUE)
+coherent_future[, source := "reconciled_forecast"]
+coherent_history <- coherent_wide[, c("sex", "year", "age", coherent_components),
+                                  with = FALSE]
+coherent_history[, source := "observed"]
+coherent_rates <- data.table::rbindlist(list(coherent_history, coherent_future),
+                                        use.names = TRUE)
+data.table::setorder(coherent_rates, sex, age, year)
+coherent_diagnostics <- data.table::rbindlist(
+  lapply(coherent_by_sex, `[[`, "diagnostics"), use.names = TRUE)
+data.table::setcolorder(coherent_diagnostics, c("sex", "component"))
+
+# Output checks: complete grid, finite nonnegative rates, and the all-cause
+# identity at every sex/age/year, observed and projected.
+if (nrow(coherent_rates) != length(coherent_sexes) * length(coherent_ages) *
+    length(min(coherent_years):coherent_until) ||
+    anyDuplicated(coherent_rates, by = c("sex", "age", "year"))) {
+  stop("Coherent forecast: output grid is incomplete or duplicated.")
+}
+if (coherent_rates[, any(!is.finite(as.matrix(.SD)) | as.matrix(.SD) < 0),
+                   .SDcols = coherent_components]) {
+  stop("Coherent forecast: negative or non-finite rates in the output.")
+}
+coherent_identity <- coherent_rates[, abs(ALL.mx - rowSums(.SD)) / ALL.mx,
+                                    .SDcols = coherent_bottom]
+if (!(max(coherent_identity) <= coherent_rel_tol)) {
+  stop("Coherent forecast: all-cause aggregation identity failed ",
+       "(max relative error ", signif(max(coherent_identity), 3), ").")
+}
+message("Coherent forecast: identity holds in all ", nrow(coherent_rates),
+        " sex/age/year cells (max relative error ",
+        signif(max(coherent_identity), 3), ").")
+
+coherent_long <- data.table::melt(
+  coherent_rates, id.vars = c("sex", "age", "year", "source", "ALL.mx",
+                              "BG.mx.all"),
+  measure.vars = coherent_cvd_causes, variable.name = "cause",
+  value.name = "DIS.mx.t0", variable.factor = FALSE)
+coherent_long[, BG.mx := ALL.mx - DIS.mx.t0]
+if (coherent_long[, any(!(BG.mx >= 0))]) {
+  stop("Coherent forecast: negative BG.mx in the output.")
+}
+coherent_long[, `:=`(
+  percent_diff_cvd = (DIS.mx.t0 - DIS.mx.t0[year == 2019L]) /
+    DIS.mx.t0[year == 2019L],
+  percent_diff_bgmx = (BG.mx - BG.mx[year == 2019L]) / BG.mx[year == 2019L],
+  percent_diff_bgmx_all = (BG.mx.all - BG.mx.all[year == 2019L]) /
+    BG.mx.all[year == 2019L]),
+  by = .(sex, age, cause)]
+coherent_long[, location := "Global"]
+data.table::setcolorder(coherent_long, c("location", "sex", "age", "year",
+                                         "source", "cause", "DIS.mx.t0",
+                                         "ALL.mx", "BG.mx", "BG.mx.all"))
+data.table::setorder(coherent_long, sex, cause, age, year)
+print(coherent_diagnostics)
+saveRDS(coherent_long,
+        file = file.path(wd_data, "tps_mortality_coherent_forecasted.rds"))
+saveRDS(coherent_diagnostics,
+        file = file.path(wd_data, "tps_mortality_coherent_validation.rds"))
