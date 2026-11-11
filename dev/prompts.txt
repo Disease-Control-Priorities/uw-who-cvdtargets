@@ -1,3 +1,47 @@
+###################333
+
+Update PSA
+
+write a prompt to ask claude to update probabilistic sensitivity scenarions and run 100
+draws to buil a 95% uncertainty interval
+
+the code/00-06 was updated, so update the 10 PSA sensitivity scenarions and build 95% UI from 100
+
+update code/09*.R is 
+scenarios_psa/scenarios_aim1/aim1_report_psa.Rmd and scenarios_psa/scenarios_aim1/aim1_executive_slides_psa.Rmd
+
+Ui should include uncertainty already implemented for BP intervantions, but also around statisn RR effect sizes
+
+
+for now only uncertainty around all interventions an broken down by WHO region is required. so you could simplyfy and not store output RDS but SIMPLY saving a output with multiple reulst of this tables and 
+then from that table with all samples build the table with  
+
+Intervention	WHO Target	Deaths averted (M, 2026–2050)	Average per year (thousands)
+HTN Control (No Diabetes)	Target 1 (no-diabetes subgroup of the 150M split)	6.97 [6.79–7.58]	278.6 [271.7–303.1]
+HTN Control (Diabetes)	Target 3: BP control in people with diabetes (0.80 ceiling); diabetes subgroup of the 150M split	13.69 [12.59–15.29]	547.7 [503.7–611.5]
+Improved Statin Uptake	Target 2: >=50% eligible adults on lipid-lowering therapy by 2030	13.62 ‡	545.0 ‡
+All Interventions	All WHO targets (1+2+3) combined	26.79 ‡	1,071.5 ‡
+
+
+Region	Projected deaths	Baseline deaths	Deaths averted	Deaths averted/year	% averted
+Western Pacific	216,093,846 ‡	225,915,277	9,821,431 ‡	392,857 ‡	4.3% ‡
+South-East Asia	170,787,934 ‡	175,805,015	5,017,081 ‡	200,683 ‡	2.9% ‡
+Europe	112,692,404 ‡	117,208,116	4,515,713 ‡	180,629 ‡	3.9% ‡
+Americas	59,308,868 ‡	62,580,479	3,271,611 ‡	130,864 ‡	5.2% ‡
+Eastern Mediterranean	61,335,919 ‡	64,015,633	2,679,714 ‡	107,189 ‡	4.2% ‡
+Africa	47,267,165 ‡	48,749,898	1,482,733 ‡	59,309 ‡	3.0% ‡
+
+keep as currently this separated from main pipleine production
+
+build statinns intervals arou RR 
+from trials   rr_ir_ihd      <- 0.74
+    rr_ir_istroke  <- 0.80
+    rr_cf_ihd      <- 0.80
+    rr_cf_istroke  <- 0.96
+https://www.thelancet.com/journals/lancet/article/PIIS0140-6736(14)61368-4/fulltext	
+	
+
+export your prompt as a .MD file
 
 ###################333
 

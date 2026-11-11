@@ -1,18 +1,29 @@
 # =============================================================================
-# 094_psa_validate.R -- Aim 1 PSA: validation against 06 / 07 / 08 / report
+# 094_psa_validate.R -- Aim 1 PSA: validation against 06 and the report
 # =============================================================================
-# Sourced by 09_uncertainty_psa.R. Defines functions only. Every comparison
-# returns a data.table row with the observed maximum absolute and relative
-# difference and the explicit tolerance used; nothing is "fixed" to match.
-# Reference inputs are read from output/ (read-only); results are written by
-# the caller under output_psa/.
+# Sourced by 09_uncertainty_psa.R. Defines functions only. Every check returns a
+# data.table row with the observed maximum absolute / relative difference and the
+# explicit tolerance used; nothing is "fixed" to match. Reference inputs are read
+# from output/ (read-only); results are written by the caller under output_psa/.
+#
+#   V1  parameters: Sheet1 rebuild, statin points parsed from 06, draw 0, draws
+#   V2  parameterised statin function == 06's own at the point RRs
+#   V3  live 06 run_multiple_scenarios() == saved 06 output == PSA draw 0
+#   V4  batched engine == per-draw reference path (06 re-homed) for test draws
+#   V5  draw 0 == saved 06 output for EVERY country (all states, all scenarios)
+#   V6  draw-0 aggregates == deterministic report artefacts (2026-2050)
+#   V7  perturbation propagation (BP-only / statin-only perturbations)
+#   V8  completeness, finiteness, duplicates
+#   V9  accounting identities, 25-year divisor, fixed baseline, region = global
+#   V10 quantiles finite and ordered
+#   V11 transition validity handling (caps/clamps) relative to draw 0
 
 PSA_TOL <- list(
-  exact_states = 0,          # batched engine vs saved 06 rows: bit-identical expected
+  exact = 0,
+  states_cell_abs = 1e-6,    # draw 0 vs saved 06 per cell (persons); identical expected
   states_rel = 1e-12,        # batched vs per-draw reference path
-  totals_rel = 1e-9,         # global/aggregate totals vs original artefacts
-  totals_abs = 1e-6,         # plus an absolute floor for values that are exactly 0 (e.g. 2025 averted)
-  params_abs = 1e-12         # rebuilt Sheet1 / sodium tables vs workbook / 06
+  totals_rel = 1e-9,         # aggregates vs report artefacts
+  params_abs = 1e-12         # rebuilt Sheet1 vs workbook
 )
 
 psa_cmp <- function(check, x, y, tol_rel = NA_real_, tol_abs = NA_real_, scope = "") {
@@ -29,43 +40,17 @@ psa_cmp <- function(check, x, y, tol_rel = NA_real_, tol_abs = NA_real_, scope =
   r[d == 0] <- 0
   mad <- if (length(d)) max(d) else 0
   mrd <- if (length(r)) max(r) else 0
-  # Elementwise |x - y| <= tol_abs + tol_rel * |y| (absolute part handles values
-  # that are exactly zero in the reference, e.g. deaths averted in 2025).
   el_ok <- d <= (if (is.na(tol_abs)) 0 else tol_abs) + (if (is.na(tol_rel)) 0 else tol_rel) * abs(y[ok])
-  pass <- na_mismatch == 0 && all(el_ok)
   data.table(check = check, scope = scope, n = length(x), max_abs_diff = mad, max_rel_diff = mrd,
              tol_abs = tol_abs, tol_rel = tol_rel, identical = na_mismatch == 0 && mad == 0,
-             pass = pass, note = if (na_mismatch) paste(na_mismatch, "NA-pattern mismatches") else "")
+             pass = na_mismatch == 0 && all(el_ok),
+             note = if (na_mismatch) paste(na_mismatch, "NA-pattern mismatches") else "")
 }
 
-#...........................................................
-# V1 parameter reconstruction ----
-#...........................................................
-
-psa_validate_parameters <- function(sheet1, rr10, inp, wb_sheet1) {
-  s0 <- psa_sheet1_for_draw(sheet1, 0L)
-  rc <- psa_check_sheet1_reconstruction(s0, wb_sheet1, PSA_TOL$params_abs)
-  v <- rc[, .(check = "V1 Sheet1 draw-0 rebuild vs workbook Sheet1", scope = column, n = n_rows,
-              max_abs_diff, max_rel_diff = NA_real_, tol_abs = PSA_TOL$params_abs, tol_rel = NA_real_,
-              identical = max_abs_diff == 0, pass, note = "")]
-  m <- merge(s0, inp$det_etihad_rr_bin, by = c("cause", "bp_cat"))
-  v <- rbind(v, psa_cmp("V1 Sheet1 draw-0 vs 06 ETIHAD_RR_BIN (effect sizes)",
-                        c(m$effect_size_nodiabetes.x, m$effect_size_diabetes.x),
-                        c(m$effect_size_nodiabetes.y, m$effect_size_diabetes.y),
-                        tol_abs = PSA_TOL$params_abs, scope = "all cause x bin rows"))
-  r0 <- rr10[draw_id == 0][, draw_id := NULL][]
-  same_shape <- nrow(r0) == nrow(inp$det_etihad_rr10) &&
-    identical(r0$cause, inp$det_etihad_rr10$cause) && identical(r0$bp_cat, inp$det_etihad_rr10$bp_cat)
-  v <- rbind(v, psa_cmp("V1 sodium RR table draw 0 vs 06 ETIHAD_RR", r0$rr_per_10mmhg,
-                        inp$det_etihad_rr10$rr_per_10mmhg, tol_abs = PSA_TOL$params_abs,
-                        scope = if (same_shape) "rows, order and NA pattern identical" else "SHAPE DIFFERS"))
-  v[check == "V1 sodium RR table draw 0 vs 06 ETIHAD_RR", pass := pass & same_shape]
-  v[]
+psa_flag <- function(check, scope, pass, note = "", n = NA_integer_, value = NA_real_) {
+  data.table(check = check, scope = scope, n = n, max_abs_diff = value, max_rel_diff = NA_real_,
+             tol_abs = NA_real_, tol_rel = NA_real_, identical = NA, pass = pass, note = note)
 }
-
-#...........................................................
-# V2/V4 model draw 0 vs saved and live 06 ----
-#...........................................................
 
 PSA_STATE_VARS <- c("well", "sick", "newcases", "dead", "pop", "all.mx", "eff_ir", "eff_cf")
 
@@ -74,9 +59,7 @@ psa_compare_model_tables <- function(check, a, b, tol_abs = 0, tol_rel = NA_real
   a <- copy(a); b <- copy(b)
   setkeyv(a, keys); setkeyv(b, keys)
   if (nrow(a) != nrow(b) || !isTRUE(all.equal(a[, ..keys], b[, ..keys], check.attributes = FALSE))) {
-    return(data.table(check = check, scope = scope, n = NA_integer_, max_abs_diff = NA_real_,
-                      max_rel_diff = NA_real_, tol_abs = tol_abs, tol_rel = tol_rel,
-                      identical = FALSE, pass = FALSE, note = "row keys differ"))
+    return(psa_flag(check, scope, FALSE, "row keys differ"))
   }
   rbindlist(lapply(PSA_STATE_VARS, function(v) {
     psa_cmp(check, a[[v]], b[[v]], tol_rel = tol_rel, tol_abs = tol_abs, scope = paste(scope, v))
@@ -89,515 +72,407 @@ psa_read_saved_06 <- function(paths, Country) {
   x <- readRDS(f); setDT(x); x
 }
 
-psa_validate_model_draw0 <- function(long_by_country, paths) {
-  rbindlist(lapply(names(long_by_country), function(Country) {
-    saved <- psa_read_saved_06(paths, Country)
-    if (is.null(saved)) {
-      return(data.table(check = "V2 draw 0 vs saved 06 output", scope = Country, pass = NA,
-                        note = "saved 06 output not found"))
-    }
-    d0 <- long_by_country[[Country]][draw_id == 0L]
-    psa_compare_model_tables("V2 PSA batched draw 0 vs saved 06 output (all 6 scenarios)",
-                             d0, saved, tol_abs = PSA_TOL$exact_states, scope = Country)
-  }), fill = TRUE)
+#...........................................................
+# V1 parameters ----
+#...........................................................
+
+psa_validate_parameters <- function(s6, st, draws, sheet1, wb_sheet1, det_rr_bin, sset, n_draws) {
+  s0 <- psa_sheet1_for_draw(sheet1, 0L)
+  rc <- psa_check_sheet1_reconstruction(s0, wb_sheet1, PSA_TOL$params_abs)
+  cols <- c("effect_size_nodiabetes", "effect_size_diabetes")
+  m06 <- merge(s0, det_rr_bin[, c("cause", "bp_cat", cols), with = FALSE], by = c("cause", "bp_cat"))
+  out <- list(
+    rc[, .(check = "V1 Sheet1 draw-0 rebuild vs workbook", scope = column, n = n_rows,
+           max_abs_diff, max_rel_diff = NA_real_, tol_abs = PSA_TOL$params_abs, tol_rel = NA_real_,
+           identical = max_abs_diff == 0, pass, note = "")],
+    psa_cmp("V1 Sheet1 draw-0 rebuild vs 06 ETIHAD_RR_BIN (effect sizes)",
+            c(m06$effect_size_nodiabetes.x, m06$effect_size_diabetes.x),
+            c(m06$effect_size_nodiabetes.y, m06$effect_size_diabetes.y), tol_abs = 0, scope = "ETIHAD_RR_BIN"),
+    psa_cmp("V1 statin point RRs parsed from 06 vs register", sset$points[st$model_variable],
+            st$model_point, tol_abs = 0, scope = paste(st$model_variable, collapse = ", ")),
+    psa_cmp("V1 statin draw 0 equals model point", draws$statin[draw_id == 0L, unlist(.SD), .SDcols = PSA_STATIN_IDS],
+            sset$points[PSA_STATIN_IDS], tol_abs = 0, scope = "draw 0"),
+    psa_cmp("V1 BP draw 0 equals Appendix S6 point", draws$bp[draw_id == 0L, hr5],
+            draws$bp[draw_id == 0L, hr5_point], tol_abs = 0, scope = "draw 0"),
+    psa_cmp("V1 statin sdlog = (log U - log L) / (2 qnorm((1+c)/2))", st$sdlog,
+            (log(st$ci_upper) - log(st$ci_lower)) / (2 * qnorm((1 + st$ci_level) / 2)),
+            tol_abs = 0, scope = paste(round(st$sdlog, 5), collapse = ", ")))
+  ids_bp <- draws$bp[, .N, by = draw_id]; ids_st <- draws$statin_long[, .N, by = draw_id]
+  out$complete <- psa_flag("V1 draws complete, finite and positive", sprintf("draws 0..%d", n_draws),
+    setequal(ids_bp$draw_id, 0:n_draws) && all(ids_bp$N == 15L) && setequal(ids_st$draw_id, 0:n_draws) &&
+      all(ids_st$N == 4L) && all(is.finite(draws$bp$hr5)) && all(draws$bp$hr5 > 0) &&
+      all(is.finite(draws$statin_long$rr)) && all(draws$statin_long$rr > 0),
+    n = nrow(draws$bp) + nrow(draws$statin_long))
+  if (n_draws >= 2L) {
+    emp <- draws$statin_long[draw_id >= 1L, .(emp_mean_log = mean(log(rr)), emp_sd_log = sd(log(rr)),
+                                              n_gt1 = sum(rr > 1)), by = .(param_id, meanlog, sdlog)]
+    out$emp <- emp[, .(check = "V1 statin draws: empirical log-mean / log-SD (informational)", scope = param_id,
+                       n = n_draws, max_abs_diff = abs(emp_mean_log - meanlog), max_rel_diff = emp_sd_log / sdlog - 1,
+                       tol_abs = NA_real_, tol_rel = NA_real_, identical = NA, pass = NA,
+                       note = sprintf("RR>1 in %d of %d draws", n_gt1, n_draws))]
+  }
+  rbindlist(out, fill = TRUE)
 }
 
-# Live 06: 06's own run_multiple_scenarios() from the setup environment.
+#...........................................................
+# V2 parameterised statin function ----
+#...........................................................
+
+psa_validate_statin_function <- function(Country, cin, fns, sset, run_args) {
+  rates <- copy(cin$b_rates[year >= 2017])
+  rates[, `:=`(eff_ir = 1, eff_cf = 1, intervention = "baseline")]
+  args <- list(cin$statin, rates, Country, cin$af, adherence_ir = run_args$adherence_ir,
+               adherence_cf = run_args$adherence_cf, prop_athero_stroke = sset$prop_athero,
+               statin_target_coverage = run_args$statin_target_coverage,
+               statin_start_year = run_args$statin_start_year, statin_target_year = run_args$statin_target_year,
+               baseline_statin_coverage = psa_baseline_statin_cov(Country, cin, run_args))
+  sink(tempfile()); on.exit(sink(), add = TRUE)
+  a <- do.call(fns$calculate_statins_impact, args)
+  b <- do.call(sset$fun, c(args, list(statin_rr = sset$points)))
+  rbind(psa_flag("V2 parameterised statin function at point RRs identical to 06 (all columns, real rates)",
+                 Country, identical(a, b), n = nrow(a)),
+        psa_cmp("V2 parameterised statin function: CF", b$CF, a$CF, tol_abs = 0, scope = Country),
+        psa_cmp("V2 parameterised statin function: IR", b$IR, a$IR, tol_abs = 0, scope = Country))
+}
+
+#...........................................................
+# V3 live 06 ----
+#...........................................................
+
 psa_live_06 <- function(env06_setup, Country, run_args) {
+  sink(tempfile()); on.exit(sink(), add = TRUE)
   res <- env06_setup$run_multiple_scenarios(
     Country = Country, scenario_list = env06_setup$scenarios,
     htn_scenario_ids = env06_setup$htn_scenario_ids, dt_hbp_targets = env06_setup$dt_hbp_targets,
     statin_target_coverage = run_args$statin_target_coverage,
     statin_start_year = run_args$statin_start_year, statin_target_year = run_args$statin_target_year,
     adherence_ir = run_args$adherence_ir, adherence_cf = run_args$adherence_cf,
-    baseline_statin_coverage = run_args$baseline_statin_coverage,
-    saltmet = run_args$saltmet, salteff = run_args$salteff,
-    saltyear1 = run_args$saltyear1, saltyear2 = run_args$saltyear2,
-    tfa_target_tfa = run_args$tfa_target_tfa, tfa_policy_start_year = run_args$tfa_policy_start_year)
+    baseline_statin_coverage = run_args$baseline_statin_coverage)
   res[, htn_target_scenario := "aim1"]
   res[]
 }
 
 #...........................................................
-# V3 batched engine vs per-draw reference path ----
+# V4 batched vs reference; V7 perturbations (one validation country) ----
 #...........................................................
 
-psa_reference_draw <- function(task) {
-  fns <- get(".psa_fns", envir = globalenv())
-  sink(tempfile()); on.exit(sink(), add = TRUE)          # 06 prints progress; discard it
-  s1 <- psa_sheet1_for_draw(task$sheet1, task$draw_id)
-  r1 <- task$rr10[draw_id == task$draw_id][, draw_id := NULL][]
-  res <- psa_run_multiple_scenarios(task$Country, task$scenarios, task$htn_scenario_ids,
-                                    task$dt_hbp_targets, task$run_args, task$cin, fns,
-                                    task$repYear, task$dt_gbd_rr,
-                                    etihad_rr_table = s1, etihad_rr10_table = r1)
-  res[, draw_id := task$draw_id]
-  res[]
+psa_validate_country_paths <- function(Country, inp, fns, sset, shared, s6, draws, sheet1, ref_ids, live = NULL,
+                                       saved = NULL) {
+  cin <- inp$cin[[Country]]
+  out <- list()
+  ids <- sort(unique(c(0L, ref_ids)))
+  E <- psa_effect_arrays(sheet1[draw_id %in% ids], ids)
+  rrm <- psa_statin_matrix(draws$statin, ids)
+  bat <- psa_run_country(Country, cin, fns, sset, shared, ids, E, rrm, keep_long = TRUE)
+  d0 <- bat$long[draw_id == 0L][, draw_id := NULL][]
+  if (!is.null(live)) {
+    out$live_psa <- psa_compare_model_tables("V3 live 06 run_multiple_scenarios() vs PSA batched draw 0",
+                                             d0, live, tol_abs = 0, scope = Country)
+  }
+  if (!is.null(saved)) {
+    if (!is.null(live)) out$live_saved <- psa_compare_model_tables(
+      "V3 live 06 run_multiple_scenarios() vs saved 06 output", live, saved, tol_abs = 0, scope = Country)
+  }
+  for (id in ids) {
+    env <- psa_rehome_06(fns, sset$fun, cin, shared$repYear, shared$dt_gbd_rr,
+                         psa_sheet1_for_draw(sheet1, id), psa_statin_for_draw(draws$statin, id))
+    ref <- psa_reference_run(Country, env, shared$scenarios, shared$htn_scenario_ids, cin$targets, shared$run_args)
+    out[[paste0("ref_", id)]] <- psa_compare_model_tables(
+      sprintf("V4 batched engine vs per-draw reference path (06 re-homed), draw %d", id),
+      bat$long[draw_id == id][, draw_id := NULL][], ref, tol_abs = NA_real_,
+      tol_rel = PSA_TOL$states_rel, scope = Country)
+    rm(env, ref); gc(verbose = FALSE)
+  }
+  # V7: perturbation propagation. Synthetic ids: 9001 = BP at draw p, statins at
+  # point; 9002 = BP at point, statins at draw p.
+  p <- ref_ids[ref_ids > 0L][1]
+  s1 <- rbind(sheet1[draw_id %in% c(0L, p)], copy(sheet1[draw_id == p])[, draw_id := 9001L],
+              copy(sheet1[draw_id == 0L])[, draw_id := 9002L])
+  stp <- rbind(draws$statin[draw_id == 0L], copy(draws$statin[draw_id == 0L])[, draw_id := 9001L],
+               copy(draws$statin[draw_id == p])[, draw_id := 9002L])
+  pid <- c(0L, 9001L, 9002L)
+  pr <- psa_run_country(Country, cin, fns, sset, shared, pid, psa_effect_arrays(s1, pid),
+                        psa_statin_matrix(stp, pid))
+  dd <- pr$deaths
+  same <- function(sn, col) dd[sn, col] == dd[sn, "0"]
+  bp_sc <- c("bp_no_diabetes_only", "bp_diabetes_only", "bp_combined")
+  out$perturb <- rbind(
+    psa_flag("V7 BP-only perturbation: BP scenarios and all_interventions respond", Country,
+             all(!vapply(c(bp_sc, "all_interventions"), same, logical(1), col = "9001")),
+             note = sprintf("BP from draw %d, statins at point", p)),
+    psa_flag("V7 BP-only perturbation: baseline and statins_only unchanged (exact)", Country,
+             all(vapply(c("baseline", "statins_only"), same, logical(1), col = "9001"))),
+    psa_flag("V7 statin-only perturbation: statins_only and all_interventions respond", Country,
+             all(!vapply(c("statins_only", "all_interventions"), same, logical(1), col = "9002")),
+             note = sprintf("statins from draw %d, BP at point", p)),
+    psa_flag("V7 statin-only perturbation: baseline and BP scenarios unchanged (exact)", Country,
+             all(vapply(c("baseline", bp_sc), same, logical(1), col = "9002"))))
+  out$perturb_values <- data.table(check = "V7 perturbation deaths 2026-2050 (informational)",
+    scope = paste(Country, rownames(dd)), n = 3L,
+    max_abs_diff = dd[, "9001"] - dd[, "0"], max_rel_diff = dd[, "9002"] - dd[, "0"],
+    tol_abs = NA_real_, tol_rel = NA_real_, identical = NA, pass = NA,
+    note = "max_abs_diff = BP-only change; max_rel_diff column = statin-only change (deaths)")
+  rbindlist(out, fill = TRUE)
 }
 
-psa_validate_batched_vs_reference <- function(ref_list, long) {
-  rbindlist(lapply(ref_list, function(ref) {
-    id <- ref$draw_id[1]
-    psa_compare_model_tables(sprintf("V3 batched vs per-draw reference (draw %d)", id),
-                             long[draw_id == id], ref, tol_abs = NA_real_,
-                             tol_rel = PSA_TOL$states_rel, scope = ref$location[1])
-  }))
-}
-
 #...........................................................
-# V5 07 analogue vs original dt_output_dalys.rds ----
+# V5 draw 0 vs saved 06 (every country, from the blocks) ----
 #...........................................................
 
-psa_validate_07 <- function(paths, countries, ep) {
-  f <- file.path(paths$wd_outp_original, "dt_output_dalys.rds")
-  if (!file.exists(f)) return(data.table(check = "V5 07 per-country", pass = NA, note = "file missing"))
-  o <- readRDS(f); setDT(o)
-  o <- o[location %in% countries]
-  gc(verbose = FALSE)
-  lab07 <- c(bp_no_diabetes_only = "HTN Control (No Diabetes)", bp_diabetes_only = "HTN Control (Diabetes)",
-             statins_only = "Improved Statin Uptake", all_interventions = "All Interventions",
-             baseline = "b.a.u")
-  orig <- o[, .(yll = sum(yll, na.rm = TRUE), yld = sum(yld, na.rm = TRUE),
-                daly = sum(daly, na.rm = TRUE), dead = sum(dead, na.rm = TRUE)),
-            by = .(location, intervention)]
-  c1 <- ep$c1_draw0[location %in% countries]
-  c1[, intervention := lab07[scenario]]
-  m <- merge(c1[!is.na(intervention)], orig, by = c("location", "intervention"))
+psa_validate_draw0_all <- function(d0, locs, country_checks) {
+  ok <- d0[!is.na(scenario)]
+  n_cty <- uniqueN(ok$location)
   rbind(
-    psa_cmp("V5 07 analogue YLL 2026-2050 vs dt_output_dalys.rds", m$yll.x, m$yll.y,
-            tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = paste(countries, collapse = ", ")),
-    psa_cmp("V5 07 analogue YLD 2026-2050 vs dt_output_dalys.rds", m$yld.x, m$yld.y,
-            tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = paste(countries, collapse = ", ")),
-    psa_cmp("V5 07 analogue DALY 2026-2050 vs dt_output_dalys.rds", m$daly.x, m$daly.y,
-            tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = paste(countries, collapse = ", ")),
-    psa_cmp("V5 07 analogue deaths 2026-2050 vs dt_output_dalys.rds", m$dead_2026_2050, m$dead,
-            tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = paste(countries, collapse = ", ")))
+    psa_flag("V5 draw 0 vs saved 06 output: every country x scenario compared",
+             sprintf("%d/%d countries", n_cty, length(locs)),
+             setequal(unique(ok$location), locs) && nrow(ok) == length(locs) * length(PSA_SCENARIOS),
+             note = paste(d0[is.na(scenario), unique(location)], collapse = ", ")),
+    data.table(check = "V5 draw 0 vs saved 06 output: all state cells (well, sick, newcases, dead, pop, all.mx)",
+               scope = sprintf("%d countries x 6 scenarios", n_cty), n = nrow(ok),
+               max_abs_diff = max(ok$max_abs_states), max_rel_diff = NA_real_,
+               tol_abs = PSA_TOL$states_cell_abs, tol_rel = NA_real_,
+               identical = all(ok$max_abs_states == 0), pass = all(ok$max_abs_states <= PSA_TOL$states_cell_abs),
+               note = sprintf("%d of %d country-scenarios bit-identical", sum(ok$max_abs_states == 0), nrow(ok))),
+    data.table(check = "V5 draw 0 vs saved 06 output: eff_ir / eff_cf", scope = "all", n = nrow(ok),
+               max_abs_diff = max(ok$max_abs_eff), max_rel_diff = NA_real_, tol_abs = 1e-12,
+               tol_rel = NA_real_, identical = all(ok$max_abs_eff == 0), pass = all(ok$max_abs_eff <= 1e-12),
+               note = ""),
+    data.table(check = "V5 batched statin factors at point RRs vs 06 calculate_statins_impact() (per country)",
+               scope = sprintf("%d countries", nrow(country_checks)), n = nrow(country_checks),
+               max_abs_diff = max(country_checks$statin_check0), max_rel_diff = NA_real_, tol_abs = 0,
+               tol_rel = NA_real_, identical = all(country_checks$statin_check0 == 0),
+               pass = all(country_checks$statin_check0 == 0), note = ""),
+    data.table(check = "V5 batched statin factors vs parameterised 06 function, perturbed draw (per country x block)",
+               scope = sprintf("%d country-blocks", sum(!is.na(country_checks$statin_check_perturbed))),
+               n = sum(!is.na(country_checks$statin_check_perturbed)),
+               max_abs_diff = max(country_checks$statin_check_perturbed, na.rm = TRUE), max_rel_diff = NA_real_,
+               tol_abs = 1e-15, tol_rel = NA_real_,
+               identical = all(country_checks$statin_check_perturbed == 0, na.rm = TRUE),
+               pass = all(country_checks$statin_check_perturbed <= 1e-15, na.rm = TRUE), note = ""),
+    data.table(check = "V5 batched BP incidence effect at draw 0 vs 06 split (per country)",
+               scope = "all", n = sum(!is.na(country_checks$bp_draw0_vs_06)),
+               max_abs_diff = max(country_checks$bp_draw0_vs_06, na.rm = TRUE), max_rel_diff = NA_real_,
+               tol_abs = 1e-12, tol_rel = NA_real_,
+               identical = all(country_checks$bp_draw0_vs_06 == 0, na.rm = TRUE),
+               pass = all(country_checks$bp_draw0_vs_06 <= 1e-12, na.rm = TRUE), note = ""))
 }
 
 #...........................................................
-# V6 08 analogue vs original 08 outputs ----
+# V6 draw-0 aggregates vs the deterministic report artefacts ----
 #...........................................................
 
-psa_validate_08_detail <- function(paths, econ_detail) {
-  f <- file.path(paths$wd_outp_original, "08_vsl_results.rds")
-  if (!file.exists(f) || !length(econ_detail)) {
-    return(data.table(check = "V6 08 per-country", pass = NA, note = "file or detail missing"))
-  }
-  o <- readRDS(f); setDT(o)
-  rows <- rbindlist(lapply(names(econ_detail), function(Country) {
-    rbindlist(lapply(names(econ_detail[[Country]]), function(sn) {
-      d <- econ_detail[[Country]][[sn]]
-      data.table(location = Country, scenario = sn, year = PSA_YEARS,
-                 deaths_averted = d$deaths_averted[, 1], life_years_gained_undisc = d$life_years_gained_undisc[, 1],
-                 avg_adult_age = d$avg_adult_age[, 1], age_ref_5y = d$age_ref_5y[, 1],
-                 le_avg_adult = d$le_avg_adult[, 1], vsly_e1_2 = d$vsly_e1_2[, 1],
-                 economic_value_e1_2 = d$economic_value_e1_2[, 1], vsly_value_e1_2 = d$vsly_value_e1_2[, 1])
-    }))
-  }))
-  m <- merge(rows, o, by = c("location", "scenario", "year"), suffixes = c(".psa", ".orig"))
-  vars <- c("deaths_averted", "life_years_gained_undisc", "avg_adult_age", "age_ref_5y",
-            "le_avg_adult", "vsly_e1_2", "economic_value_e1_2", "vsly_value_e1_2")
-  rbindlist(lapply(vars, function(v) {
-    psa_cmp(paste("V6 08 analogue", v, "vs 08_vsl_results.rds (draw 0)"),
-            m[[paste0(v, ".psa")]], m[[paste0(v, ".orig")]], tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs,
-            scope = paste(unique(m$location), collapse = ", "))
-  }))
-}
-
-# Reference implementation of 08 sections 3-4, 7 and 7b, copied verbatim from
-# 08_economic_value_calculation.R, applied to saved 06 outputs. Used only to
-# adjudicate cells where the stored 08 artefact and the PSA analogue disagree.
-psa_08_verbatim <- function(dt_model, lt_interp, k08) {
-  lt_interp <- copy(lt_interp)
-  ADULT_MIN_AGE <- k08$ADULT_MIN_AGE; MAX_MODEL_AGE <- k08$MAX_MODEL_AGE
-  dt_deaths <- dt_model[, .(deaths = sum(dead, na.rm = TRUE)), by = .(location, year, scenario, htn_target_scenario)]
-  dt_pop_unique <- unique(dt_model[, .(location, year, scenario, htn_target_scenario, age, sex, pop)])
-  dt_baseline <- dt_deaths[scenario == "baseline", .(location, year, htn_target_scenario, deaths_baseline = deaths)]
-  dt_compare <- dt_deaths[scenario != "baseline"]
-  dt_compare <- dt_baseline[dt_compare, on = .(location, year, htn_target_scenario)]
-  setnames(dt_compare, "deaths", "deaths_intervention")
-  dt_compare[, deaths_averted := deaths_baseline - deaths_intervention]
-  dt_pop_age <- dt_pop_unique[, .(pop = sum(pop, na.rm = TRUE)), by = .(location, year, scenario, htn_target_scenario, age)]
-  dt_avg_adult <- dt_pop_age[age >= ADULT_MIN_AGE, .(adult_population = sum(pop, na.rm = TRUE),
-    avg_adult_age = sum(pop * age, na.rm = TRUE) / sum(pop, na.rm = TRUE)),
-    by = .(location, year, scenario, htn_target_scenario)]
-  dt_avg_adult[, age_ref_5y := pmin(MAX_MODEL_AGE, (as.integer(floor(avg_adult_age)) %/% 5L) * 5L)]
-  dt_le_lookup <- copy(dt_avg_adult)[, .(location, year, scenario, htn_target_scenario,
-                                         age = age_ref_5y, adult_population, avg_adult_age)]
-  setkey(lt_interp, location, age, year)
-  setkey(dt_le_lookup, location, age, year)
-  dt_le_lookup <- lt_interp[dt_le_lookup, on = .(location, age, year), roll = "nearest"]
-  setnames(dt_le_lookup, "age", "age_ref_5y"); setnames(dt_le_lookup, "le", "le_avg_adult")
-  dt_compare <- dt_le_lookup[dt_compare, on = .(location, year, scenario, htn_target_scenario)]
-  dt_deaths_age <- dt_model[, .(deaths = sum(dead, na.rm = TRUE)), by = .(location, year, scenario, htn_target_scenario, age)]
-  dt_baseline_age <- dt_deaths_age[scenario == "baseline", .(location, year, age, htn_target_scenario, deaths_baseline = deaths)]
-  dt_deaths_age <- dt_deaths_age[scenario != "baseline"]
-  dt_deaths_age <- dt_baseline_age[dt_deaths_age, on = .(location, year, age, htn_target_scenario)]
-  setnames(dt_deaths_age, "deaths", "deaths_intervention_age")
-  dt_deaths_age[, deaths_averted_age := deaths_baseline - deaths_intervention_age]
-  dt_deaths_age[, age_ref_5y := pmin(MAX_MODEL_AGE, (as.integer(floor(age)) %/% 5L) * 5L)]
-  lt_age <- lt_interp[, .(location, year, age_ref_5y = age, le_age = le)]
-  setkey(lt_age, location, age_ref_5y, year)
-  setkey(dt_deaths_age, location, age_ref_5y, year)
-  dt_deaths_age <- lt_age[dt_deaths_age, on = .(location, age_ref_5y, year), roll = "nearest"]
-  dt_ly_gained <- dt_deaths_age[, .(life_years_gained_undisc = sum(deaths_averted_age * le_age, na.rm = TRUE)),
-                                by = .(location, year, scenario, htn_target_scenario)]
-  dt_compare <- dt_ly_gained[dt_compare, on = .(location, year, scenario, htn_target_scenario)]
-  dt_compare[, .(location, year, scenario, deaths_averted, avg_adult_age, age_ref_5y, le_avg_adult,
-                 life_years_gained_undisc)]
-}
-
-# Cell-level 08 check for every location-year-scenario (draw 0). A mismatch with
-# the stored 08_vsl_results.rds is adjudicated by re-running 08's own code on the
-# saved 06 output: if the PSA equals 08's code, the stored cell is classified as
-# not reproducible from the saved 06 outputs (reported, not "fixed").
-psa_validate_08_cells <- function(paths, econ_detail, k08) {
-  f <- file.path(paths$wd_outp_original, "08_vsl_results.rds")
-  if (!file.exists(f) || !length(econ_detail)) {
-    return(list(checks = data.table(check = "V6 08 cells", pass = NA, note = "file or detail missing"),
-                cells = data.table(), adjust = data.table()))
-  }
-  o <- readRDS(f); setDT(o)
-  rows <- rbindlist(lapply(names(econ_detail), function(Country) {
-    rbindlist(lapply(names(econ_detail[[Country]]), function(sn) {
-      d <- econ_detail[[Country]][[sn]]
-      data.table(location = Country, scenario = sn, year = PSA_YEARS,
-                 deaths_averted = d$deaths_averted[, 1], life_years_gained_undisc = d$life_years_gained_undisc[, 1],
-                 avg_adult_age = d$avg_adult_age[, 1], age_ref_5y = d$age_ref_5y[, 1],
-                 le_avg_adult = d$le_avg_adult[, 1], vsly_e1_2 = d$vsly_e1_2[, 1],
-                 economic_value_e1_2 = d$economic_value_e1_2[, 1], vsly_value_e1_2 = d$vsly_value_e1_2[, 1])
-    }))
-  }))
-  vars <- c("deaths_averted", "life_years_gained_undisc", "avg_adult_age", "age_ref_5y",
-            "le_avg_adult", "vsly_e1_2", "economic_value_e1_2", "vsly_value_e1_2")
-  m <- merge(rows, o[, c("location", "scenario", "year", "who_region", "disc_r3", "vsl_e1_2", "vsl_e1_5", vars),
-                     with = FALSE],
-             by = c("location", "scenario", "year"), suffixes = c(".psa", ".orig"))
-  close <- function(a, b) (is.na(a) & is.na(b)) | (!is.na(a) & !is.na(b) &
-                                                     abs(a - b) <= PSA_TOL$totals_abs + PSA_TOL$totals_rel * abs(b))
-  m[, mismatch := !Reduce(`&`, lapply(vars, function(v) close(get(paste0(v, ".psa")), get(paste0(v, ".orig")))))]
-  bad <- m[mismatch == TRUE]
-  cells <- data.table(); adjust <- data.table()
-  if (nrow(bad)) {
-    i07 <- psa_load_07_inputs(paths)
-    verb <- rbindlist(lapply(unique(bad$location), function(Country) {
-      psa_08_verbatim(psa_read_saved_06(paths, Country), i07$lt_interp[location == Country], k08)
-    }))
-    cells <- merge(bad, verb, by = c("location", "scenario", "year"))
-    cells[, explained := close(life_years_gained_undisc.psa, life_years_gained_undisc) &
-                         close(avg_adult_age.psa, avg_adult_age) & close(le_avg_adult.psa, le_avg_adult) &
-                         close(deaths_averted.psa, deaths_averted)]
-    cells[, classification := fifelse(explained,
-      "stored 08 cell not reproducible by 08's own code from the saved 06 outputs (PSA = 08 code)",
-      "UNEXPLAINED: PSA differs from 08's own code")]
-    # Adjusted reference: the stored cell replaced by 08's own recomputation
-    # (e1_5 values scale with vsl_e1_5 / vsl_e1_2 at the same LE and life-years).
-    adjust <- cells[explained == TRUE, .(who_region, scenario, year,
-      d_vsly12 = (vsly_value_e1_2.psa - vsly_value_e1_2.orig) * disc_r3,
-      d_vsly15 = (vsly_value_e1_2.psa - vsly_value_e1_2.orig) * vsl_e1_5 / vsl_e1_2 * disc_r3,
-      d_econ12 = (economic_value_e1_2.psa - economic_value_e1_2.orig) * disc_r3,
-      d_econ15 = (economic_value_e1_2.psa - economic_value_e1_2.orig) * vsl_e1_5 / vsl_e1_2 * disc_r3)]
-  }
-  n_unexpl <- if (nrow(cells)) cells[explained == FALSE, .N] else 0L
-  checks <- rbind(
-    data.table(check = "V6 08 analogue vs 08_vsl_results.rds, every location-year-scenario (draw 0)",
-               scope = sprintf("%d rows; %d differ; %d of these reproduce 08's own code", nrow(m), nrow(bad),
-                               nrow(bad) - n_unexpl),
-               n = nrow(m), max_abs_diff = NA_real_, max_rel_diff = NA_real_, tol_abs = PSA_TOL$totals_abs,
-               tol_rel = PSA_TOL$totals_rel, identical = nrow(bad) == 0L, pass = n_unexpl == 0L,
-               note = if (nrow(bad)) paste(unique(paste(bad$location, bad$scenario, bad$year)), collapse = "; ") else ""),
-    fill = TRUE)
-  list(checks = checks, cells = cells, adjust = adjust)
-}
-
-psa_validate_08_summary <- function(paths, econ_summary_draw0, adjust = data.table(), income = NULL) {
-  f <- file.path(paths$wd_outp_original, "08_vsl_vsly_summary_table_appended.rds")
-  if (!file.exists(f)) return(data.table(check = "V6 08 summary", pass = NA, note = "file missing"))
-  o <- readRDS(f); setDT(o)
-  x <- copy(econ_summary_draw0)
-  m <- merge(x, o, by = c("valuation_type", "elasticity_case", "who_region", "scenario"),
-             suffixes = c(".psa", ".orig"))
-  cols <- intersect(grep("^(metric|share)_", names(econ_summary_draw0), value = TRUE),
-                    sub("\\.orig$", "", grep("\\.orig$", names(m), value = TRUE)))
-  out <- rbindlist(lapply(cols, function(v) {
-    psa_cmp(paste("V6 08 summary", v, "(World + regions, all scenarios) vs stored appended table"),
-            m[[paste0(v, ".psa")]], m[[paste0(v, ".orig")]], tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs,
-            scope = sprintf("%d region x scenario x valuation rows", nrow(m)))
-  }))
-  if (nrow(adjust) && !is.null(income)) {
-    # Same comparison after replacing only the adjudicated cells by 08's own recomputation.
-    a <- rbind(adjust, copy(adjust)[, who_region := "World"])[year >= 2026 & year <= 2050,
-      .(`VSLY|e1_2_primary` = sum(d_vsly12), `VSLY|e1_5_sensitivity` = sum(d_vsly15),
-        `VSL|e1_2_primary` = sum(d_econ12), `VSL|e1_5_sensitivity` = sum(d_econ15)), by = .(who_region, scenario)]
-    a <- melt(a, id.vars = c("who_region", "scenario"), variable.name = "vt_ec", value.name = "delta")
-    a[, c("valuation_type", "elasticity_case") := tstrsplit(as.character(vt_ec), "|", fixed = TRUE)]
-    inc_tot <- income[year >= 2026 & year <= 2050, .(income_total = sum(total_income)), by = who_region]
-    ma <- a[, .(who_region, scenario, valuation_type, elasticity_case, delta)][
-      m, on = .(who_region, scenario, valuation_type, elasticity_case)]
-    ma <- inc_tot[ma, on = "who_region"]
-    ma[is.na(delta), delta := 0]
-    ma[, `:=`(adj_metric = metric_total.orig + delta, adj_share = share_total.orig + delta / income_total)]
-    adj <- rbind(
-      psa_cmp("V6 08 summary metric_total vs stored table with adjudicated cells replaced by 08's own code",
-              ma$metric_total.psa, ma$adj_metric, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs,
-              scope = sprintf("%d rows (both elasticities); %d adjudicated cell(s)", nrow(ma), nrow(adjust))),
-      psa_cmp("V6 08 summary share_total vs stored table with adjudicated cells replaced by 08's own code",
-              ma$share_total.psa, ma$adj_share, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs,
-              scope = sprintf("%d rows (both elasticities); %d adjudicated cell(s)", nrow(ma), nrow(adjust))))
-    out <- rbind(out, adj, fill = TRUE)
-    # Raw failures are reported as explained ONLY if the adjusted comparison passes.
-    if (all(adj$pass)) {
-      expl <- grepl("stored appended table", out$check) & out$pass %in% FALSE & grepl("_total", out$check)
-      out[expl, `:=`(pass = NA, note = paste0("Differs only through the adjudicated 08 cell(s) ",
-                                              "(validation/08_adjudicated_cells.csv); adjusted comparison passes"))]
-    }
-  }
-  out
-}
-
-#...........................................................
-# V7 draw-0 global endpoints vs original report artefacts ----
-#...........................................................
-
-# Reference freshness. A 07/08/report artefact written before the newest saved
-# 06 output cannot have been computed from it (e.g. the model was re-run but the
-# original report was not re-knitted), so its comparisons are reported as NOT
-# COMPARED (pass = NA) instead of as failures or passes.
-psa_reference_files <- function(paths) {
-  o <- paths$wd_outp_original
-  list(V5_07 = file.path(o, "dt_output_dalys.rds"),
-       V6_08 = file.path(o, c("08_vsl_results.rds", "08_vsl_vsly_summary_table_appended.rds")),
-       V7_report = c(list.files(file.path(o, "paper"), pattern = "^paper_.*[.]rds$", full.names = TRUE),
-                     file.path(o, "slides", "sl_dt_asmr.rds")))
-}
-
-psa_reference_freshness <- function(paths) {
-  m06 <- list.files(file.path(paths$wd_outp_original, "out_model"),
-                    pattern = "^model_output_.*[.]rds$", full.names = TRUE)
-  newest06 <- if (length(m06)) max(file.mtime(m06)) else as.POSIXct(NA)
-  refs <- psa_reference_files(paths)
-  rbindlist(lapply(names(refs), function(g) {
-    f <- refs[[g]][file.exists(refs[[g]])]
-    if (!length(f)) return(NULL)
-    data.table(group = g, file = sub(paste0("^", paths$root, "/"), "", normalizePath(f, winslash = "/")),
-               mtime = file.mtime(f), newest_06_output = newest06,
-               stale = !is.na(newest06) & file.mtime(f) < newest06)
-  }))
-}
-
-psa_mark_not_compared <- function(res, why) {
-  if (is.null(res) || !nrow(res)) return(res)
-  res <- copy(res)
-  if (!"note" %in% names(res)) res[, note := ""]
-  res[, note := paste0(fifelse(is.na(note) | !nzchar(note), "", paste0(note, "; ")), "NOT COMPARED: ", why)]
-  res[, pass := NA]
-  res[]
-}
-
-psa_validate_report_artifacts <- function(paths, sm) {
+psa_validate_report <- function(paths, md, full_geo) {
+  if (!full_geo) return(psa_flag("V6 aggregates vs report artefacts", "country subset", NA,
+                                 "Skipped: global totals need the full 06 geography."))
   pdir <- file.path(paths$wd_outp_original, "paper")
-  sdir <- file.path(paths$wd_outp_original, "slides")
-  rd <- function(d, f) { p <- file.path(d, f); if (file.exists(p)) readRDS(p) else NULL }
-  out <- list()
-  ps <- rd(pdir, "paper_scalars.rds")
-  if (!is.null(ps)) {
-    cu <- sm$cumul[variable == "deaths_delayed"]
-    get_c <- function(lbl) cu[intervention == lbl, point]
-    out$scalars <- rbind(
-      psa_cmp("V7 total_all (All Interventions deaths averted)", get_c("All Interventions"), ps$total_all, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs),
-      psa_cmp("V7 total_bp (HTN no diabetes)", get_c("HTN Control (No Diabetes)"), ps$total_bp, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs),
-      psa_cmp("V7 total_bpd (HTN diabetes)", get_c("HTN Control (Diabetes)"), ps$total_bpd, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs),
-      psa_cmp("V7 total_stat (statins)", get_c("Improved Statin Uptake"), ps$total_stat, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs),
-      psa_cmp("V7 bau_total_deaths (2025-2050)", sm$cumul[variable == "bau_total_deaths"][1, point],
-              ps$bau_total_deaths, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs),
-      psa_cmp("V7 BOD totals All Interventions (DALY/YLL/YLD)",
-              sm$bod[intervention == "All Interventions" & variable %in% c("DALYs", "YLLs", "YLDs")][
-                order(match(variable, c("DALYs", "YLLs", "YLDs"))), point],
-              c(ps$total_dalys_all, ps$total_ylls_all, ps$total_ylds_all), tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs))
+  files <- file.path(pdir, c("paper_dt_cumul.rds", "paper_dt_region.rds", "paper_scalars.rds"))
+  if (!all(file.exists(files))) return(psa_flag("V6 aggregates vs report artefacts", "output/paper", NA,
+                                                "report artefacts missing: NOT COMPARED"))
+  newest06 <- max(file.mtime(list.files(file.path(paths$wd_outp_original, "out_model"),
+                                        "^model_output_.*[.]rds$", full.names = TRUE)))
+  if (any(file.mtime(files) < newest06)) {
+    return(psa_flag("V6 aggregates vs report artefacts", "output/paper", NA,
+                    "report artefacts older than the saved 06 outputs: NOT COMPARED"))
   }
-  dc <- rd(pdir, "paper_dt_cumul.rds")
-  if (!is.null(dc)) {
-    x <- sm$cumul[variable == "deaths_delayed", .(intervention, point)]
-    m <- merge(x, as.data.table(dc)[, .(intervention = as.character(intervention), deaths_delayed)], by = "intervention")
-    out$cumul <- psa_cmp("V7 cumulative deaths averted by intervention (paper_dt_cumul)", m$point, m$deaths_delayed,
-                         tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = sprintf("%d interventions", nrow(m)))
-  }
-  da <- rd(pdir, "paper_dt_annual.rds")
-  if (!is.null(da)) {
-    x <- sm$annual[variable == "deaths_delayed", .(intervention, year, point)]
-    m <- merge(x, as.data.table(da)[, .(intervention = as.character(intervention), year, deaths_delayed)],
-               by = c("intervention", "year"))
-    out$annual <- psa_cmp("V7 annual deaths averted (paper_dt_annual)", m$point, m$deaths_delayed,
-                          tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = sprintf("%d intervention-years", nrow(m)))
-  }
-  dca <- rd(pdir, "paper_dt_cause.rds")
-  if (!is.null(dca)) {
-    x <- sm$cause[variable == "deaths_delayed", .(intervention, cause, point)]
-    m <- merge(x, as.data.table(dca)[, .(intervention = as.character(intervention), cause, deaths_delayed)],
-               by = c("intervention", "cause"))
-    out$cause <- psa_cmp("V7 deaths averted by intervention x cause (paper_dt_cause)", m$point, m$deaths_delayed,
-                         tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = sprintf("%d rows", nrow(m)))
-  }
-  dr <- rd(pdir, "paper_dt_region.rds")
-  if (!is.null(dr)) {
-    x <- sm$region[intervention == "All Interventions" & variable == "deaths_delayed", .(region, point)]
-    m <- merge(x, as.data.table(dr)[, .(region, deaths_delayed)], by = "region")
-    out$region <- psa_cmp("V7 deaths averted by region, All Interventions (paper_dt_region)", m$point,
-                          m$deaths_delayed, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = sprintf("%d regions", nrow(m)))
-  }
-  dco <- rd(pdir, "paper_dt_country.rds")
-  if (!is.null(dco)) {
-    x <- sm$country[intervention == "All Interventions" & variable == "deaths_delayed", .(location, point)]
-    m <- merge(x, as.data.table(dco)[, .(location, deaths_delayed)], by = "location")
-    out$country <- psa_cmp("V7 deaths averted by country, All Interventions (paper_dt_country)", m$point,
-                           m$deaths_delayed, tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = sprintf("%d countries", nrow(m)))
-  }
-  das <- rd(pdir, "paper_dt_age_sex.rds")
-  if (!is.null(das)) {
-    x <- sm$age_sex[variable == "deaths_delayed", .(intervention, age_group, sex, point)]
-    m <- merge(x, as.data.table(das)[, .(intervention = as.character(intervention),
-                                          age_group = as.character(age_group), sex, deaths_delayed)],
-               by = c("intervention", "age_group", "sex"))
-    out$age_sex <- psa_cmp("V7 deaths averted by age group x sex (paper_dt_age_sex)", m$point, m$deaths_delayed,
-                           tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = sprintf("%d rows", nrow(m)))
-  }
-  for (nm in c("bod_summary", "bod_cause", "bod_region", "bod_income")) {
-    b <- rd(pdir, paste0("paper_", nm, ".rds"))
-    if (is.null(b)) next
-    b <- as.data.table(b)
-    tab <- c(bod_summary = "bod", bod_cause = "bod_cause", bod_region = "bod_region", bod_income = "bod_income")[nm]
-    by <- c(bod_summary = "", bod_cause = "cause", bod_region = "region", bod_income = "location_income")[nm]
-    b[, intervention := as.character(intervention)]
-    if (nzchar(by)) b[, (by) := as.character(get(by))]
-    x <- dcast(sm[[tab]][variable %in% c("Deaths", "YLLs", "YLDs", "DALYs")],
-               as.formula(paste("intervention", if (nzchar(by)) paste("+", by) else "", "~ variable")),
-               value.var = "point")
-    keys <- c("intervention", if (nzchar(by)) by)
-    m <- merge(x, b, by = keys, suffixes = c(".psa", ".orig"))
-    out[[nm]] <- rbindlist(lapply(c("Deaths", "YLLs", "YLDs", "DALYs"), function(v) {
-      psa_cmp(sprintf("V7 %s %s (paper_%s)", nm, v, nm), m[[paste0(v, ".psa")]], m[[paste0(v, ".orig")]],
-              tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = sprintf("%d rows", nrow(m)))
-    }))
-  }
-  asm <- rd(sdir, "sl_dt_asmr.rds")
-  if (!is.null(asm)) {
-    asm <- as.data.table(asm)
-    x <- sm$asmr[variable == "ASMR"]
-    x[, intervention := fifelse(intervention == "b.a.u", "b.a.u", intervention)]
-    m <- merge(x[, .(intervention, year, point)],
-               asm[, .(intervention = as.character(intervention), year, ASMR)], by = c("intervention", "year"))
-    out$asmr <- psa_cmp("V7 ASMR by intervention-year (sl_dt_asmr)", m$point, m$ASMR,
-                        tol_rel = PSA_TOL$totals_rel, tol_abs = PSA_TOL$totals_abs, scope = sprintf("%d rows", nrow(m)))
-  }
-  rbindlist(out, fill = TRUE)
-}
-
-#...........................................................
-# V8 invariants ----
-#...........................................................
-
-psa_validate_invariants <- function(ep, long_by_country, checks) {
-  out <- list()
-  a <- ep$annual
-  bau_spread <- a[, .(s = max(baseline_deaths) - min(baseline_deaths)), by = year][, max(s)]
-  out$bau <- data.table(check = "V8 BAU deaths identical in every draw (global, by year)", scope = "2025-2050",
-                        n = a[, uniqueN(year)], max_abs_diff = bau_spread, max_rel_diff = NA_real_,
-                        tol_abs = 0, tol_rel = NA_real_, identical = bau_spread == 0, pass = bau_spread == 0, note = "")
-  for (sn in c("statins_only", "all_interventions")) {
-    sp <- a[scenario == sn, .(s = max(deaths) - min(deaths)), by = year][, max(s)]
-    out[[sn]] <- data.table(check = sprintf("V8 %s deaths identical in every draw", sn),
-                            scope = fifelse(sn == "all_interventions",
-                                            "expected: 06 defect D1 removes the BP incidence pathway",
-                                            "expected: no sampled parameter enters statins"),
-                            n = a[scenario == sn, uniqueN(year)], max_abs_diff = sp, max_rel_diff = NA_real_,
-                            tol_abs = 0, tol_rel = NA_real_, identical = sp == 0, pass = sp == 0, note = "")
-  }
-  for (sn in c("bp_no_diabetes_only", "bp_diabetes_only", "bp_combined")) {
-    sp <- ep$cumul[scenario == sn, max(deaths_delayed) - min(deaths_delayed)]
-    out[[sn]] <- data.table(check = sprintf("V8 %s varies across draws (sampled BP pathway active)", sn),
-                            scope = "cumulative deaths averted", n = ep$cumul[scenario == sn, .N],
-                            max_abs_diff = sp, max_rel_diff = NA_real_, tol_abs = NA_real_, tol_rel = NA_real_,
-                            identical = FALSE, pass = sp > 0, note = "")
-  }
-  g <- ep$annual[year <= 2025]
-  pre <- if (nrow(g)) g[, max(abs(deaths_delayed))] else 0
-  out$pre <- data.table(check = "V8 pre-2026 identity: deaths averted in 2025 = 0 (every scenario, every draw)",
-                        scope = "global", n = nrow(g), max_abs_diff = pre, max_rel_diff = NA_real_,
-                        tol_abs = 1e-6, tol_rel = NA_real_, identical = pre == 0, pass = pre <= 1e-6, note = "")
-  for (Country in names(long_by_country)) {
-    l <- long_by_country[[Country]]
-    dup <- anyDuplicated(l, by = c("draw_id", "location", "scenario", "sex", "age", "year", "cause"))
-    out[[paste0("keys_", Country)]] <- data.table(
-      check = "V8 unique (draw_id, location, scenario, sex, age, year, cause) keys", scope = Country,
-      n = nrow(l), max_abs_diff = NA_real_, max_rel_diff = NA_real_, tol_abs = NA_real_, tol_rel = NA_real_,
-      identical = dup == 0, pass = dup == 0, note = "")
-    b0 <- l[scenario == "baseline" & year <= 2025]
-    for (sn in setdiff(PSA_SCENARIOS, "baseline")) {
-      s0 <- l[scenario == sn & year <= 2025]
-      setkey(b0, draw_id, sex, cause, age, year); setkey(s0, draw_id, sex, cause, age, year)
-      # BP eff_ir before 2026 is sum_b(IR_b p_b)/IR, i.e. 1 only to rounding in 06
-      # itself, so states agree to ~1e-16 relative rather than bit-for-bit.
-      out[[paste0("pre_", Country, sn)]] <- psa_cmp(
-        "V8 pre-2026 states equal BAU (every draw; dead, sick, well)",
-        c(s0$dead, s0$sick, s0$well), c(b0$dead, b0$sick, b0$well),
-        tol_rel = 1e-12, scope = paste(Country, sn))
-    }
-  }
-  ck <- checks
-  out$prob <- data.table(check = "V8 all IR/CF probabilities finite and within [0, 0.99]",
-                         scope = "every country x scenario x draw", n = nrow(ck), max_abs_diff = NA_real_,
-                         max_rel_diff = NA_real_, tol_abs = NA_real_, tol_rel = NA_real_,
-                         identical = all(ck$prob_in_range), pass = all(ck$prob_in_range),
-                         note = sprintf("IR range [%.3g, %.3g]; CF range [%.3g, %.3g]", min(ck$ir_min),
-                                        max(ck$ir_max), min(ck$cf_min), max(ck$cf_max)))
-  out$finite <- data.table(check = "V8 no non-finite state values", scope = "every country x scenario x draw",
-                           n = nrow(ck), max_abs_diff = sum(ck$n_nonfinite_states), max_rel_diff = NA_real_,
-                           tol_abs = 0, tol_rel = NA_real_, identical = sum(ck$n_nonfinite_states) == 0,
-                           pass = sum(ck$n_nonfinite_states) == 0, note = "")
-  out$neg <- data.table(check = "V8 negative state values (06 defect D10: initial well < 0 at ages 93-95)",
-                        scope = "count across all cells", n = nrow(ck), max_abs_diff = sum(ck$n_negative_states),
-                        max_rel_diff = NA_real_, tol_abs = NA_real_, tol_rel = NA_real_,
-                        identical = sum(ck$n_negative_states) == 0, pass = NA,
-                        note = "Reported, not fixed: inherited from 06 initial states")
-  bp06 <- ck[!is.na(bp_draw0_vs_06), max(bp_draw0_vs_06)]
-  out$bp06 <- data.table(check = "V8 in-worker check: batched BP eff_ir (draw 0) vs 06 calculate_antihypertensive_split",
-                         scope = "every country x BP scenario", n = ck[!is.na(bp_draw0_vs_06), .N],
-                         max_abs_diff = bp06, max_rel_diff = NA_real_, tol_abs = 0, tol_rel = NA_real_,
-                         identical = bp06 == 0, pass = bp06 == 0, note = "")
-  sna <- ck[!is.na(salt_na_share_2026plus), range(salt_na_share_2026plus)]
-  out$d1 <- data.table(check = "V8 06 defect D1 reproduced: sodium eff_ir NA from 2026 -> BP eff_ir reset to 1",
-                       scope = "all_interventions, every country", n = ck[!is.na(salt_na_share_2026plus), .N],
-                       max_abs_diff = NA_real_, max_rel_diff = NA_real_, tol_abs = NA_real_, tol_rel = NA_real_,
-                       identical = all(sna == 1), pass = all(sna == 1),
-                       note = sprintf("share of 2026+ sodium cells NA: min %.3f, max %.3f", sna[1], sna[2]))
-  rbindlist(out, fill = TRUE)
-}
-
-# Zero-effect and zero-coverage invariants on one country (fresh context).
-psa_validate_zero_effect <- function(Country, cin, fns, inp, s6, rr10_0, sheet1_0) {
-  zero <- psa_generate_draws(s6, 0L, 1L)
-  zero[, hr5 := 1]
-  sh_z <- psa_build_sheet1_draws(zero, s6)
-  ctx <- psa_country_context(Country, cin, fns, inp$repYear, inp$dt_gbd_rr, inp$run_args,
-                             inp$scenarios, inp$htn_scenario_ids, sheet1_0, rr10_0)
-  ctx$draw0_col <- 0L
-  E <- psa_effect_arrays(sh_z, 0L)
-  RR <- psa_rr10_array(data.table(draw_id = 0L, rr10_0), 0L)
-  bp_iv <- c("antihypertensive_no_diabetes", "antihypertensive_diabetes")
-  # Zero effect: every incremental effect is 0 x delta / 1 = 0, so each bin
-  # multiplier is exactly 1 and eff_ir = sum_b(IR_b p_b) / IR, which equals 1
-  # only to rounding (the bin identity holds to ~2e-16).
-  e_zero <- psa_bp_eff_ir_batch(ctx$bp[["bp_combined|TRUE|TRUE"]], E, fns)
-  # Zero coverage: targets equal baselines (scenario_id "baseline").
-  cc <- psa_prepare_country_context(Country, cin, fns, inp$repYear, inp$dt_gbd_rr, TRUE)
-  bpz <- psa_bp_bin_context(Country, cin$targets[scenario_id == "baseline"], TRUE, TRUE,
-                            cc$bp_baseline, cc$diabetes_age, fns)
-  e_cov <- psa_bp_eff_ir_batch(bpz, psa_effect_arrays(data.table(draw_id = 0L, sheet1_0), 0L), fns)
+  cum <- readRDS(files[1]); reg <- readRDS(files[2]); sc <- readRDS(files[3])
+  d0 <- md[draw_id == 0L]
+  g <- d0[geography_level == "global"][match(cum$intervention, intervention)]
+  r <- d0[geography_level == "who_region"][match(reg$region, who_region)]
   rbind(
-    psa_cmp("V8 zero-effect draw (all HR5 = 1): BP eff_ir = 1", e_zero, rep(1, length(e_zero)),
-            tol_abs = 1e-15, scope = paste(Country, "(CF pathway with fixed rho stays active by design)")),
-    psa_cmp("V8 zero coverage (targets = baseline): BP eff_ir = 1", e_cov, rep(1, length(e_cov)),
-            tol_abs = 1e-15, scope = Country),
-    psa_cmp("V8 zero-effect and zero-coverage eff_ir bit-identical", e_zero, e_cov,
-            tol_abs = 0, scope = Country))
+    psa_cmp("V6 draw-0 global deaths averted 2026-2050 vs paper_dt_cumul.rds", g$deaths_averted,
+            cum$deaths_delayed, tol_rel = PSA_TOL$totals_rel, scope = paste(cum$intervention, collapse = "; ")),
+    psa_cmp("V6 draw-0 global baseline deaths 2026-2050 vs paper_scalars$bau_total_deaths",
+            d0[geography_level == "global", unique(baseline_deaths)], sc$bau_total_deaths,
+            tol_rel = PSA_TOL$totals_rel, scope = "Global"),
+    psa_cmp("V6 draw-0 regional projected deaths (All Interventions) vs paper_dt_region.rds",
+            r$projected_deaths, reg$deaths_projected, tol_rel = PSA_TOL$totals_rel, scope = "6 regions"),
+    psa_cmp("V6 draw-0 regional baseline deaths vs paper_dt_region.rds", r$baseline_deaths,
+            reg$baseline_deaths, tol_rel = PSA_TOL$totals_rel, scope = "6 regions"),
+    psa_cmp("V6 draw-0 regional deaths averted vs paper_dt_region.rds", r$deaths_averted,
+            reg$deaths_delayed, tol_rel = PSA_TOL$totals_rel, scope = "6 regions"),
+    psa_cmp("V6 draw-0 regional deaths averted/year vs paper_dt_region.rds", r$deaths_averted_per_year,
+            reg$deaths_delayed_ave, tol_rel = PSA_TOL$totals_rel, scope = "6 regions"),
+    psa_cmp("V6 draw-0 regional % averted vs paper_dt_region.rds", r$percent_averted,
+            100 * reg$deaths_delayed_pct, tol_rel = PSA_TOL$totals_rel, scope = "6 regions"))
+}
+
+#...........................................................
+# V12 draw 0 vs the manuscript's central estimates (docs/*.docx, read-only) ----
+#...........................................................
+
+PSA_MANUSCRIPT <- "docs/who_cvd_targets_paper1.docx"
+PSA_MS_ROWS <- c(bp_no_diabetes_only = "Hypertension control, without diabetes",
+                 bp_diabetes_only = "Hypertension control, with diabetes",
+                 statins_only = "Statin scale-up", all_interventions = "All interventions combined")
+PSA_MS_REGIONS <- c("Western Pacific" = "Western Pacific Region", "South-East Asia" = "South-East Asia Region",
+                    "Europe" = "European Region", "Americas" = "Region of the Americas",
+                    "Eastern Mediterranean" = "Eastern Mediterranean Region", "Africa" = "African Region")
+
+# Plain text of the manuscript: the .docx is copied to a temporary file (it may
+# be open in Word) and converted with pandoc; the original is never modified.
+psa_manuscript_text <- function(paths) {
+  f <- file.path(paths$root, PSA_MANUSCRIPT)
+  if (!file.exists(f)) return(NULL)
+  tmp <- tempfile(fileext = ".docx"); out <- tempfile(fileext = ".txt")
+  on.exit(unlink(c(tmp, out)), add = TRUE)
+  if (!isTRUE(file.copy(f, tmp))) return(NULL)
+  ok <- tryCatch({
+    suppressWarnings(rmarkdown::pandoc_convert(tmp, to = "plain", output = out, options = c("--wrap=none", "--quiet"),
+                                               verbose = FALSE))
+    TRUE
+  }, error = function(e) FALSE)
+  if (!ok || !file.exists(out)) return(NULL)
+  readLines(out, warn = FALSE, encoding = "UTF-8")
+}
+
+# Central estimates reported in the manuscript (Findings, Tables 2-3, Supp. Table 6).
+psa_manuscript_values <- function(txt) {
+  # The manuscript prints negative numbers with U+2212 (minus sign).
+  num <- function(x) as.numeric(gsub("\u2212", "-", gsub(",", "", x)))
+  rx_row <- function(label, n) {
+    pat <- paste0("^\\s*", gsub("([().])", "\\\\\\1", label),
+                  paste(rep("\\s+([-\u2212]?[0-9][0-9.,]*%?)", n), collapse = ""), "\\s*$")
+    hit <- regmatches(txt, regexec(pat, txt))
+    hit <- hit[lengths(hit) > 0L]
+    if (length(hit)) hit[[1]][-1] else NULL
+  }
+  out <- list()
+  m <- regmatches(txt, regexec("BAU projected ([0-9.]+) million CVD deaths", txt))
+  m <- m[lengths(m) > 0L]
+  if (length(m)) out$bau <- data.table(source = "Findings (abstract)", geography = "Global", scenario_id = "baseline",
+                                       metric = "baseline_deaths", unit = "million", digits = 1L,
+                                       manuscript = num(m[[1]][2]))
+  for (sid in names(PSA_MS_ROWS)) {
+    t2 <- rx_row(PSA_MS_ROWS[[sid]], 3L)          # Table 2: averted (M), per year (thousands), share
+    if (!is.null(t2)) out[[paste0("t2_", sid)]] <- data.table(
+      source = "Table 2", geography = "Global", scenario_id = sid,
+      metric = c("deaths_averted", "deaths_averted_per_year", "percent_averted"),
+      unit = c("million", "thousand", "percent"), digits = c(1L, 0L, 1L),
+      manuscript = num(sub("%", "", t2)))
+    t3 <- rx_row(PSA_MS_ROWS[[sid]], 5L)          # Table 3: by cause (M, 2 dp); last = total
+    if (!is.null(t3)) out[[paste0("t3_", sid)]] <- data.table(
+      source = "Table 3", geography = "Global", scenario_id = sid, metric = "deaths_averted",
+      unit = "million", digits = 2L, manuscript = num(t3[5]))
+  }
+  for (reg in names(PSA_MS_REGIONS)) {
+    t6 <- rx_row(PSA_MS_REGIONS[[reg]], 5L)       # Supp. Table 6: BAU, averted, per year, share, DALYs
+    if (!is.null(t6)) out[[paste0("t6_", reg)]] <- data.table(
+      source = "Supplementary Table 6", geography = reg, scenario_id = "all_interventions",
+      metric = c("baseline_deaths", "deaths_averted", "deaths_averted_per_year", "percent_averted"),
+      unit = c("million", "million", "thousand", "percent"), digits = c(1L, 1L, 0L, 1L),
+      manuscript = num(sub("%", "", t6[1:4])))
+  }
+  rbindlist(out)
+}
+
+psa_manuscript_comparison <- function(paths, sm) {
+  txt <- psa_manuscript_text(paths)
+  if (is.null(txt)) return(NULL)
+  ms <- psa_manuscript_values(txt)
+  if (!nrow(ms)) return(NULL)
+  scale <- c(million = 1e6, thousand = 1e3, percent = 1)
+  key <- sm[, .(geography = who_region, scenario_id, metric, point, lower, upper, is_fixed)]
+  base <- key[metric == "baseline_deaths" & geography == "Global"][1][, scenario_id := "baseline"]
+  key <- rbind(key, base)
+  x <- key[ms, on = .(geography, scenario_id, metric)]
+  x[, `:=`(psa_point_rounded = round(point / scale[unit], digits),
+           psa_lower = lower / scale[unit], psa_upper = upper / scale[unit])]
+  x[, match := abs(psa_point_rounded - manuscript) < 1e-9]
+  x[, .(source, geography, scenario_id, metric, unit, digits, manuscript, psa_point_rounded,
+        psa_point = point / scale[unit], psa_lower, psa_upper, match)]
+}
+
+psa_validate_manuscript <- function(cmp, full_geo) {
+  if (!full_geo) return(psa_flag("V12 draw 0 vs manuscript central estimates", "country subset", NA,
+                                 "Skipped: the manuscript reports the full geography."))
+  if (is.null(cmp)) return(psa_flag("V12 draw 0 vs manuscript central estimates", PSA_MANUSCRIPT, NA,
+                                    "manuscript not readable or no estimates parsed: NOT COMPARED"))
+  rbind(
+    psa_flag("V12 manuscript estimates parsed (Findings, Tables 2-3, Supp. Table 6)", PSA_MANUSCRIPT,
+             nrow(cmp) == 1L + 4L * 4L + 6L * 4L, n = nrow(cmp),
+             note = "expected 41 values: BAU + 4 interventions x (3 + 1) + 6 regions x 4"),
+    psa_flag("V12 draw-0 point (rounded as printed) equals the manuscript's central estimate", PSA_MANUSCRIPT,
+             all(cmp$match), n = nrow(cmp),
+             note = if (all(cmp$match)) "all match" else
+               paste(cmp[match == FALSE, sprintf("%s %s %s: ms %s vs psa %s", source, geography, metric,
+                                                 manuscript, psa_point_rounded)], collapse = "; ")))
+}
+
+#...........................................................
+# V8-V11 on the assembled draw tables ----
+#...........................................................
+
+psa_validate_outputs <- function(deaths, md, sm, checks, region_map, n_draws, locs) {
+  out <- list()
+  ids <- 0:n_draws
+  key <- deaths[, .N, by = .(draw_id, scenario_id, geography)]
+  out$dup <- psa_flag("V8 no duplicate draw x scenario x geography rows (resumed blocks counted once)",
+                      "deaths", all(key$N == 1L), n = nrow(deaths))
+  req <- md[, .(n = .N, ids_ok = setequal(draw_id, ids) && !anyDuplicated(draw_id)),
+            by = .(scenario_id, geography_level, who_region)]
+  out$complete <- psa_flag("V8 every required row present for every draw 0..N exactly once",
+                           sprintf("%d reported groups x %d draws", nrow(req), length(ids)),
+                           nrow(req) == 4L + uniqueN(region_map$who_region) && all(req$ids_ok),
+                           n = nrow(md))
+  num <- c("projected_deaths", "baseline_deaths", "deaths_averted", "deaths_averted_per_year", "percent_averted")
+  out$finite <- psa_flag("V8 all mortality values finite", "mortality_draws",
+                         all(vapply(num, function(v) all(is.finite(md[[v]])), logical(1))), n = nrow(md))
+  out$averted <- psa_cmp("V9 deaths_averted = baseline_deaths - projected_deaths", md$deaths_averted,
+                         md$baseline_deaths - md$projected_deaths, tol_abs = 0, scope = "all rows")
+  out$peryear <- psa_cmp("V9 deaths_averted_per_year x 25 = deaths_averted (25-year divisor)",
+                         md$deaths_averted_per_year * 25, md$deaths_averted, tol_rel = 1e-14, scope = "all rows")
+  out$years <- psa_flag("V9 window 2026-2050 inclusive, n_years = 25", "all rows",
+                        all(md$year_start == 2026L & md$year_end == 2050L & md$n_years == 25L &
+                              md$n_years == md$year_end - md$year_start + 1L))
+  out$pct <- psa_cmp("V9 percent_averted = 100 x averted / baseline", md$percent_averted,
+                     100 * md$deaths_averted / md$baseline_deaths, tol_abs = 0, scope = "all rows")
+  bvar <- deaths[scenario_id == "baseline", .(dev = max(abs(deaths - deaths[draw_id == 0L]))), by = geography]
+  out$base_fixed <- psa_flag("V9 baseline deaths identical in every draw (fixed; no artificial interval)",
+                             "7 geographies", all(bvar$dev == 0), value = max(bvar$dev))
+  rs <- deaths[geography != "Global", .(region_sum = sum(deaths)), by = .(draw_id, scenario_id)]
+  gl <- deaths[geography == "Global", .(draw_id, scenario_id, global = deaths)]
+  rg <- gl[rs, on = .(draw_id, scenario_id)]
+  out$reg_glob <- psa_cmp("V9 sum of the six WHO regions = Global (same country set), every draw x scenario",
+                          rg$region_sum, rg$global, tol_rel = 1e-12, scope = sprintf("%d rows", nrow(rg)))
+  out$map <- psa_flag("V9 WHO mapping: every modelled country in exactly one of six regions",
+                      paste(region_map[, .N, by = who_region][, paste0(who_region, " ", N)], collapse = "; "),
+                      nrow(region_map) == length(locs) && !anyDuplicated(region_map$location) &&
+                        setequal(region_map$location, locs) && all(region_map$who_region %in% PSA_REGION_ORDER),
+                      n = nrow(region_map))
+  iv <- sm[is_fixed == FALSE]
+  out$q <- psa_flag("V10 quantiles finite and ordered (lower <= upper); n_draws = N for every group",
+                    sprintf("%d metric-groups", nrow(iv)),
+                    all(is.finite(iv$lower) & is.finite(iv$upper) & iv$lower <= iv$upper) &&
+                      all(sm$n_draws == n_draws), n = nrow(iv))
+  pin <- iv[, point >= lower & point <= upper]
+  out$q_point <- psa_flag("V10 draw-0 point inside the empirical interval (informational)",
+                          sprintf("%d of %d", sum(pin), nrow(iv)), NA,
+                          note = paste(iv[!pin, paste(who_region, scenario_id, metric)], collapse = "; "))
+  ch <- copy(checks)
+  # Negative states: the deterministic model itself (and the saved 06 output)
+  # contains a few negative INITIAL `well` cells (Nx x (1 - PREVt0 - BG.mx) < 0
+  # at the oldest ages; inherited defect D10). Sampling must not add any.
+  neg0 <- ch[draw_id == 0L, .(scenario_id, neg0 = n_negative)]
+  chn <- neg0[ch, on = "scenario_id"]
+  out$nonfinite <- psa_flag("V11 no non-finite model states in any draw", "all countries",
+                            all(ch$n_nonfinite == 0), value = max(ch$n_nonfinite))
+  out$negative <- psa_flag("V11 negative model states in every draw = those of draw 0 (none added by sampling)",
+                           "all countries", all(chn$n_negative == chn$neg0), value = max(chn$n_negative - chn$neg0),
+                           note = sprintf(paste0("%s negative cells per scenario in draw 0, all inherited from 06's ",
+                                                 "initial well states (identical in the saved 06 output)"),
+                                          paste(unique(neg0$neg0), collapse = "/")))
+  cap0 <- ch[draw_id == 0L, .(scenario_id, ir0 = n_ir_capped, cf0 = n_cf_capped, s0 = clamp_sick,
+                              w0 = clamp_well, p0 = clamp_pop, a0 = clamp_allmx)]
+  cc <- cap0[ch, on = "scenario_id"]
+  sm_cap <- cc[draw_id > 0L, .(max_extra_ir = max(n_ir_capped - ir0), max_extra_cf = max(n_cf_capped - cf0),
+                               min_extra_cf = min(n_cf_capped - cf0),
+                               max_extra_clamp = max(clamp_sick - s0 + clamp_well - w0 + clamp_pop - p0 + clamp_allmx - a0),
+                               draw0_cf = cf0[1], draw0_ir = ir0[1]), by = scenario_id]
+  out$caps <- sm_cap[, .(check = "V11 IR/CF cells at the 0.99 cap and state clamps vs draw 0 (informational)",
+                         scope = scenario_id, n = n_draws, max_abs_diff = pmax(max_extra_ir, max_extra_cf),
+                         max_rel_diff = max_extra_clamp, tol_abs = NA_real_, tol_rel = NA_real_,
+                         identical = NA, pass = NA,
+                         note = sprintf("draw 0: %g IR / %g CF capped cells; draws: extra IR %+g, extra CF %+g..%+g; extra state clamps %+g",
+                                        draw0_ir, draw0_cf, max_extra_ir, min_extra_cf, max_extra_cf, max_extra_clamp))]
+  rbindlist(out, fill = TRUE)
 }
