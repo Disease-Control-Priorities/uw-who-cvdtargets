@@ -6,8 +6,9 @@
 # IR/CF multiplier grid, objective and weights, calibration window, probability
 # caps and output contract. The one substantive difference is the DEATH target:
 #
-#   * calibration_deaths_source == "WHO" (default in 00_run_model.R): WHO GHE 2021
-#     death counts (dt_deaths_who_long.rds, written by 020_get_deaths_who.R)
+#   * calibration_deaths_source == "WHO" (default in 00_run_model.R): WHO GHE 2023
+#     death counts (dt_deaths_who_long.rds, written by 020_get_deaths_who_ghe2023.R;
+#     the GHE 2021 version is kept as dt_deaths_who_long_2021.rds)
 #     wherever present; GBD 2023 death counts for locations without WHO data and
 #     for individual missing WHO cells.
 #   * calibration_deaths_source == "GBD": GBD 2023 death counts throughout, which
@@ -71,6 +72,14 @@
 #        calibration_diagnostics.csv, calibration_death_target_audit.csv, and
 #        *_grid_<WHO|GBD>.csv copies of all three (audit files; no "adjusted" in
 #        the name so the globbing in 04/05 never mixes them in).
+#
+# LOCATION SCOPE (options; default = every tps_inpt location)
+#   options(who_cvd.cal_locations = "out_model") calibrates only the countries
+#   that have model_output_<country>[_<scenario>].rds in output/out_model/ (the
+#   countries 06 actually runs); a character vector of model location names also
+#   works. who_cvd.cal_pilot does the same for a quick test. Either way ONLY the
+#   selected locations are written, so calibrated_searo / calibration_*.csv (and
+#   031's adjusted_searo) then cover that set.
 #===============================================================================
 
 suppressPackageStartupMessages({
@@ -174,6 +183,47 @@ if (!is.null(cal_pilot)) {
   message("  [pilot] restricting stage 03 to: ", paste(cal_pilot, collapse = ", "))
 }
 
+## Optional production scope: "out_model" = the countries with scenario output in
+## output/out_model/ (Aim 1 model_output_<country>.rds or Aim 2
+## model_output_<country>_<scenario_id>.rds), or an explicit vector of names.
+cal_locations <- getOption("who_cvd.cal_locations", NULL)
+if (!is.null(cal_locations)) {
+  if (identical(cal_locations, "out_model")) {
+    if (!exists("wd_outp")) {
+      stop("who_cvd.cal_locations = \"out_model\" needs wd_outp from 00_run_model.R.",
+           call. = FALSE)
+    }
+    out_model_dir <- file.path(wd_outp, "out_model")
+    om <- sub("^model_output_(.+)[.]rds$", "\\1",
+              list.files(out_model_dir, pattern = "^model_output_.+[.]rds$"))
+    if (!length(om)) {
+      stop("who_cvd.cal_locations = \"out_model\": no model_output_*.rds in ",
+           out_model_dir, call. = FALSE)
+    }
+    ## Exact name, else the longest model location followed by "_<scenario>".
+    om_loc <- vapply(om, function(x) {
+      hit <- all_locs[x == all_locs | startsWith(x, paste0(all_locs, "_"))]
+      if (length(hit)) hit[which.max(nchar(hit))] else NA_character_
+    }, character(1))
+    if (anyNA(om_loc)) {
+      stop("output/out_model files with no tps_inpt location: ",
+           paste(names(om_loc)[is.na(om_loc)], collapse = ", "), call. = FALSE)
+    }
+    cal_locations <- sort(unique(unname(om_loc)))
+    rm(om, om_loc, out_model_dir)
+  }
+  if (!all(cal_locations %in% unique(b_rates$location))) {
+    stop("who_cvd.cal_locations names locations not in tps_inpt",
+         if (!is.null(cal_pilot)) " (after who_cvd.cal_pilot)", ": ",
+         paste(setdiff(cal_locations, unique(b_rates$location)), collapse = ", "),
+         call. = FALSE)
+  }
+  b_rates <- b_rates[location %in% cal_locations]
+  message("  [scope] calibrating ", length(cal_locations), " of ", length(all_locs),
+          " tps_inpt locations; not calibrated or written: ",
+          paste(setdiff(all_locs, cal_locations), collapse = ", "))
+}
+
 locs <- sort(unique(b_rates$location))
 cat(sprintf("  Loaded tps_inpt: %d rows | %d locations | causes: %s | years %d-%d\n",
             nrow(b_rates), length(locs), paste(MODEL_CAUSES, collapse = ", "),
@@ -263,11 +313,12 @@ check_counts(gbd$gbdPrev,   "GBD prevalence")
 death_detail <- gbd[, .(location, sex, cause, age_group, year, gbdDeaths, gbdPrev,
                         whoDeaths = NA_real_, who_split_85plus = FALSE)]
 
-## ---- 2b. WHO GHE 2021 deaths (Number), harmonised to the model keys --------
-## WHO labels (countrycode country.name, from 020) that differ from the GBD 2023
-## names in tps_inpt. Every other WHO location name already matches exactly.
-## Model locations without WHO data (small states/territories, Taiwan) fall back
-## to GBD deaths.
+## ---- 2b. WHO GHE 2023 deaths (Number), harmonised to the model keys --------
+## WHO labels (countrycode country.name of the GHE iso3, from 020) that differ
+## from the GBD 2023 names in tps_inpt. Every other WHO location name already
+## matches exactly. GHE 2023 adds Taiwan (TWN), absent from GHE 2021. Model
+## locations without WHO data (Andorra, Dominica, Marshall Islands and other small
+## states/territories) fall back to GBD deaths.
 who_location_crosswalk <- c(
   "Antigua & Barbuda"        = "Antigua and Barbuda",
   "Bosnia & Herzegovina"     = "Bosnia and Herzegovina",
@@ -288,6 +339,7 @@ who_location_crosswalk <- c(
   "St. Lucia"                = "Saint Lucia",
   "St. Vincent & Grenadines" = "Saint Vincent and the Grenadines",
   "Syria"                    = "Syrian Arab Republic",
+  "Taiwan"                   = "Taiwan (Province of China)",
   "Trinidad & Tobago"        = "Trinidad and Tobago",
   "Venezuela"                = "Venezuela (Bolivarian Republic of)",
   "Vietnam"                  = "Viet Nam"
@@ -297,7 +349,7 @@ who_split_check <- NULL
 if (DEATHS_SOURCE == "WHO") {
   if (!file.exists(who_deaths_target_file)) {
     stop("Stage 03: WHO deaths target not found: ", who_deaths_target_file,
-         " -- run 020_get_deaths_who.R first.", call. = FALSE)
+         " -- run 020_get_deaths_who_ghe2023.R first.", call. = FALSE)
   }
   who <- readRDS(who_deaths_target_file); setDT(who)
   who_cols <- c("location", "sex", "cause", "age", "year", "measure", "metric", "val")

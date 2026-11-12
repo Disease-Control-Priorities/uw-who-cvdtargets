@@ -364,8 +364,10 @@ The central research question is:
 
 Four causes of CVD death are modelled jointly: ischemic heart disease (IHD), ischemic
 stroke, intracerebral hemorrhage (hemorrhagic stroke), and hypertensive heart disease (HHD).
-A discrete-time multi-state transition model (Well -> Sick -> Dead) is calibrated to GBD 2023
-data and projected forward to 2050 using UNWPP 2024 population estimates.
+A discrete-time multi-state transition model (Well -> Sick -> Dead) is built from GBD 2023
+data, calibrated to WHO Global Health Estimates 2023 cause-specific deaths (GBD 2023 deaths
+where unavailable) and GBD 2023 prevalence, and projected forward to 2050 using UNWPP 2024
+population estimates.
 
 ---
 
@@ -2789,21 +2791,51 @@ for (e in parse(paste0(wd, "code/00_run_model.R"), keep.source = FALSE)) {
 }
 stopifnot(all(cal_settings %in% ls(cal_env)))
 
+# Calibrated location scope. Stage 03 can be run for a subset of the tps_inpt
+# locations (options(who_cvd.cal_locations = ...); the GHE 2023 run covered the
+# countries in output/out_model/), and writes only those locations. The scope is
+# taken from the saved outputs, which must agree with one another, and 03 is
+# re-evaluated with the same scope so its targets and uncalibrated rates cover
+# exactly the calibrated set. Uncalibrated locations are listed, not dropped
+# silently, and no modelled country may be among them (checked below).
+cal_post_rates <- rbindlist(lapply(
+  list.files(wd_data, pattern = "^calibrated_searo_part[0-9]+\\.rds$", full.names = TRUE),
+  readRDS), use.names = TRUE)
+cal_diag <- fread(paste0(wd_data, "calibration_diagnostics.csv"))
+cal_fac  <- fread(paste0(wd_data, "calibration_factors.csv"))
+cal_scope <- sort(unique(as.character(cal_post_rates$location)))
+stopifnot(
+  "calibrated_searo and calibration_factors.csv cover different locations" =
+    setequal(cal_scope, cal_fac$location),
+  "calibrated_searo and calibration_diagnostics.csv cover different locations" =
+    setequal(cal_scope, cal_diag$location))
+
 ex03 <- parse(paste0(wd, "code/03_calibration_who.R"), keep.source = FALSE)
 grid_at <- which(vapply(ex03, function(e)
   grepl("^grid <- CJ\\(", paste(deparse(e), collapse = "")), logical(1)))
 stopifnot(length(grid_at) == 1L)
 # 03's settings check (vapply(..., exists)) sees only the global environment, so
 # its required settings are exposed there during the evaluation and then removed
-# (any same-named report objects are restored).
-cal_needed  <- setdiff(cal_settings, c("cause_map", "who_deaths_target_file", "run_calibration_par"))
+# (any same-named report objects are restored). The scope option is restored too.
+# wd_data is included so this also works when the report is knitted in a
+# non-global environment (e.g. rmarkdown::render(envir = new.env())).
+cal_needed  <- c("wd_data",
+                 setdiff(cal_settings, c("cause_map", "who_deaths_target_file", "run_calibration_par")))
 cal_saved   <- mget(intersect(cal_needed, ls(globalenv())), envir = globalenv())
 for (nm in cal_needed) assign(nm, get(nm, envir = cal_env), envir = globalenv())
+cal_opt_old <- options(who_cvd.cal_locations = cal_scope)
 tryCatch(for (i in seq_len(grid_at - 1L)) eval(ex03[[i]], cal_env),
          finally = {
+           options(cal_opt_old)
            rm(list = cal_needed, envir = globalenv())
            if (length(cal_saved)) list2env(cal_saved, envir = globalenv())
          })
+# Every calibrated location must be a stage-02 location; the rest were not calibrated.
+stopifnot("calibrated locations missing from tps_inpt" = all(cal_scope %in% cal_env$all_locs))
+cal_not_calibrated <- setdiff(cal_env$all_locs, cal_scope)
+message("Calibration scope: ", length(cal_scope), " of ", length(cal_env$all_locs),
+        " stage-02 locations; not calibrated: ",
+        if (length(cal_not_calibrated)) paste(cal_not_calibrated, collapse = ", ") else "none")
 
 cal_keys <- c("location", "sex", "cause", "age_group", "year")
 cal_project <- function(rates) {
@@ -2825,14 +2857,9 @@ cal_band_obj <- function(j) j[, .(
     , objective := cal_env$W_DEATHS * RMSE_deaths + cal_env$W_PREV * RMSE_prev][]
 
 fit_pre <- cal_project(cal_env$b_rates)
-cal_post_rates <- rbindlist(lapply(
-  list.files(wd_data, pattern = "^calibrated_searo_part[0-9]+\\.rds$", full.names = TRUE),
-  readRDS), use.names = TRUE)
 stopifnot(setequal(unique(cal_post_rates$location), unique(cal_env$b_rates$location)))
 fit_post <- cal_project(cal_post_rates)
 
-cal_diag <- fread(paste0(wd_data, "calibration_diagnostics.csv"))
-cal_fac  <- fread(paste0(wd_data, "calibration_factors.csv"))
 obj <- merge(cal_band_obj(fit_pre)[, .(location, sex, cause, age_group, obj_pre = objective)],
              cal_band_obj(fit_post)[, .(location, sex, cause, age_group, obj_post = objective)],
              by = c("location", "sex", "cause", "age_group"))
@@ -2857,6 +2884,8 @@ fit_pre <- cal_mod(fit_pre); fit_post <- cal_mod(fit_post); obj <- cal_mod(obj)
 cal_audit <- cal_mod(cal_env$death_audit)
 mod_locs <- sort(unique(data.out$location))
 stopifnot("modelled countries missing from the calibration" = all(mod_locs %in% obj$location))
+cal_not_calibrated <- sort(fcoalesce(unname(cal_rename[cal_not_calibrated]), cal_not_calibrated))
+cal_calibrated_not_modelled <- setdiff(unique(obj$location), mod_locs)
 
 fit <- merge(fit_pre[, c(cal_keys, "Deaths", "Prevalence", "targetDeaths", "gbdPrev"), with = FALSE],
              fit_post[, c(cal_keys, "Deaths", "Prevalence"), with = FALSE],
@@ -2947,6 +2976,9 @@ cal_mult <- om[, .(ir_q1 = quantile(ir_mult, 0.25), ir_med = median(ir_mult), ir
 aud_loc <- cal_audit[, .(src = paste(sort(unique(death_target)), collapse = "+")), by = location]
 aud_m   <- cal_audit[location %in% mod_locs]
 cal_targets <- list(
+  n_locations_input      = length(cal_env$all_locs),          # stage-02 (tps_inpt) locations
+  not_calibrated         = cal_not_calibrated,                # outside the stage-03 scope
+  calibrated_not_modelled = sort(cal_calibrated_not_modelled),
   n_locations_calibrated = uniqueN(cal_audit$location),
   n_locations_who        = aud_loc[src == "WHO", .N],
   n_locations_gbd        = aud_loc[src == "GBD", .N],

@@ -1,8 +1,8 @@
 ---
-title: "Closing the treatment gap: projected global cardiovascular health gains from expanding blood pressure control and statin use guided by WHO commitments, 2026–2050, a modelling study"
-author:
-  - "WHO $\\cdot$ University of Washington"
+title: "`r pp0 <- readRDS(paste0(params$repo, 'output/paper/paper_params.rds')); paste0('Projected reduction in cardiovascular mortality and morbidity from achieving WHO targets for hypertension control and statin use across ', readRDS(paste0(params$repo, 'output/paper/paper_scalars.rds'))$n_countries, ' countries: ', pp0$reporting_start_year, '–', pp0$reporting_end_year)`"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
+params:
+  repo: "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/"
 output:
   bookdown::word_document2:
     toc: true
@@ -31,7 +31,9 @@ knitr::opts_chunk$set(
 # scenarios/scenarios_aim1/aim1_report.Rmd (health outcomes, derived quantities,
 # statin populations, calibration performance, mortality forecast summary) and
 # aim1_report_dsa.Rmd (deterministic sensitivity analysis).
-wd_repo   <- "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/"
+# The repository path is a YAML parameter so that the title (which reports the
+# number of countries and the study window) can read the same artefacts.
+wd_repo   <- params$repo
 wd_outp   <- paste0(wd_repo, "output/")
 paper_dir <- paste0(wd_outp, "paper/")
 dsa_dir   <- paste0(wd_repo, "output_dsa/paper/")
@@ -70,6 +72,11 @@ fmt_k  <- function(x, d = 0) formatC(round(x / 1e3, d), format = "f", digits = d
 fmt_pc <- function(x, d = 1) paste0(formatC(round(100 * x, d), format = "f", digits = d), "%")
 fmt_n  <- function(x, d = 1) formatC(round(x, d), format = "f", digits = d, big.mark = ",")
 minus  <- function(s) sub("^-", "\u2212", s)     # typographic minus in tables
+md     <- function(s) gsub(".", "\u00b7", s, fixed = TRUE)   # Lancet mid-dot decimal (abstract)
+num_word <- function(n) c("one", "two", "three", "four", "five", "six", "seven", "eight",
+                          "nine", "ten", "eleven", "twelve", "thirteen", "fourteen",
+                          "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+                          "twenty")[n]
 
 # ---- Study window and denominators ---------------------------------------------
 study_years      <- paste0(pp$reporting_start_year, "\u2013", pp$reporting_end_year)
@@ -93,6 +100,10 @@ reg_name <- c("Africa" = "African Region", "Americas" = "Region of the Americas"
               "Eastern Mediterranean" = "Eastern Mediterranean Region",
               "Europe" = "European Region", "South-East Asia" = "South-East Asia Region",
               "Western Pacific" = "Western Pacific Region")
+reg_short <- c("Africa" = "Africa", "Americas" = "the Americas",
+               "Eastern Mediterranean" = "the Eastern Mediterranean",
+               "Europe" = "Europe", "South-East Asia" = "South-East Asia",
+               "Western Pacific" = "the Western Pacific")   # abstract wording
 inc_name <- c("Low income" = "low-income countries",
               "Lower-middle income" = "lower-middle-income countries",
               "Upper-middle income" = "upper-middle-income countries",
@@ -126,6 +137,9 @@ hold   <- copy(pf$holdout)
 # ---- Statin populations ------------------------------------------------------------
 sp_reg <- copy(sp$by_region)
 sp_g   <- sp_reg[region == "Global"]
+# Scale-up needed to reach the statin target from the population-weighted baseline
+statin_gap_pp <- 100 * (pp$statin_target_coverage - sp_g$statin_coverage_2025)
+statin_fold   <- pp$statin_target_coverage / sp_g$statin_coverage_2025
 
 # ---- Deterministic sensitivity analysis (current full run) ------------------------
 dsa <- copy(dsa_cumulative)[as.character(intervention) == "All Interventions"]
@@ -133,6 +147,26 @@ dsa_get <- function(id, col = "averted") dsa[dsa_id == id][[col]]
 dsa_ow  <- dsa[analysis == "one_way"]
 dsa_lo  <- dsa_ow[which.min(averted)]
 dsa_hi  <- dsa_ow[which.max(averted)]
+# Narrative description of a DSA setting (used for the lowest and highest settings);
+# falls back to the setting's short label if a new setting is added.
+dsa_phrase <- function(row) {
+  ph <- c(target_50          = "when 50% of the hypertension-control increment was achieved",
+          target_75          = "when 75% of the hypertension-control increment was achieved",
+          delay_2035         = "when full implementation was delayed to 2035",
+          delay_2040         = "when full implementation was delayed to 2040",
+          adherence_low      = "with lower adherence in primary prevention",
+          adherence_moderate = "under the moderate statin-adherence scenario",
+          adherence_income   = "using illustrative income-group-specific adherence values",
+          trend_full_cvd     = "with 100% of the forecast decline",
+          trend_no_cvd       = "with no case-fatality trend",
+          trend_ihme_cvd     = "with the IHME Foresight trend")
+  lb <- c("50% of increment"          = ph[["target_50"]],
+          "Statin adherence moderate" = ph[["adherence_moderate"]])
+  out <- unname(ph[row$dsa_id])
+  if (is.na(out)) out <- unname(lb[row$short_label])
+  if (is.na(out)) out <- paste0("(", tolower(row$short_label), ")")
+  out
+}
 # The DSA reference must be the central analysis (same build, scope and window).
 stopifnot(
   "DSA reference differs from the central estimate" =
@@ -144,231 +178,226 @@ stopifnot(
 
 \newpage
 
+***The WHO CVD Working Group:***
+
+*Kouamivi Agboyibor^1,2^, William Garcia^3^, Sok-Cin Tye^1^, Norman R. C. Campbell^4^, Bochen Cao^5^, Seyyedhadi Ghamari^1^, Jennifer Ringrose^6^, Ana Olga Mocumbi^7^, Dike Bevis Ojji^8^, Gianfranco Parati^9^, Issifou Yaya^10^, Andrew E. Moran^11^, Subodh Verma^12^, Filip Meheus^13^, Alta Schutte^14^, James E. Sharman^15^, Thomas Weber^16^, Paul K. Whelton^17^, Alarcos Cieza^1^, George S. Stergiou^18^, Søren Brostrøm^1^, Børge G. Nordestgaard^19^, Anthony Rodgers^20^, Jean-Philippe Empana^2^, David Watkins^3^.*
+
+1.  *Department of Noncommunicable Diseases and Mental Health, World Health Organization, Geneva, Switzerland*
+2.  *Paris Cardiovascular Research Center (PARCC), INSERM U970, Université Paris Cité, Paris, France*
+3.  *Department of Global Health, University of Washington, Seattle, WA, USA; PROESA, Universidad Icesi, Cali, Colombia*
+4.  *University of Calgary; Libin Cardiovascular Institute of Alberta, Calgary, Alberta, Canada*
+5.  *Department of Data, Digital Health, Analytics and Artificial Intelligence, World Health Organization, Geneva, Switzerland*
+6.  *Department of Medicine, Faculty of Medicine and Dentistry, University of Alberta, Edmonton, Alberta, Canada*
+7.  *Eduardo Mondlane University; National Institute of Health, Maputo, Mozambique*
+8.  *University of Abuja; University of Abuja Teaching Hospital, Abuja, Nigeria*
+9.  *University of Milano-Bicocca; Istituto Auxologico Italiano IRCCS, Milan, Italy*
+10. *URC-ECO, Assistance Publique–Hôpitaux de Paris, Paris, France*
+11. *Columbia University Irving Medical Center, New York, NY, USA*
+12. *University of Toronto; St. Michael's Hospital, Unity Health Toronto, Toronto, Canada*
+13. *Department of Health Financing and Economics, World Health Organization, Geneva, Switzerland*
+14. *UNSW Sydney; The George Institute for Global Health, Sydney, Australia*
+15. *Menzies Institute for Medical Research, University of Tasmania, Hobart, Australia*
+16. *Klinikum Wels-Grieskirchen; Paracelsus Medical University Salzburg, Austria*
+17. *Celia Scott Weatherhead School of Public Health and Tropical Medicine, Tulane University, New Orleans, LA, USA*
+18. *Hypertension Center STRIDE-7, School of Medicine, National and Kapodistrian University of Athens, Athens, Greece*
+19. *Department of Clinical Medicine, University of Copenhagen; Department of Clinical Biochemistry, Copenhagen University Hospital–Herlev and Gentofte, Denmark*
+20. *The George Institute for Global Health; UNSW Sydney, Australia; School of Public Health, Imperial College London, UK*
+
+\newpage
+
+***Corresponding authors***
+
+*Kouamivi Agboyibor, MD PhD and David Watkins*
+
+*<agboyibork@who.int> <davidaw@uw.edu>*
+
+*World Health Organization University of Washington*
+
+\newpage
+
 # Abstract
 
-## Structured abstract
+**Background**
 
-Background
+High blood pressure and increased low-density lipoprotein cholesterol are two of the largest modifiable causes of cardiovascular disease (CVD). We estimated CVD deaths averted by scaling up blood pressure control and statin use in line with WHO and UN commitments.
 
-High systolic blood pressure and high low-density lipoprotein cholesterol are leading modifiable risk factors for cardiovascular disease (CVD). The combined global mortality and morbidity benefits of expanding treatment in line with WHO commitments remain uncertain. We estimated the health effects of adding `r fmt_m(pp$added_total, 0)` million people with controlled hypertension and expanding statin use under scenarios informed by these commitments.
+**Methods**
 
-Methods
+We modelled four CVD causes in adults in `r n_countries` countries and areas (`r study_years`), calibrated to WHO and GBD data. Against business as usual (BAU), we compared `r fmt_m(pp$added_total, 0)` million more people with controlled blood pressure by `r pp$control_target_year`, statin coverage of `r fmt_pc(pp$statin_target_coverage, 0)` in eligible adults, and both combined.
 
-We used a multistate model of four CVD causes in adults aged 20 years or older in `r n_countries` countries, calibrated to `r ct$years[1]`–`r ct$years[2]` World Health Organization (WHO) Global Health Estimates deaths and Global Burden of Disease 2023 prevalence. Against business as usual (BAU), with treatment coverage held at current levels, we modelled blood pressure control in hypertensive adults without and with diabetes, two mutually exclusive groups sharing a fixed global increment of `r fmt_m(pp$added_total, 0)` million additional controlled people by `r pp$control_target_year`, allocated in proportion to current control, with control in the diabetes group capped at `r fmt_pc(pp$htn_diabetes_cap, 0)`; statin coverage rising to `r fmt_pc(pp$statin_target_coverage, 0)` of adults aged `r pp$statin_age_min` years or older; and all three combined. The primary outcome was cumulative CVD deaths averted in `r study_years`; disability-adjusted life-years (DALYs) averted were secondary. We did one-way deterministic sensitivity analyses.
+**Findings**
 
-Findings
+Under BAU, `r md(fmt_m(bau_total_deaths, 0))` million CVD deaths were projected. Blood pressure control averted `r md(fmt_m(pd$total_bp_combined))` million deaths, statin use `r md(fmt_m(total_stat))` million, and both `r md(fmt_m(total_all))` million. Proportional reductions were larger where current control was higher (`r md(fmt_pc(reg_pct$deaths_pct_bau[1]))` in `r reg_short[reg_pct$stratum[1]]`; `r md(fmt_pc(reg_pct$deaths_pct_bau[nrow(reg_pct)]))` in `r reg_short[reg_pct$stratum[nrow(reg_pct)]]`).
 
-BAU projected `r fmt_m(bau_total_deaths)` million CVD deaths. The increment raised control from `r fmt_pc(pp$coverage_total_2025)` to `r fmt_pc(pp$coverage_total_2030)` of hypertensive adults (`r fmt_pc(pp$achieved_control_diabetes_2030)` with diabetes). Blood pressure control averted `r fmt_m(total_bp)` million deaths without diabetes and `r fmt_m(total_bpd)` million with diabetes, statin scale-up `r fmt_m(total_stat)` million, and all interventions `r fmt_m(total_all)` million (`r fmt_pc(fb[["all"]])` of BAU deaths; `r fmt_m(total_dalys_all)` million DALYs), `r fmt_m(pd$subadditive_gap, 2)` million fewer than the sum of single effects. Proportional reductions were largest in the `r reg_name[reg_pct$stratum[1]]` (`r fmt_pc(reg_pct$deaths_pct_bau[1])`) and `r inc_name[inc_pct$stratum[1]]` (`r fmt_pc(inc_pct$deaths_pct_bau[1])`) and smallest in the `r reg_name[reg_pct$stratum[nrow(reg_pct)]]` (`r fmt_pc(reg_pct$deaths_pct_bau[nrow(reg_pct)])`) and `r inc_name[inc_pct$stratum[nrow(inc_pct)]]` (`r fmt_pc(inc_pct$deaths_pct_bau[nrow(inc_pct)])`). Sensitivity analyses gave `r fmt_m(dsa_lo$averted)`–`r fmt_m(dsa_hi$averted)` million deaths averted.
+**Interpretation**
 
-Interpretation
-
-Blood pressure control and statins could together avert `r fmt_pc(fb[["all"]])` of projected CVD deaths. Allocating the increment in proportion to current control gave the least proportional benefit to settings with the lowest control; alternative allocations were not evaluated. Estimates assume full adherence to blood pressure treatment, and parameter uncertainty was not quantified probabilistically.
-
-Funding
-
-World Health Organization.
+Achieving these commitments could avert about `r fmt_pc(fb[["all"]], 0)` of projected CVD deaths over `r n_years` years. Proportional allocation favoured settings with higher current control, potentially widening inequities; benefit depends on sustained control, medicine supply, and adherence.
 
 \newpage
 
 ## Research in context
 
-Evidence before this study
+**Evidence before this study**
 
-<!-- We drew on multicountry modelling studies of hypertension treatment and lipid-lowering therapy known to the authors, their reference lists, and WHO and NCD Countdown 2030 reports. Individual-participant and trial-level meta-analyses by the Blood Pressure Lowering Treatment Trialists' Collaboration [@BPLTTC2021] and the Cholesterol Treatment Trialists' Collaboration [@Fulcher2015] quantify the relative risk reductions from these treatments. Kontis and colleagues [-@Kontis2019] estimated that scaling up hypertension treatment to 70% coverage could delay 39.4 million deaths over 25 years, and Pickersgill and colleagues [-@Pickersgill2022] estimated 76–130 million deaths averted under the 80-80-80 hypertension target; neither analysis modelled statin therapy with hypertension control. NCD Countdown 2030 analyses identified both interventions as efficient routes to Sustainable Development Goal target 3.4 without estimating their joint effect [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. We are not aware of a study that modelled the 150 million hypertension control commitment together with statin scale-up against a common baseline across countries. -->
+We searched PubMed and Embase from inception to 31 July 2026 for multi-country modelling studies estimating the mortality and morbidity effects of hypertension control or lipid-lowering therapy. Search terms combined cardiovascular mortality, morbidity, blood pressure lowering, statin therapy, global or multi-country modelling, and projection. We supplemented the database searches by screening the reference lists of included studies and relevant WHO and NCD Countdown 2030 technical reports to identify potentially eligible studies not captured by the database searches. The clinical case for both interventions is settled: Meta-analyses by the Blood Pressure Lowering Treatment Trialists' Collaboration [@BPLTTC2021] and the Cholesterol Treatment Trialists' Collaboration [@Fulcher2015] have established the cardiovascular benefits of blood pressure lowering and statin therapy. Global modelling studies have projected substantial mortality reductions from expanding hypertension treatment: Kontis and colleagues [-@Kontis2019] estimated that 70% treatment coverage could delay 39.4 million deaths over 25 years, and Pickersgill and colleagues [-@Pickersgill2022] estimated 76–130 million deaths averted under the 80-80-80 hypertension target. Neither study evaluated hypertension control jointly with statin scale-up. NCD Countdown 2030 analyses identified both interventions as efficient pathways towards Sustainable Development Goal target 3.4 [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. However, we found no study that projected the combined mortality and morbidity effects of adding `r fmt_m(pp$added_total, 0)` million people with controlled hypertension and expanding statin use against a common baseline across countries.
 
-### Evidence before this study
+**Added value of this study**
 
-Meta-analyses by the Blood Pressure Lowering Treatment Trialists’ Collaboration [@BPLTTC2021] and the Cholesterol Treatment Trialists’ Collaboration [@Fulcher2015] have established the cardiovascular benefits of blood pressure lowering and statin therapy. Global modelling studies have projected substantial mortality reductions from expanding hypertension treatment: Kontis and colleagues [-@Kontis2019] estimated that 70% treatment coverage could delay 39.4 million deaths over 25 years, and Pickersgill and colleagues [-@Pickersgill2022] estimated 76–130 million deaths averted under the 80-80-80 hypertension target. Neither study evaluated hypertension control jointly with statin scale-up. NCD Countdown 2030 analyses identified both interventions as efficient pathways towards Sustainable Development Goal target 3.4 [@Watkins2022NCD2030; @Bennett2020NCD2030Path]. However, these studies did not quantify the combined mortality and morbidity effects of adding `r fmt_m(pp$added_total, 0)` million people with controlled hypertension and expanding statin use against a common baseline across countries.
+For `r n_countries` countries, we estimated the deaths and disability-adjusted life-years (DALYs) averted by achieving the WHO and UN commitment of `r fmt_m(pp$added_total, 0)` million additional people with controlled hypertension. We estimated these effects separately among mutually exclusive groups of adults with hypertension with and without diabetes, and assessed the additional benefits of increased statin use, alone and in combination with improved hypertension control. The model was calibrated to WHO Global Health Estimates and Global Burden of Disease data, incorporated mortality forecasts reconciled across causes, and attributed health gains only to increases in intervention coverage above baseline levels. We report the coverage achieved under each scenario alongside the corresponding global commitments and assess how alternative approaches to allocating a fixed global coverage increment influence comparisons across regions and income groups.
 
+**Implications of all the available evidence**
 
-Added value of this study
-
-For `r n_countries` countries, we estimated the deaths and disability-adjusted life-years averted by the 150 million commitment, divided between mutually exclusive groups of hypertensive adults with and without diabetes, and by statin scale-up, alone and combined. The model was calibrated to WHO and Global Burden of Disease data, used mortality forecasts reconciled across causes, and credited only coverage above current levels. We report achieved coverage alongside the commitments and show how the rule used to allocate a fixed global increment shapes regional and income-group comparisons.
-
-Implications of all the available evidence
-
-Under the model's assumptions, blood pressure control and statin therapy are complementary, and pursuing both averts more deaths than either alone. How a global increment in hypertension control is allocated among countries affects who benefits; an allocation proportional to current control gives least to the settings with the lowest control. The share of the projected benefit that is realised will depend on medicine supply, primary care capacity, and long-term adherence.
+Under the model assumptions, improving blood pressure control and increasing statin use are complementary strategies, with their combined implementation projected to avert more deaths than either strategy alone. How a fixed global increase in hypertension control is allocated across countries has important implications for equity: allocation proportional to current control levels directs the smallest gains in coverage to settings where baseline control is lowest, potentially widening existing disparities. Realizing the projected health benefits will require reliable access to affordable medicines, adequate primary health-care capacity, effective systems for treatment initiation and follow-up, and sustained long-term adherence.
 
 \newpage
 
 # Introduction
 
-Cardiovascular diseases (CVDs) remain the world's leading cause of death and disability-adjusted life years (DALYs) [@Mensah2023GlobalBurdenCVD; @Chong2024]. Global CVD deaths rose from 13.1 million in 1990 to 19.2 million in 2023, and prevalent cases more than doubled, from 311 million to 626 million [@GBDCVD2025]. Because CVD mortality rises steeply with age, the number of deaths continues to grow as populations age, even where age-standardised rates decline. Modifiable risk factors accounted for 79.6% of CVD DALYs in 2023, and high systolic blood pressure and high low-density lipoprotein (LDL) cholesterol are the largest contributors to ischaemic heart disease (IHD) and stroke [@Chong2024; @Agboyibor2025CVHWHOAfrica; @Geldsetzer2019HypertensionCareLMICs; @ConsortiumRisk2023]. Both can be treated with inexpensive medicines delivered in primary care. Yet an estimated 1.4 billion adults have hypertension and only 23% have it controlled [@WHO2025HypertensionReport], and statin use among eligible adults remains low in most low-income and middle-income countries [@Marcus2022StatinsLMICs].
+Cardiovascular diseases (CVDs) remain the world's leading cause of death and disability-adjusted life years (DALYs) [@Mensah2023GlobalBurdenCVD; @Chong2024; @GBDCVD2025]. Global CVD deaths rose from 13.1 million in 1990 to 19.2 million in 2023, and prevalent cases more than doubled, from 311 million to 626 million [@GBDCVD2025]. Because CVD mortality rises steeply with age, the number of deaths continues to grow as populations age, even where age-standardised rates decline. Modifiable risk factors accounted for 79.6% of CVD DALYs in 2023, and high systolic blood pressure and high low-density lipoprotein (LDL) cholesterol are the largest contributors to ischaemic heart disease (IHD) and stroke [@BPLTTC2021; @Chong2024; @Agboyibor2025CVHWHOAfrica; @Geldsetzer2019HypertensionCareLMICs; @ConsortiumRisk2023]. Both can be treated with inexpensive medicines delivered in primary care. Yet, an estimated 1.4 billion adults aged 30–79 years had hypertension in 2024, of whom only 23% had their blood pressure controlled [@WHO2025HypertensionReport]. Statin use also remains substantially lower in low- and middle-income countries (LMICs) than in high-income countries (HICs), with a study of 91 countries reporting nearly sevenfold higher statin utilisation in HICs than in LMICs in 2020 [@Marcus2022StatinsLMICs; @Guadamuz2022StatinTrends].
 
-Several global commitments address these risk factors. The World Health Organization (WHO) Global Diabetes Compact set targets of blood pressure control in 80% of people with diagnosed diabetes and statin use by 60% of people with diabetes aged 40 years or older [@Hunt2021GlobalDiabetesCompact; @Gregg2023DiabetesCompactTargets]. The WHO global monitoring framework for noncommunicable diseases (NCDs) calls for at least 50% of eligible people, defined as adults aged 40 years or older at high cardiovascular risk, to receive drug therapy and counselling to prevent heart attacks and strokes [@WHO2011NCDMonitoringFramework]. The Political Declaration of the Fourth High-level Meeting of the UN General Assembly on NCDs (2025) committed to 150 million more people with controlled hypertension by 2030. The combined health effect of meeting the hypertension and statin targets together, across countries at all income levels, has not been estimated; existing analyses have mostly addressed single interventions, single countries, or short horizons.
+Several global commitments address these risk factors. The World Health Organization (WHO) Global Diabetes Compact set targets of blood pressure control in 80% of people with diagnosed diabetes and statin use by 60% of people with diabetes aged 40 years or older by 2030 [@Hunt2021GlobalDiabetesCompact; @Gregg2023DiabetesCompactTargets]. The WHO global monitoring framework for noncommunicable diseases (NCDs) calls for at least 50% of eligible people, adults aged 40 years or older at high cardiovascular risk, including those with established CVD, to receive drug therapy including statin and counselling to prevent heart attacks and strokes [@WHO2011NCDMonitoringFramework]. The 2025 UN General Assembly Political Declaration on NCDs and mental health committed to bringing hypertension under control in an additional 150 million people by 2030 [@UNGA2025PoliticalDeclaration]. Previous multicountry modelling studies have estimated the potential cardiovascular benefits of improved hypertension treatment and combined antihypertensive and statin therapy [@Pickersgill2022; @Watkins2025SPC]. However, the projected health gains from achieving these specific WHO and UN global commitment on blood pressure control target alongside expanded statin coverage, individually and in combination, remain insufficiently characterised.
 
-We aimed to estimate, for adults aged 20 years or older in `r n_countries` countries, the cumulative CVD deaths (primary outcome) and DALYs (secondary outcome) that would be averted during `r study_years`, relative to business as usual (BAU) with treatment coverage held at current levels, by adding `r fmt_m(pp$added_total, 0)` million people with controlled hypertension by `r pp$control_target_year`, divided between mutually exclusive groups of hypertensive adults with and without diabetes, and by raising statin coverage among adults aged `r pp$statin_age_min` years or older to `r fmt_pc(pp$statin_target_coverage, 0)`, each alone and in combination.
+We aimed to estimate the cumulative deaths and DALYs that could be averted from four major cardiovascular causes among adults aged 20 years or older across `r n_countries` countries during `r study_years` through expanded hypertension control and statin use. We assessed the potential effects of increasing the number of adults with controlled hypertension by `r fmt_m(pp$added_total, 0)` million by `r pp$control_target_year`, allocated between those with and without diabetes, and increasing statin coverage to `r fmt_pc(pp$statin_target_coverage, 0)` of all adults aged `r pp$statin_age_min` years or older, under separate intervention scenarios and a combined scenario, relative to a business-as-usual (BAU) scenario in which treatment coverage remained at baseline levels.
 
 \newpage
 
 # Methods
 
-## Study design and model structure
+## 1. Study design and model structure
 
-We developed a discrete-time multistate cohort model with annual steps for `r n_countries` countries, the countries among the `r n_cal` Global Burden of Disease (GBD) locations with complete epidemiological, blood pressure, and hypertension control inputs (Supplementary Figure \@ref(fig:sfig-framework)). We modelled IHD, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease because they are the leading cardiovascular causes of death and the causes for which randomised evidence supports effects of blood pressure lowering (all four) and statin therapy (IHD and ischaemic stroke). Other cardiovascular conditions were not modelled separately; their deaths are part of other-cause mortality.
+### Study population and model structure
 
-For each cause, adults in a country, sex, and single year of age (20 to 95 years, with 95 representing 95 years or older) were in one of three states: Well (free of that cause), Sick (living with it), or Dead (died of it). Each year, Well adults developed the disease at the cause-specific incidence rate, Sick adults died of it at the case-fatality rate, and Sick adults died of other causes at a cause-deleted background rate (all-cause mortality minus that cause). The whole population was depleted by deaths from the four modelled causes and from all other causes, so averting a death from one cause left the person at risk of death from the others, including the other modelled causes. The model was initialised in 2017 from GBD prevalence and death rates, with UN population estimates for the starting population and for each new cohort entering at age 20 years, and run to 2050; results are reported for `r study_years`. The model represents average rates in country, age, and sex strata. It does not track individuals, overlap between the four causes, recurrent events, or changes in risk-factor distributions, which were held at their input levels (Supplement, [Multistate transition model](#transition-model)).
+We developed a discrete-time multistate cohort model with annual steps for `r n_countries` countries, selected from `r n_cal` Global Burden of Disease (GBD) locations with complete epidemiological, blood pressure, and hypertension control inputs (Supplementary Figure \@ref(fig:sfig-framework)). We modelled four CVD causes: IHD, ischaemic stroke, intracerebral haemorrhage, and hypertensive heart disease (HHD). Other cardiovascular conditions were not modelled separately; their deaths were included in other-cause mortality.
 
-## Data sources
+For each cause, adults were stratified by country, sex, and single year of age (20 to 95 years, with 95 representing ≥ 95 years) and allocated to one of three states: Well (free of that cause), Sick (living with it), or Dead (died of it). Each year, Well adults developed the disease at the cause-specific incidence rate; Sick adults died of it at the case-fatality rate, and Sick adults died of other causes at a cause-deleted background rate. The shared population was depleted by deaths from the four modelled causes and from all other causes, so preventing death from one cause left a person at risk of the others. The model was initialised in 2017 and run to 2050, with cohorts entering at age 20 years; results are reported for `r study_years`. The model represented average rates within strata and did not track individual comorbidities, recurrent events, or changing risk-factor distributions (Supplement, [Multistate transition model](#transition-model)).
 
-Cause-specific death counts for calibration were taken from the WHO Global Health Estimates (GHE) 2021 [@WHO2024GHE2021]. Prevalence estimates for the four causes and all-cause mortality, from which initial prevalence, incidence, and case-fatality rates were derived, came from GBD 2023 [@GBDCVD2025]. Population denominators and remaining life expectancy were taken from the UN World Population Prospects (WPP) 2024 [@UNWPP2024]. Age-specific hypertension prevalence came from the NCD Risk Factor Collaboration (NCD-RisC) [@Zhou2021], blood pressure distributions from NCD-RisC-based model inputs, baseline hypertension control from country-level analyses provided by WHO, and the share of hypertensive adults with diabetes from age-specific diabetes estimates in the same blood pressure input dataset. Blood pressure effects were based on the Blood Pressure Lowering Treatment Trialists' Collaboration (BPLTTC) 2021 individual-participant meta-analysis [@BPLTTC2021], statin effects on the Cholesterol Treatment Trialists' Collaboration (CTT) [@Fulcher2015], and statin adherence on a recent meta-analysis [@Basios2025]. Baseline statin coverage came from published and imputed country-level data [@Watkins2025SPC]. COVID-19 excess mortality was applied to 2020 and 2021 only. Parameter values and sources are listed in the Supplement ([Key parameter appendix](#param-appendix)).
+### Data sources and model inputs
 
-## Intervention scenarios
+Cause-specific death counts for calibration were taken from the WHO Global Health Estimates (GHE) 2021 [@WHO2024GHE2021]. Prevalence estimates for the four causes and all-cause mortality, from which initial prevalence, incidence, and case-fatality rates were derived, came from GBD 2023 [@GBDCVD2025]. Population denominators and remaining life expectancy were taken from the UN World Population Prospects (WPP) 2024 [@UNWPP2024]. Age-specific hypertension prevalence came from the NCD Risk Factor Collaboration (NCD-RisC) [@Zhou2021], blood pressure distributions from NCD-RisC-based model inputs, baseline hypertension control from country-level analyses provided by WHO, and the share of hypertensive adults with diabetes from age-specific diabetes estimates, assuming independence between hypertension and diabetes within strata. Blood pressure effects were based on the Blood Pressure Lowering Treatment Trialists' Collaboration (BPLTTC) 2021 individual-participant meta-analysis [@BPLTTC2021], statin effects on the Cholesterol Treatment Trialists' Collaboration (CTT) [@Fulcher2015], and statin adherence on a recent meta-analysis [@Basios2025]. Baseline statin coverage came from published and imputed country-level data [@Watkins2025SPC]. COVID-19 excess mortality was applied to 2020 and 2021 only. Parameter values and sources are detailed in the Supplement ([Key parameter appendix](#param-appendix)).
 
-We compared four intervention scenarios with business as usual, which maintained baseline treatment coverage through 2050. Intervention coverage increased linearly from `r pp$control_start_year` to `r pp$control_target_year` and remained constant thereafter.
+### Calibration and baseline projections
 
-1. **Hypertension control among adults without diabetes:** Scale-up to control in `r fmt_pc(pp$achieved_control_no_diabetes_2030)` of hypertensive adults without diabetes, from `r fmt_pc(pp$baseline_control_no_diabetes_2025)` at baseline. This group received its allocated share of the global commitment to `r fmt_m(pp$added_total, 0)` million additional people with controlled hypertension. Newly controlled adults with systolic blood pressure (SBP) ≥140 mmHg were modelled as achieving SBP <140 mmHg.
+Uncalibrated incidence and case-fatality rates were derived from GBD 2023 prevalence and death estimates by following five-year cohorts. Rates were calibrated to WHO GHE cause-specific deaths (GBD deaths where WHO estimates were unavailable) and GBD prevalent cases over `r ct$years[1]`–`r ct$years[2]`. For each country, sex, cause, and five-year age group, a grid search of `r length(ct$ir_grid) * length(ct$cf_grid)` incidence and case-fatality multiplier pairs minimised a weighted objective based on differences in annual deaths and prevalence (Supplement, [Calibration methods and performance](#calibration-supp)).
 
-2. **Hypertension control among adults with diabetes:** Scale-up to control in `r fmt_pc(pp$achieved_control_diabetes_2030)` of hypertensive adults with diabetes, from `r fmt_pc(pp$baseline_control_diabetes_2025)` at baseline, accounting for `r fmt_m(pp$added_diabetes)` million additional controlled adults. Control was capped at `r fmt_pc(pp$htn_diabetes_cap, 0)`; this ceiling was not the achieved global coverage. Newly controlled adults with SBP ≥140 mmHg were modelled as achieving SBP <130 mmHg.
+In the BAU scenario, country-specific hypertension control and statin coverage remained at baseline proportions through 2050, while incidence remained at calibrated 2019 values. Mortality projections combined Lee–Carter forecasts of global age- and sex-specific mortality rates for `r pf$fit_years[1]`–`r pf$fit_years[2]` with minimum-trace reconciliation so that all-cause mortality equalled mortality from the four modelled causes plus other causes [@Li2019ForecastReconciliation]. Forecast relative changes were applied to country-specific 2019 rates. Case fatality incorporated `r fmt_pc(0.8, 0)` of the forecast relative change in cause-specific mortality to limit overlap between secular improvements and intervention benefits, an assumption varied in sensitivity analyses [@Critchley2004; @Ford2007]. COVID-19 excess mortality was applied in 2020 and 2021 only (Supplement, [Mortality projection](#forecast-supp)).
 
-3. **Statin therapy:** Scale-up from baseline coverage (population-weighted mean `r fmt_pc(sp_g$statin_coverage_2025)`) to `r fmt_pc(pp$statin_target_coverage, 0)` of all adults aged ≥`r pp$statin_age_min` years by `r pp$statin_target_year`. Effects on IHD and ischaemic stroke were based on CTT relative risk reductions [@Fulcher2015]. Incidence effects were scaled by incremental coverage, adherence, and the country-specific fraction of disease attributable to high fasting plasma glucose. Case-fatality effects were scaled by incremental coverage and adherence, with the ischaemic stroke effect additionally restricted to its assumed atherosclerotic share of `r fmt_pc(pp$prop_athero_stroke, 0)` [@Petty1999IschemicStrokeSubtypes]. Coverage referred to the entire age group, rather than a risk-defined eligible population (Supplement, [Statin therapy intervention model](#statin-model)).
+## 2. Intervention scenarios
 
-4. **Combined intervention:** Simultaneous implementation of both hypertension scenarios and statin scale-up. The mutually exclusive hypertension groups were combined as a population mixture; blood pressure and statin effect ratios were multiplied on incidence and case fatality, assuming independent proportional treatment effects.
+We compared four intervention scenarios with BAU. Intervention coverage increased linearly from `r pp$control_start_year` to `r pp$control_target_year` and remained constant thereafter. Only increase above baseline treatment coverage generated additional intervention benefits.
 
-<!-- The hypertension increment was allocated across both groups using the fixed 2025 population and a common factor of `r fmt_n(al$scale_factor, 2)` applied to baseline control, subject to the diabetes ceiling and a 100% ceiling otherwise. -->
-<!-- The hypertension increment was allocated across both groups using the fixed 2025 population and a common factor applied to baseline control, subject to the diabetes ceiling. We assumed baseline blood pressure control to be 15 percentage points higher among adults with diabetes, informed by higher control observed in US and multicountry studies [@Gillespie2013; @Diallo2024]. This differential was a modelling assumption, not a directly estimated universal difference; subgroup control probabilities were calibrated so that their weighted mean, using the diabetes share among hypertensive adults, matched observed overall control. Diabetes prevalence within age and sex strata determined the group shares, assuming independence between hypertension and diabetes. This allocation assigned larger increments to settings with higher baseline control and none to strata with zero control (Table \@ref(tab:table1-targets)). Blood pressure effects were derived from BPLTTC 2021 estimates across eight SBP categories, with incidence effects calculated for successive 10 mmHg reductions and case-fatality effects based on cause-specific reduction factors [@BPLTTC2021] (Supplement, [Hypertension control intervention model](#htn-model)). -->
+### Hypertension control
 
-The hypertension increment was allocated between adults with and without diabetes using the fixed 2025 population. Group shares were determined by diabetes prevalence within age and sex strata, assuming independence between hypertension and diabetes. Baseline control was assumed to be 15 percentage points higher among adults with diabetes, informed by higher control observed in US and multicountry studies [@Gillespie2013; @Diallo2024]; this difference was a modelling assumption rather than a directly estimated universal value. Subgroup control probabilities were calibrated to preserve observed overall control as their population-weighted mean. A common proportional increase was then applied to baseline control, subject to the diabetes-specific ceiling and a 100% ceiling otherwise, to achieve the global increment. Consequently, settings with higher baseline control received larger proportional-population increments, whereas strata with zero baseline control received none (Table \@ref(tab:table1-targets)). Incidence effects were derived from BPLTTC 2021 estimates across eight SBP categories for successive 10 mmHg reductions [@BPLTTC2021], and case-fatality effects were calculated using cause-specific reduction factors (Supplement, [Hypertension control intervention model](#htn-model)).
+The global commitment to `r fmt_m(pp$added_total, 0)` million additional people with controlled high blood pressure by `r pp$control_target_year` was allocated using the fixed 2025 populations between mutually exclusive groups of hypertensive adults with and without diabetes. Within age-sex-country strata, diabetes prevalence was assumed to represent the share of hypertensive adults with diabetes. Baseline control was assumed to be 15 percentage points higher among adults with diabetes; subgroup values were calibrated to preserve observed overall control. A common proportional increase was applied, subject to ceilings of `r fmt_pc(pp$htn_diabetes_cap, 0)` with diabetes and 100% without diabetes. Strata with zero baseline control received no increment (Supplement, [Hypertension control intervention model](#htn-model)).
 
-Only coverage increases above baseline generated intervention benefits. Blood pressure control was assumed to be sustained throughout the projection; statin effects were adjusted for adherence of `r fmt_pc(pp$adherence_ir)` for incidence and `r fmt_pc(pp$adherence_cf)` for case fatality [@Basios2025].
+Control increased from `r fmt_pc(pp$baseline_control_no_diabetes_2025)` to `r fmt_pc(pp$achieved_control_no_diabetes_2030)` among hypertensive adults without diabetes and from `r fmt_pc(pp$baseline_control_diabetes_2025)` to `r fmt_pc(pp$achieved_control_diabetes_2030)` among those with diabetes; the latter group accounted for `r fmt_m(pp$added_diabetes)` million additional controlled adults. The `r fmt_pc(pp$htn_diabetes_cap, 0)` ceiling was not the achieved global control level. Newly controlled adults with systolic blood pressure (SBP) ≥140 mmHg were assumed to reach SBP <140 mmHg without diabetes and <130 mmHg with diabetes. Incidence effects were derived from BPLTTC estimates across eight SBP categories for successive 10 mmHg reductions [@BPLTTC2021]; case-fatality effects used cause-specific reduction factors (Supplement, [Hypertension control intervention model](#htn-model)).
 
-<!-- ## Intervention scenarios -->
+### Statin therapy
 
-<!-- We compared three single-intervention scenarios and one combined scenario with BAU. In every scenario, coverage rose linearly from `r pp$control_start_year` to its target in `r pp$control_target_year` and was then held constant to 2050. -->
+[Statin coverage increased from the baseline population-weighted mean of `r fmt_pc(sp_g$statin_coverage_2025)` to `r fmt_pc(pp$statin_target_coverage, 0)` of all adults aged ≥`r pp$statin_age_min` years by `r pp$statin_target_year`, rather than to `r fmt_pc(pp$statin_target_coverage, 0)` of a risk-defined eligible population.]{.mark} Effects on IHD and ischaemic stroke incidence and case fatality were based on CTT relative risks [@Fulcher2015]. Incidence effects were scaled by incremental coverage, adherence, and the country-specific GBD fraction of disease attributable to high fasting plasma glucose; case-fatality effects were scaled by incremental coverage and adherence, with the ischaemic stroke effect additionally restricted to its assumed atherosclerotic share of `r fmt_pc(pp$prop_athero_stroke, 0)` [@Petty1999IschemicStrokeSubtypes]. Statin adherence was `r fmt_pc(pp$adherence_ir)` for incidence and `r fmt_pc(pp$adherence_cf)` for case fatality (Supplement, [Statin therapy intervention model](#statin-model)) [@Basios2025].
 
-<!-- We distinguish the commitment, its modelled operationalisation, and the coverage it achieves. The commitment is `r fmt_m(pp$added_total, 0)` million additional people with controlled hypertension by `r pp$control_target_year`. We operationalised it as a fixed global increment in the number of controlled hypertensive adults in `r pp$control_target_year` relative to 2025, measured on the fixed 2025 population and divided between two mutually exclusive groups: hypertensive adults without diabetes and hypertensive adults with diabetes. Within each age and sex stratum, the share of hypertensive adults with diabetes was set to the diabetes input, which assumes that hypertension and diabetes are independent within strata; people with diabetes made up `r fmt_pc(al$share_htn_diabetes)` of hypertensive adults. Baseline control in the diabetes group was set 15 percentage points higher than in the group without diabetes, preserving each country's observed overall control. A single multiplicative scale-up factor (`r fmt_n(al$scale_factor, 2)`) was applied to baseline control in every country, sex, and group and solved so that the additions summed to exactly `r fmt_m(pp$added_total, 0)` million, with control capped at `r fmt_pc(pp$htn_diabetes_cap, 0)` in the diabetes group (reached in `r al$n_capped_strata` of `r al$n_strata / 2` country and sex strata) and at 100% otherwise. The achieved coverage was control in `r fmt_pc(pp$coverage_total_2030)` of hypertensive adults in `r pp$control_target_year` (`r fmt_pc(pp$coverage_total_2025)` in 2025): `r fmt_pc(pp$achieved_control_no_diabetes_2030)` without diabetes (`r fmt_pc(pp$baseline_control_no_diabetes_2025)` in 2025) and `r fmt_pc(pp$achieved_control_diabetes_2030)` with diabetes (`r fmt_pc(pp$baseline_control_diabetes_2025)`). The `r fmt_pc(pp$htn_diabetes_cap, 0)` figure is therefore a ceiling, not the simulated control rate. The diabetes group received `r fmt_m(pp$added_diabetes)` million (`r fmt_pc(pp$share_diabetes)`) of the increment (Table \@ref(tab:table1-targets)). Because the scale-up is proportional to current control, countries with low control receive small increments and strata with no recorded control receive none, so regional and income-group comparisons are conditional on this rule. We did not model alternative allocation rules. -->
+### Combined intervention
 
-<!-- Blood pressure control was modelled on eight systolic blood pressure (SBP) categories in each stratum. Newly controlled adults with SBP of 140 mmHg or higher had their SBP lowered to below 140 mmHg (without diabetes) or below 130 mmHg (with diabetes); the corresponding risk reduction for each category was the product of BPLTTC 2021 hazard ratios by baseline SBP for each 10 mmHg step. Incidence was reduced in proportion to the increment in control above baseline, and case fatality in proportion to the mean increment in control among hypertensive adults, using cause-specific reduction factors (Supplement, [Hypertension control intervention model](#htn-model)). The two groups combine additively as a population mixture, so the scenario with both groups (the full `r fmt_m(pp$added_total, 0)` million) involves no interaction between them. -->
+The combined intervention was the simultaneous implementation of both high blood pressure scenarios and statin scale-up. The mutually exclusive hypertension groups were combined as a population mixture; blood pressure and statin effect ratios were multiplied for incidence and case fatality, assuming independent proportional treatment effects.
 
-<!-- Statin coverage was defined over all adults aged `r pp$statin_age_min` years or older. In each country it rose linearly from baseline (population-weighted mean `r fmt_pc(sp_g$statin_coverage_2025)` in 2025; no country at or above `r fmt_pc(pp$statin_target_coverage, 0)`) to `r fmt_pc(pp$statin_target_coverage, 0)` by `r pp$statin_target_year`, and only the increment above baseline had effects. Effects applied to IHD and ischaemic stroke at ages `r pp$statin_age_min` years or older. Incidence was reduced by the CTT relative risk reduction multiplied by the incremental coverage, adherence, and the country-specific fraction of each cause attributable to high fasting plasma glucose in GBD (default `r fmt_n(pp$af_ihd_default, 2)` for IHD and `r fmt_n(pp$af_istroke_default, 2)` for ischaemic stroke). Case fatality in prevalent cases was reduced by the CTT relative risk reduction multiplied by incremental coverage and adherence, restricted for ischaemic stroke to its atherosclerotic share (`r fmt_pc(pp$prop_athero_stroke, 0)`) [@Petty1999IschemicStrokeSubtypes] (Supplement, [Statin therapy intervention model](#statin-model)). The modelled scenario thus applies the coverage target to all adults aged `r pp$statin_age_min` years or older rather than to a risk-defined eligible population, while limiting the primary-prevention effect to a hyperglycaemia-attributable fraction of incidence. For description only, Table \@ref(tab:table1-targets) also reports the number of people with diabetes aged `r pp$statin_age_min` years or older, a readily identifiable group eligible for statins under diabetes guidance; this proxy was not used to compute effects. -->
+## 3. Outcomes
 
-<!-- Adherence was handled differently for the two interventions, for reasons of definition. Blood pressure control is defined by an outcome, so adherence sufficient to reach and maintain the target SBP is embedded in the definition, and every person counted as newly controlled was assumed to remain controlled for the rest of the horizon (full adherence). Statin scale-up is defined by use, so its effects were multiplied by pooled adherence estimates: `r fmt_pc(pp$adherence_ir)` for primary prevention, applied to incidence, and `r fmt_pc(pp$adherence_cf)` for secondary prevention, applied to case fatality [@Basios2025]. Because blood pressure control is often not sustained, the first assumption probably overstates the benefit of hypertension control; the statin adjustment could understate benefit where adherence is higher, which was tested in the sensitivity analysis. -->
+The primary outcome was cumulative deaths averted from the four modelled CVD causes relative to BAU during `r study_years`, by intervention, cause, age, sex, WHO region, and World Bank income group. Secondary outcomes were years of life lost (YLLs), years lived with disability (YLDs), and DALYs averted, where DALYs are the sum of YLLs and YLDs. YLLs were deaths multiplied by remaining life expectancy at the age of death from the WPP 2024 medium variant for the same country and year (both sexes combined). This differs from the GBD standard normative reference life table, so resulting YLLs and DALYs are not directly comparable with GBD estimates. YLDs were prevalent cases multiplied by the country- and cause-specific ratio of GBD 2023 age-standardised YLD to prevalence rates, held constant across age, sex, and time. DALYs were the sum of YLLs and YLDs, with no discounting or age weighting (Supplement, [DALY calculation methods](#daly-methods)).
 
-<!-- In the combined scenario, the blood pressure effect and the statin effect were multiplied on incidence and on case fatality. Multiplication assumes that the proportional effects of the two treatments are independent. Under this assumption, and because each person can die only once, the deaths averted by the combination are smaller than the sum of the single-intervention results; this sub-additivity is a consequence of the model structure, not an independent empirical finding. -->
+## 4. Model evaluation and sensitivity analyses
 
-## Outcomes
+We assessed in-sample calibration against WHO GHE death and GBD prevalence targets for `r ct$years[1]`–`r ct$years[2]`. Weighted absolute percentage errors declined from `r fmt_pc(cal_all$wape_deaths_pre)` to `r fmt_pc(cal_all$wape_deaths_post)` for deaths and from `r fmt_pc(cal_all$wape_prev_pre)` to `r fmt_pc(cal_all$wape_prev_post)` for prevalent cases; aggregate death bias declined from `r fmt_pc(cal_all$bias_deaths_pre)` to `r fmt_pc(cal_all$bias_deaths_post)`. The mortality forecasting method was also evaluated in a `r pf$holdout_years[1]`–`r pf$holdout_years[2]` global temporal holdout (Supplement, [Calibration methods and performance](#calibration-supp); [Mortality projection](#forecast-supp)).
 
-The primary outcome was cumulative CVD deaths from the four modelled causes averted relative to BAU over `r study_years`, by intervention, cause, age, sex, WHO region, and World Bank income group. Secondary outcomes were years of life lost (YLLs), years lived with disability (YLDs), and DALYs averted, where DALYs are the sum of YLLs and YLDs. YLLs were deaths multiplied by remaining life expectancy at the age of death from the WPP 2024 medium variant for the same country and year (both sexes combined). This differs from the GBD standard reference life table, which applies one normative life expectancy to all countries: here a death averted at a given age contributes fewer YLLs where national life expectancy is lower, so our YLLs and DALYs are not directly comparable with GBD estimates, and cross-country differences partly reflect national mortality levels. YLDs were prevalent cases multiplied by a country- and cause-specific disability weight, calculated as the ratio of GBD 2023 age-standardised YLD and prevalence rates. No discounting or age weighting was applied (Supplement, [DALY calculation methods](#daly-methods)).
+Central results are point estimates. One-way deterministic sensitivity analyses (DSA) [@Briggs2012ISPOR] varied treatment coverage increments (50% or 75% achieved), full implementation in 2035 or 2040 rather than `r pp$control_target_year`, statin adherence (including illustrative income-group differences), and the case-fatality trend (full, absent, or IHME Foresight-based). Each setting was run for all countries with its own BAU. These are deterministic scenario differences, not uncertainty intervals; no probabilistic sensitivity analysis was undertaken (Supplement, [Deterministic sensitivity analysis](#dsa-supp)).
 
-## Calibration
+## 5. Reporting and reproducibility
 
-Uncalibrated incidence and case-fatality rates were derived from GBD 2023 prevalence and death estimates by following 5-year cohorts. They were then calibrated so that the model reproduced `r ct$years[1]`–`r ct$years[2]` cause-specific deaths from WHO GHE (GBD 2023 deaths for the `r ct$n_modelled_gbd` modelled countries without GHE estimates) and GBD 2023 prevalent cases. For each country, sex, cause, and 5-year age group, a grid search over `r length(ct$ir_grid) * length(ct$cf_grid)` pairs of multipliers for incidence and case fatality selected the pair that minimised a weighted sum of the root mean squared errors of annual deaths and prevalent cases over `r ct$years[1]`–`r ct$years[2]`; the unadjusted pair was always a candidate. Across the `r n_countries` countries, calibration reduced the weighted absolute percentage error of simulated against target values, summed over country, sex, cause, age-group, and year cells, from `r fmt_pc(cal_all$wape_deaths_pre)` to `r fmt_pc(cal_all$wape_deaths_post)` for deaths and from `r fmt_pc(cal_all$wape_prev_pre)` to `r fmt_pc(cal_all$wape_prev_post)` for prevalent cases, and total simulated deaths moved from `r fmt_pc(cal_all$bias_deaths_pre)` above to `r fmt_pc(cal_all$bias_deaths_post)` (Supplement, [Calibration methods and performance](#calibration-supp)). Secular trends were applied afterwards, only to years after 2019.
-
-<!-- Uncalibrated incidence and case-fatality rates were derived from GBD 2023 prevalence and death estimates by following 5-year birth cohorts. They were then calibrated so that the model reproduced `r ct$years[1]`–`r ct$years[2]` cause-specific deaths from WHO GHE (GBD 2023 deaths for the `r ct$n_modelled_gbd` modelled countries without GHE estimates) and GBD 2023 prevalent cases. For each country, sex, cause, and 5-year age group, a grid search over `r length(ct$ir_grid) * length(ct$cf_grid)` pairs of multipliers for incidence (`r fmt_n(min(ct$ir_grid), 2)`–`r fmt_n(max(ct$ir_grid), 2)`) and case fatality (`r fmt_n(min(ct$cf_grid), 2)`–`r fmt_n(max(ct$cf_grid), 2)`) selected the pair that minimised a weighted sum of the root mean squared errors of annual deaths (weight `r ct$w_deaths`) and prevalent cases (weight `r ct$w_prev`) over `r ct$years[1]`–`r ct$years[2]`; the unadjusted pair was always a candidate. Across the `r n_countries` countries, calibration reduced the weighted absolute percentage error of simulated against target values, summed over country, sex, cause, age-group, and year cells, from `r fmt_pc(cal_all$wape_deaths_pre)` to `r fmt_pc(cal_all$wape_deaths_post)` for deaths and from `r fmt_pc(cal_all$wape_prev_pre)` to `r fmt_pc(cal_all$wape_prev_post)` for prevalent cases, and total simulated deaths moved from `r fmt_pc(cal_all$bias_deaths_pre)` above to `r fmt_pc(cal_all$bias_deaths_post)` above the targets. This is in-sample fit to the calibration targets, not external validation, and `r fmt_pc(co$frac_any_bound, 0)` of age groups selected a multiplier at the edge of the grid (Supplement, [Calibration methods and performance](#calibration-supp)). Secular trends were applied afterwards, only to years after 2019. -->
-
-## Mortality projections
-
-In the BAU scenario, country-specific hypertension control and statin coverage remained at current levels through 2050, and incidence remained at calibrated 2019 values. Mortality projections followed the forecast-reconciliation approach of Li and colleagues [@Li2019ForecastReconciliation], combining Lee–Carter forecasts fitted to global age- and sex-specific mortality rates for `r pf$fit_years[1]`–`r pf$fit_years[2]` with minimum-trace reconciliation to ensure that all-cause mortality equalled the sum of the four modelled causes and other causes. Forecast relative changes were applied to each country’s 2019 rates, preserving this identity. 
-
-We drew on evidence suggesting that these improvements accounted for approximately 20% of the decline in CVD mortality in the United States and 24% in China [@Critchley2004;@Ford2007]; thus case fatality incorporated `r fmt_pc(0.8, 0)` of the forecast relative change in cause-specific mortality , an assumption varied in sensitivity analyses to limit overlap between secular treatment gains and the modelled interventions. Intervention benefits were credited only to coverage above baseline. Forecasting methods and holdout performance are reported in the Supplement ([Mortality projection](#forecast-supp)).
-
-<!-- all-cause mortality equalled the sum of the four modelled causes and other causes [@LeeCarter1992; @Wickramasuriya2019MinT] -->
-
-
-<!-- In the BAU scenario, country-specific hypertension control and statin coverage were held at current levels through 2050, incidence was held at calibrated 2019 values, and mortality followed secular trends. We fitted Lee–Carter models [@LeeCarter1992] to log mortality rates by sex and single year of age for `r pf$fit_years[1]`–`r pf$fit_years[2]`, separately for all-cause mortality, each of the four modelled causes, and all other causes, using global rates (population-weighted means of the country rates), and forecast each model's time index to 2050 with damped-trend exponential smoothing. Forecasts made independently for a total and for its disjoint components need not add up. We therefore reconciled the six forecasts with the minimum-trace (MinT) method [@Wickramasuriya2019MinT], following the approach of Li and colleagues for cause-of-death forecasts [@Li2019ForecastReconciliation], so that at every age, sex, and year the forecast all-cause rate equals the sum of the four cause-specific rates and the other-cause rate. The method is therefore Lee–Carter component forecasting followed by reconciliation; its advantage here is structural coherence, not demonstrated accuracy. In a `r pf$holdout_years[1]`–`r pf$holdout_years[2]` holdout (models fitted to `r pf$training_years[1]`–`r pf$training_years[2]`), reconciled and unreconciled forecasts had similar errors (Supplement, [Mortality projection](#forecast-supp)). -->
-
-<!-- The forecast relative changes from 2019, by age and sex, were applied to each country's calibrated 2019 rates. Other-cause mortality was each country's 2019 residual (all-cause minus the four modelled causes) scaled by the forecast change, and all-cause mortality was rebuilt as the sum of the components, so that the identity also holds within every country. Case fatality was reduced by `r fmt_pc(0.8, 0)` of the forecast relative change in the corresponding cause-specific mortality rate. This `r fmt_pc(0.8, 0)` share reflects the assumption that part of the historical decline in CVD mortality came from rising treatment coverage: because BAU holds coverage fixed, projecting the full decline would credit BAU with continued treatment gains that overlap with the modelled interventions. The assumption was varied in the sensitivity analysis and is distinct from the `r fmt_pc(pp$htn_diabetes_cap, 0)` ceiling on blood pressure control in the diabetes group. The effects of current treatment are embedded in the observed and calibrated rates, and interventions were credited only with coverage above each country's baseline, so current treatment is not counted as benefit. -->
-
-## Sensitivity analysis
-
-Central results are point estimates. We did a one-way deterministic sensitivity analysis (DSA) [@Briggs2012ISPOR], changing one assumption at a time: achievement of 50% or 75% of the modelled coverage increments for both blood pressure groups and statins; full increments reached in 2035 or 2040 instead of 2030; statin adherence (a lower value for primary prevention, moderate values for both, and an illustrative gradient by World Bank income group); and the case-fatality trend (100% of the forecast decline, no trend, and an alternative trend from Institute for Health Metrics and Evaluation (IHME) Foresight global CVD death rates). Each setting was run for all countries with its own BAU. The DSA gives one-way scenario differences, not uncertainty intervals, and we did not do a probabilistic sensitivity analysis (Supplement, [Deterministic sensitivity analysis](#dsa-supp)).
-
-## Reporting standard
-
-This study is reported in accordance with the Guidelines for Accurate and Transparent Health Estimates Reporting (GATHER) [@Stevens2016GATHER] (Supplement, [GATHER checklist](#gather)).
-
-## Data and code availability
-
-Model code and processed model inputs are available at https://github.com/Disease-Control-Priorities/uw-who-cvdtargets. Raw inputs are available from their original sources (WHO GHE, GBD results, WPP 2024, NCD-RisC), except the country-level baseline hypertension control estimates, which were provided by WHO. Analyses were done in R (version 4.5.1).
-
-## Ethics statement
-This study used only publicly available, anonymised aggregate data from established global health databases. No individual-level data were used and no ethical approval from an institutional review board was required.
-
+The study was reported with reference to the Guidelines for Accurate and Transparent Health Estimates Reporting (GATHER) [@Stevens2016GATHER] (Supplement, [GATHER checklist](#gather)). Model code and processed model inputs are available at https://github.com/Disease-Control-Priorities/uw-who-cvdtargets. Raw inputs are available from their original sources (WHO GHE, GBD results, WPP 2024, NCD-RisC), except the country-level baseline hypertension control estimates supplied by WHO. Analyses were done in R (version 4.5.1). The study used aggregate, non-identifiable data, including non-public WHO-supplied estimates; no individual-level participant records were used.
 
 \newpage
 
 # Results
 
-## Business-as-usual trajectory
+## Baseline global trajectory, `r study_years`
 
-Under BAU, the model projected `r fmt_m(bau_total_deaths)` million deaths from the four causes in `r n_countries` countries during `r study_years`. IHD accounted for `r fmt_pc(pd$bau_by_cause[cause == "ihd", share])` of these deaths, ischaemic stroke `r fmt_pc(pd$bau_by_cause[cause == "istroke", share])`, intracerebral haemorrhage `r fmt_pc(pd$bau_by_cause[cause == "hstroke", share])`, and hypertensive heart disease `r fmt_pc(pd$bau_by_cause[cause == "hhd", share])`. Annual deaths rose from `r fmt_m(pd$bau_year[year == pp$reporting_start_year, deaths])` million in `r pp$reporting_start_year` to `r fmt_m(pd$bau_year[year == 2050, deaths])` million in 2050, while the age-standardised death rate declined only slightly, from `r fmt_n(pd$asmr_bau[year == pp$reporting_start_year, ASMR], 0)` to `r fmt_n(pd$asmr_bau[year == 2050, ASMR], 0)` per 100 000 adults, so the rise reflects population growth and ageing. This decline is smaller than the forecast declines in cause-specific mortality rates (Supplementary Table \@ref(tab:tab-forecast)) because incidence was held constant and only case fatality followed the trend, so prevalence increased. Prevalent cases rose from `r fmt_m(pd$cases_bau[year == pp$reporting_start_year, sick], 0)` million to `r fmt_m(pd$cases_bau[year == 2050, sick], 0)` million (Supplementary Figures \@ref(fig:sfig-bau) and \@ref(fig:sfig-asmr)).
+Under BAU, the model projected `r fmt_m(bau_total_deaths)` million deaths from the four causes in `r n_countries` countries during `r study_years`. IHD accounted for `r fmt_pc(pd$bau_by_cause[cause == "ihd", share])` of these deaths, ischaemic stroke `r fmt_pc(pd$bau_by_cause[cause == "istroke", share])`, intracerebral haemorrhage `r fmt_pc(pd$bau_by_cause[cause == "hstroke", share])`, and hypertensive heart disease `r fmt_pc(pd$bau_by_cause[cause == "hhd", share])`. Annual deaths rose from `r fmt_m(pd$bau_year[year == pp$reporting_start_year, deaths])` million in `r pp$reporting_start_year` to `r fmt_m(pd$bau_year[year == 2050, deaths])` million in 2050, while the age-standardised death rate declined slightly from `r fmt_n(pd$asmr_bau[year == pp$reporting_start_year, ASMR], 0)` to `r fmt_n(pd$asmr_bau[year == 2050, ASMR], 0)` per 100 000 adults, indicating that the increase in absolute deaths was driven primarily by population growth and ageing. This decline was smaller than the forecast declines in cause-specific mortality rates (Supplementary Table \@ref(tab:tab-forecast)) because the model held incidence rates constant while allowing case fatality to decline over time. Consequently, more individuals survived with CVD, increasing prevalent disease, with incident and prevalent cases of the four modelled CVD conditions combined under business as usual rose from `r fmt_m(pd$cases_bau[year == pp$reporting_start_year, sick], 0)` million to `r fmt_m(pd$cases_bau[year == 2050, sick], 0)` million (Supplementary Figures \@ref(fig:sfig-bau) and \@ref(fig:sfig-asmr)).
 
-## Hypertension control
+## High blood pressure control
 
 Blood pressure control in hypertensive adults without diabetes averted `r fmt_m(total_bp)` million CVD deaths (`r fmt_pc(fb[["bp"]])` of BAU deaths) and `r fmt_m(total_dalys_bp)` million DALYs during `r study_years` (Table \@ref(tab:tab-deaths-scenario)). Annual deaths averted rose from `r fmt_k(annual_2030_bp)` thousand in 2030 to `r fmt_k(annual_2050_bp)` thousand in 2050 (Supplementary Figure \@ref(fig:sfig-annual)). Control in hypertensive adults with diabetes averted `r fmt_m(total_bpd)` million deaths (`r fmt_pc(fb[["bpd"]])`) and `r fmt_m(total_dalys_bpd)` million DALYs. This larger effect in a smaller group, `r fmt_n(pd$per1000_added_diabetes, 0)` compared with `r fmt_n(pd$per1000_added_no_diabetes, 0)` deaths averted per 1000 additional controlled people, reflects three model features: the allocation gave the diabetes group a larger increase in control (`r fmt_n(100 * (pp$achieved_control_diabetes_2030 - pp$baseline_control_diabetes_2025), 1)` *vs* `r fmt_n(100 * (pp$achieved_control_no_diabetes_2030 - pp$baseline_control_no_diabetes_2025), 1)` percentage points); control in this group lowers SBP to below 130 mmHg rather than 140 mmHg; and diabetes is more common at older ages, where CVD risk is higher. The model did not otherwise assign higher incidence to people with diabetes within an age, sex, and blood pressure stratum. The scenario with both groups, which delivers the full `r fmt_m(pp$added_total, 0)` million increment, averted `r fmt_m(pd$total_bp_combined)` million deaths (`r fmt_pc(fb[["bp_combined"]])` of BAU deaths). Blood pressure control reduced deaths from all four causes (Table \@ref(tab:tab-deaths-cause)).
 
 ## Statin scale-up
 
-Raising statin coverage to `r fmt_pc(pp$statin_target_coverage, 0)` of adults aged `r pp$statin_age_min` years or older averted `r fmt_m(total_stat)` million CVD deaths (`r fmt_pc(fb[["stat"]])` of BAU deaths) and `r fmt_m(total_dalys_stat)` million DALYs (Table \@ref(tab:tab-deaths-scenario)). Statins averted `r fmt_m(averted_ihd_stat)` million IHD deaths and `r fmt_m(averted_istroke_stat)` million ischaemic stroke deaths; because survivors remained at risk of other causes, deaths from intracerebral haemorrhage and hypertensive heart disease increased by `r fmt_m(-pd$statin_other_cvd, 2)` million, giving the net total (Table \@ref(tab:tab-deaths-cause)). Annual deaths averted were `r fmt_k(annual_2030_stat)` thousand in 2030 and `r fmt_k(annual_2050_stat)` thousand in 2050. For the same reason, statin scale-up increased time lived with disease, so YLDs averted were negative (`r minus(fmt_m(bod_summary[intervention == "Improved Statin Uptake", YLDs]))` million; Table \@ref(tab:tab-bod-scenario)).
+Raising statin coverage to `r fmt_pc(pp$statin_target_coverage, 0)` of adults eligible by `r pp$statin_target_year` averted `r fmt_m(total_stat)` million CVD deaths (`r fmt_pc(fb[["stat"]])` of BAU deaths) and `r fmt_m(total_dalys_stat)` million DALYs (Table \@ref(tab:tab-deaths-scenario)). Statins averted `r fmt_m(averted_ihd_stat)` million IHD deaths and `r fmt_m(averted_istroke_stat)` million ischaemic stroke deaths. Because people who survive remained at risk of other causes of death, deaths from intracerebral haemorrhage and hypertensive heart disease (HHD) increased by `r fmt_m(-pd$statin_other_cvd, 2)` million, giving the net total (Table \@ref(tab:tab-deaths-cause)). Annual deaths averted were `r fmt_k(annual_2030_stat)` thousand in 2030 and `r fmt_k(annual_2050_stat)` thousand in 2050. For the same reason, statin scale-up increased time lived with disease, so YLDs averted were negative (`r minus(fmt_m(bod_summary[intervention == "Improved Statin Uptake", YLDs]))` million; Table \@ref(tab:tab-bod-scenario)).
 
-## Combined interventions
+## Combined scenario
 
-All three interventions together averted `r fmt_m(total_all)` million CVD deaths during `r study_years`, `r fmt_pc(fb[["all"]])` of BAU deaths (Table \@ref(tab:tab-deaths-scenario); Figure \@ref(fig:fig-cum-averted)), and `r fmt_m(total_dalys_all)` million DALYs, comprising `r fmt_m(total_ylls_all)` million YLLs and `r fmt_m(total_ylds_all)` million YLDs (Table \@ref(tab:tab-bod-scenario)). The combined total was `r fmt_m(pd$subadditive_gap, 2)` million (`r fmt_pc(pd$subadditive_frac)`) smaller than the sum of the three single-intervention totals (`r fmt_m(pd$sum_singles)` million), as expected from the multiplicative combination. In 2050, the combination averted `r fmt_k(annual_2050_all)` thousand deaths. IHD accounted for `r fmt_m(averted_ihd_all)` million deaths averted, ischaemic stroke `r fmt_m(averted_istroke_all)` million, intracerebral haemorrhage `r fmt_m(averted_hstroke_all)` million, and hypertensive heart disease `r fmt_m(averted_hhd_all)` million (Table \@ref(tab:tab-deaths-cause)).
+All three interventions together averted `r fmt_m(total_all)` million CVD deaths during `r study_years`, `r fmt_pc(fb[["all"]])` of BAU deaths (Table \@ref(tab:tab-deaths-scenario); Figure \@ref(fig:fig-cum-averted)), and `r fmt_m(total_dalys_all)` million DALYs, comprising `r fmt_m(total_ylls_all)` million YLLs and `r fmt_m(total_ylds_all)` million YLDs (Table \@ref(tab:tab-bod-scenario)). The combined total was `r fmt_m(pd$subadditive_gap, 2)` million (`r fmt_pc(pd$subadditive_frac)`) smaller than the sum of the three single-intervention totals (`r fmt_m(pd$sum_singles)` million), as expected from the multiplicative combination. In 2050, the combination averted `r fmt_k(annual_2050_all)` thousand deaths. From `r pp$reporting_start_year` to `r pp$reporting_end_year`, IHD accounted for `r fmt_m(averted_ihd_all)` million deaths averted, ischaemic stroke `r fmt_m(averted_istroke_all)` million, intracerebral haemorrhage `r fmt_m(averted_hstroke_all)` million, and HHD `r fmt_m(averted_hhd_all)` million (Table \@ref(tab:tab-deaths-cause)).
 
 ## Regions and income groups
 
-The largest absolute reductions were in the `r reg_name[reg_abs$stratum[1]]` (`r fmt_m(reg_abs$deaths_averted[1])` million) and `r reg_name[reg_abs$stratum[2]]` (`r fmt_m(reg_abs$deaths_averted[2])` million) and in `r inc_name[inc_abs$stratum[1]]` (`r fmt_m(inc_abs$deaths_averted[1])` million), reflecting population size and CVD burden (Figure \@ref(fig:fig-region); Table \@ref(tab:tab-bod-income)). As a share of BAU deaths, reductions ranged from `r fmt_pc(reg_pct$deaths_pct_bau[nrow(reg_pct)])` in the `r reg_name[reg_pct$stratum[nrow(reg_pct)]]` to `r fmt_pc(reg_pct$deaths_pct_bau[1])` in the `r reg_name[reg_pct$stratum[1]]`, and from `r fmt_pc(inc_pct$deaths_pct_bau[nrow(inc_pct)])` in `r inc_name[inc_pct$stratum[nrow(inc_pct)]]` to `r fmt_pc(inc_pct$deaths_pct_bau[1])` in `r inc_name[inc_pct$stratum[1]]`; low-income, lower-middle-income, and upper-middle-income countries differed little (`r fmt_pc(min(inc_pct[stratum != "High income", deaths_pct_bau]))`–`r fmt_pc(max(inc_pct[stratum != "High income", deaths_pct_bau]))`). These proportional differences follow partly from the allocation rule, which gave larger increments in control to settings with higher current control: the increase in control among hypertensive adults ranged from `r fmt_n(min(tab1_dat[subgroup == "total" & region != "Global", change_pp]), 1)` percentage points in the `r reg_name[as.character(tab1_dat[subgroup == "total" & region != "Global"][which.min(change_pp), region])]` to `r fmt_n(max(tab1_dat[subgroup == "total" & region != "Global", change_pp]), 1)` in the `r reg_name[as.character(tab1_dat[subgroup == "total" & region != "Global"][which.max(change_pp), region])]` (Table \@ref(tab:table1-targets)). They should not be read as evidence that low-coverage settings have less to gain. Average YLLs per death averted ranged from `r fmt_n(ypd$yll_per_death[nrow(ypd)])` in `r inc_name[ypd$stratum[nrow(ypd)]]` to `r fmt_n(ypd$yll_per_death[1])` in `r inc_name[ypd$stratum[1]]`, reflecting both the older age of averted deaths in high-income countries and the national life expectancy used for YLLs.
+Under the combined scenario, the largest absolute reductions were in the `r reg_name[reg_abs$stratum[1]]` (`r fmt_m(reg_abs$deaths_averted[1])` million) and `r reg_name[reg_abs$stratum[2]]` (`r fmt_m(reg_abs$deaths_averted[2])` million) and in `r inc_name[inc_abs$stratum[1]]` (`r fmt_m(inc_abs$deaths_averted[1])` million), reflecting population size and CVD burden (Figure \@ref(fig:fig-region); Table \@ref(tab:tab-bod-income)). Across WHO regions, deaths averted represented `r fmt_pc(reg_pct$deaths_pct_bau[nrow(reg_pct)])`–`r fmt_pc(reg_pct$deaths_pct_bau[1])` of BAU deaths, ranging from `r fmt_pc(reg_pct$deaths_pct_bau[nrow(reg_pct)])` in the `r reg_name[reg_pct$stratum[nrow(reg_pct)]]` to `r fmt_pc(reg_pct$deaths_pct_bau[1])` in the `r reg_name[reg_pct$stratum[1]]`. Across income groups, the corresponding proportion ranged from `r fmt_pc(inc_pct$deaths_pct_bau[nrow(inc_pct)])` in `r inc_name[inc_pct$stratum[nrow(inc_pct)]]` to `r fmt_pc(inc_pct$deaths_pct_bau[1])` in `r inc_name[inc_pct$stratum[1]]`. These proportional differences follow partly from the allocation rule, which gave larger increments in control to settings with higher current control: the increase in control among hypertensive adults ranged from `r fmt_n(min(tab1_dat[subgroup == "total" & region != "Global", change_pp]), 1)` percentage points in the `r reg_name[as.character(tab1_dat[subgroup == "total" & region != "Global"][which.min(change_pp), region])]` to `r fmt_n(max(tab1_dat[subgroup == "total" & region != "Global", change_pp]), 1)` in the `r reg_name[as.character(tab1_dat[subgroup == "total" & region != "Global"][which.max(change_pp), region])]` (Table \@ref(tab:table1-targets)). They should not be read as evidence that low-coverage settings have less to gain. Average YLLs per death averted ranged from `r fmt_n(ypd$yll_per_death[nrow(ypd)])` in `r inc_name[ypd$stratum[nrow(ypd)]]` to `r fmt_n(ypd$yll_per_death[1])` in `r inc_name[ypd$stratum[1]]`, reflecting both the older age of averted deaths in HIC and the national life expectancy used for YLLs.
 
 ## Age and sex
 
-Adults aged 70 years or older accounted for `r fmt_m(pd$averted_70plus)` million of the `r fmt_m(total_all)` million deaths averted by the combination, and adults younger than 70 years, the age limit for premature NCD mortality in Sustainable Development Goal target 3.4, for `r fmt_m(averted_lt70)` million (Figure \@ref(fig:fig-age-sex)). More deaths were averted in women (`r fmt_m(sex_f$averted)` million; `r fmt_pc(sex_f$frac_bau)` of their BAU deaths) than in men (`r fmt_m(sex_m$averted)` million; `r fmt_pc(sex_m$frac_bau)`). The difference was concentrated at ages 80 years or older (`r fmt_m(pd$female_80plus)` million in women *vs* `r fmt_m(pd$male_80plus)` million in men), whereas more deaths were averted in men than in women younger than 70 years (`r fmt_m(pd$male_lt70)` million *vs* `r fmt_m(pd$female_lt70)` million). Women received `r fmt_pc(al_f$share_added)` of the hypertension control increment, reflecting their higher baseline control (`r fmt_pc(al_f$control_2025)` *vs* `r fmt_pc(al$by_sex[sex == "Male", control_2025])` in men) under the proportional allocation.
+Under the combined scenario, adults aged 70 years or older accounted for `r fmt_m(pd$averted_70plus)` million of the `r fmt_m(total_all)` million deaths averted by the combination, and adults younger than 70 years, the age limit for premature NCD mortality in Sustainable Development Goal target 3.4, for `r fmt_m(averted_lt70)` million (Figure \@ref(fig:fig-age-sex)). More deaths were averted in women (`r fmt_m(sex_f$averted)` million) than in men (`r fmt_m(sex_m$averted)` million). The difference was concentrated at ages 80 years or older (`r fmt_m(pd$female_80plus)` million in women *vs* `r fmt_m(pd$male_80plus)` million in men), whereas more deaths were averted in men than in women younger than 70 years (`r fmt_m(pd$male_lt70)` million *vs* `r fmt_m(pd$female_lt70)` million). Women received `r fmt_pc(al_f$share_added)` of the hypertension control increment, reflecting their higher baseline control (`r fmt_pc(al_f$control_2025)` *vs* `r fmt_pc(al$by_sex[sex == "Male", control_2025])` in men) under the proportional allocation.
 
 ## Deterministic sensitivity analysis
 
-Across the one-way settings, deaths averted by the combination ranged from `r fmt_m(dsa_lo$averted)` million (`r tolower(dsa_lo$short_label)`) to `r fmt_m(dsa_hi$averted)` million (`r tolower(dsa_hi$short_label)`), against `r fmt_m(dsa_get("reference"))` million in the reference, which is the central analysis (Supplementary Table \@ref(tab:tab-dsa); Supplementary Figure \@ref(fig:sfig-dsa-tornado)). Deaths averted were roughly proportional to target achievement (`r fmt_m(dsa_get("target_75"))` million at 75% of the increment) and fell to `r fmt_m(dsa_get("delay_2035"))` million and `r fmt_m(dsa_get("delay_2040"))` million when full implementation was delayed to 2035 or 2040. Higher statin adherence raised them to `r fmt_m(dsa_get("adherence_moderate"))` million (moderate) or `r fmt_m(dsa_get("adherence_income"))` million (illustrative income-group values), and lower primary-prevention adherence changed them little (`r fmt_m(dsa_get("adherence_low"))` million). The case-fatality trend mainly changed BAU deaths (`r fmt_m(min(dsa[family == "mortality_trend", bau]))`–`r fmt_m(max(dsa[family == "mortality_trend", bau]))` million) and less so deaths averted (`r fmt_m(dsa_get("trend_ihme_cvd"))` million with the IHME Foresight trend, `r fmt_m(dsa_get("trend_full_cvd"))` million with 100% of the forecast decline, and `r fmt_m(dsa_get("trend_no_cvd"))` million without a trend).
+Across the one-way sensitivity analyses, deaths averted under the combined scenario ranged from `r fmt_m(dsa_lo$averted)` million `r dsa_phrase(dsa_lo)` to `r fmt_m(dsa_hi$averted)` million `r dsa_phrase(dsa_hi)`, compared with `r fmt_m(dsa_get("reference"))` million in the reference analysis (Supplementary Table \@ref(tab:tab-dsa); Supplementary Figure \@ref(fig:sfig-dsa-tornado)). When 75% of the hypertension-control increment was achieved, `r fmt_m(dsa_get("target_75"))` million deaths were averted. Delaying full implementation to 2035 and 2040 reduced deaths averted to `r fmt_m(dsa_get("delay_2035"))` million and `r fmt_m(dsa_get("delay_2040"))` million, respectively. Under alternative statin-adherence assumptions, deaths averted increased to `r fmt_m(dsa_get("adherence_moderate"))` million with moderate adherence and `r fmt_m(dsa_get("adherence_income"))` million using illustrative income-group-specific adherence values, while lower adherence in primary prevention resulted in `r fmt_m(dsa_get("adherence_low"))` million deaths averted. Across alternative case-fatality trends, BAU deaths ranged from `r fmt_m(min(dsa[family == "mortality_trend", bau]))` million to `r fmt_m(max(dsa[family == "mortality_trend", bau]))` million, while deaths averted ranged from `r fmt_m(dsa_get("trend_ihme_cvd"))` million with the IHME Foresight trend to `r fmt_m(dsa_get("trend_full_cvd"))` million with 100% of the forecast decline and `r fmt_m(dsa_get("trend_no_cvd"))` million with no case-fatality trend.
+
+\newpage
 
 # Discussion
 
 ## Principal findings
 
-In `r n_countries` countries, adding `r fmt_m(pp$added_total, 0)` million people with controlled hypertension by `r pp$control_target_year` and raising statin coverage among adults aged `r pp$statin_age_min` years or older to `r fmt_pc(pp$statin_target_coverage, 0)` were projected to avert `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs during `r study_years`, `r fmt_pc(fb[["all"]])` of BAU deaths. The hypertension increment alone averted `r fmt_m(pd$total_bp_combined)` million deaths and statin scale-up `r fmt_m(total_stat)` million. Within the hypertension target, the group with diabetes accounted for more deaths averted than the larger group without diabetes, reflecting the larger increase in control that the allocation gave it and its lower SBP target. Under the multiplicative model, the combination was slightly sub-additive and larger than any single intervention.
+Achieving the global commitments by adding `r fmt_m(pp$added_total, 0)` million people with controlled hypertension and raising statin coverage among eligible adults to `r fmt_pc(pp$statin_target_coverage, 0)` was projected to avert `r fmt_m(total_all)` million CVD deaths and `r fmt_m(total_dalys_all)` million DALYs worldwide during `r study_years`, `r fmt_pc(fb[["all"]])` of BAU deaths. High blood pressure increment alone averted `r fmt_m(pd$total_bp_combined)` million deaths and statin scale-up `r fmt_m(total_stat)` million.
 
 ## Comparison with other evidence
 
-Previous global projections of hypertension treatment are larger than our estimate for the `r fmt_m(pp$added_total, 0)` million increment (`r fmt_m(pd$total_bp_combined)` million deaths). Kontis and colleagues estimated that 70% hypertension treatment coverage could delay 39.4 million deaths over 25 years [@Kontis2019], and Pickersgill and colleagues estimated 76–130 million all-cause deaths averted under the broader 80-80-80 target [@Pickersgill2022]. Our estimate is smaller because the `r fmt_m(pp$added_total, 0)` million commitment raises global control only from `r fmt_pc(pp$coverage_total_2025)` to `r fmt_pc(pp$coverage_total_2030)` of hypertensive adults, because only four CVD causes were counted, and because the BAU already includes declining case fatality. Raised SBP is the largest attributable risk factor for CVD mortality [@Vollset2024], and the gap between current control and any of the proposed targets remains large [@WHO2025HypertensionReport]. The NCD Countdown 2030 analyses identified blood pressure treatment and statins as among the most efficient ways to reduce premature CVD mortality [@Watkins2022NCD2030; @Bennett2020NCD2030Path]; our results add country-level projections of their separate and joint effects on a common baseline.
+Previous global projections of hypertension treatment are larger than our estimate for the `r fmt_m(pp$added_total, 0)` million increment (`r fmt_m(pd$total_bp_combined)` million deaths). Kontis and colleagues estimated that 70% hypertension treatment coverage could delay 39.4 million deaths over 25 years [@Kontis2019], and Pickersgill and colleagues estimated 76–130 million CVD deaths averted under the broader 80-80-80 target [@Pickersgill2022]. Our smaller estimate reflects the more limited increase in global hypertension control, from `r fmt_pc(pp$coverage_total_2025)` to `r fmt_pc(pp$coverage_total_2030)`, the restriction to four cardiovascular causes, and a BAU scenario incorporating secular declines in case fatality. More recent modelling by Watkins and colleagues [-@Watkins2025SPC] also projected substantial benefits from combined antihypertensive and statin therapy across 182 countries, but examined single-pill combination strategies rather than the specific treatment scale-up scenarios considered here. Raised SBP is the largest attributable risk factor for CVD mortality [@Vollset2024], and the gap between current control and any of the proposed targets remains large [@WHO2025HypertensionReport]. The NCD Countdown 2030 analyses identified blood pressure treatment and statins as among the most efficient ways to reduce premature CVD mortality [@Watkins2022NCD2030; @Bennett2020NCD2030Path]; our results add country-level projections of their separate and joint effects on a common baseline.
 
-The statin estimate should be read against current use. Across 41 low-income and middle-income countries, statin use among eligible adults was about 8% for primary prevention and 22% for secondary prevention [@Marcus2022StatinsLMICs], and in 38 such countries fewer than one in ten adults with diabetes used statins [@Li2024DiabetesCVDTargetsLMICs]; reaching `r fmt_pc(pp$statin_target_coverage, 0)` coverage would therefore require a large expansion in most settings. Most of the modelled statin benefit came from IHD, consistent with the trial evidence and with the restriction of the ischaemic stroke effect to its atherosclerotic share [@Fulcher2015; @Petty1999IschemicStrokeSubtypes]. Studies of the decline in coronary mortality in high-income countries attributed about half of it to treatments, including statins and antihypertensives [@Ford2007], and unfavourable risk-factor trends can offset treatment gains [@Critchley2004]; holding risk-factor distributions fixed, our BAU does not represent either process.
+The projected benefits of statin scale-up should be interpreted in the context of low baseline use and substantial treatment gaps. In our model, population-weighted statin coverage was approximately `r fmt_pc(sp_g$statin_coverage_2025, 0)` among adults aged `r pp$statin_age_min` years or older [@Marcus2022StatinsLMICs; @Li2024DiabetesCVDTargetsLMICs]. Reaching `r fmt_pc(pp$statin_target_coverage, 0)` coverage would require an increase of approximately `r fmt_n(statin_gap_pp, 0)` percentage points, or more than a `r num_word(floor(statin_fold))`fold expansion. This gap is consistent with evidence of substantial underuse, although published estimates refer to different eligible populations. Across 41 LMICs, statin use was 8.0% among adults eligible for primary prevention and 21.9% among those eligible for secondary prevention, while a separate analysis of 38 LMICs reported statin use in 11.1% of adults with diabetes aged 40 years or older [@Marcus2022StatinsLMICs; @Li2024DiabetesCVDTargetsLMICs]. Statin utilisation also remains substantially lower in LMICs than in high-income countries. Importantly, our `r fmt_pc(pp$statin_target_coverage, 0)` scenario applies to all adults aged `r pp$statin_age_min` years or older, rather than only those meeting risk-based treatment eligibility criteria [@Fulcher2015]. The projected benefits should therefore be interpreted as the potential effects of a hypothetical population-wide expansion under the specified modelling assumptions, rather than the effects of achieving guideline-based treatment targets. Most of the modelled statin benefit was attributable to reductions in ischaemic heart disease mortality.
 
-## Heterogeneity and allocation
-
-The regional and income-group pattern depends on how the global increment was allocated. Scaling up in proportion to current control, which reproduces the increment exactly with one factor, gives the largest increases to countries that already control hypertension best and the smallest to those with the lowest control. Proportional reductions in deaths were accordingly largest in the `r reg_name[reg_pct$stratum[1]]` and `r inc_name[inc_pct$stratum[1]]` and smallest in the `r reg_name[reg_pct$stratum[nrow(reg_pct)]]` and `r inc_name[inc_pct$stratum[nrow(inc_pct)]]`. These comparisons are conditional on the allocation rule, which we did not vary; an allocation that closed gaps in low-control settings would redistribute benefit and could change the total. CVD deaths are projected to rise in low-income countries [@Chong2024], where hypertension is common [@Nambiema2025HypertensionAfrica] and core antihypertensive medicines are less often available (in 28% of low-income countries *vs* 93% of high-income countries) [@WHO2025HypertensionReport]. The statin scenario, which raises every country to the same coverage, is less dependent on current coverage, but its benefit is concentrated where IHD is common.
+The geographical distribution of projected benefits was influenced by the allocation of additional hypertension control in proportion to baseline control levels. This approach generally favoured settings with higher existing control, while potentially limiting gains in countries with the greatest treatment gaps. Regional and income-group differences should therefore be interpreted in light of this assumption, which was not varied in the analysis. The distribution of statin-related benefits also reflected differences in baseline coverage and underlying cardiovascular disease burden [@Chong2024; @Nambiema2025HypertensionAfrica].
 
 ## Implications for implementation
 
-Both interventions can be delivered through the same primary care platform. The WHO HEARTS technical package, with standardised treatment protocols, team-based care, and medicine supply, has been implemented in many low-income and middle-income countries [@Moran2023GlobalHEARTSImplementation; @Banigbe2025; @Garcia2026HEARTS4Countries], and integrated protocols that start antihypertensive and statin treatment together without laboratory lipid testing have been proposed for such settings [@Moran2024]. A polypill combining antihypertensive medicines with a statin improved adherence and reduced major cardiovascular events by 24% after myocardial infarction [@Castellano2022PolypillSecondaryPrevention]. Barriers include irregular medicine supply, limited lipid testing, and out-of-pocket costs [@Marcus2022StatinsLMICs; @Li2024HyperlipidemiaMedicinesAccess]. Costs and economic value were not estimated here.
+The projected health gains highlight the potential importance of expanding access to effective cardiovascular prevention through primary health care. Integrated delivery of hypertension management and statin therapy could be supported by established approaches such as the WHO HEARTS technical package, including standardised treatment protocols, team-based care, risk-based management, and reliable access to essential medicines [@Moran2023GlobalHEARTSImplementation; @Banigbe2025; @Garcia2026HEARTS4Countries]. However, achieving and sustaining the modelled coverage increases would require substantial strengthening of health service delivery, medicine availability, treatment adherence, and continuity of care. In 2025, only 28% of low-income countries reported general availability of all WHO-recommended hypertension medicines, compared with 93% of high-income countries [@WHO2025HypertensionReport]. Fixed-dose combination therapies may facilitate treatment delivery and adherence, with a polypill strategy reducing major cardiovascular events by 24% among patients with recent myocardial infarction [@Castellano2022PolypillSecondaryPrevention]. Nevertheless, these findings cannot be directly extrapolated to the population-wide statin scenario considered here. Our analysis did not assess implementation feasibility, costs, or economic value.
 
 ## Strengths and limitations
 
 The study covers `r n_countries` countries with country-specific epidemiological and demographic inputs, calibrates the model to WHO GHE deaths and GBD prevalence, uses mortality forecasts that are coherent across causes, credits only coverage above current levels, and reports the achieved coverage implied by the commitments.
 
-The study has several limitations. First, parameter uncertainty was not quantified probabilistically: the central results are point estimates, and the one-way DSA gives deterministic scenario ranges, not uncertainty intervals. Second, the calibration was assessed in sample only; the fit to the calibration targets does not validate the model's projections, `r fmt_pc(co$frac_any_bound, 0)` of calibrated age groups used a multiplier at the edge of the grid, and the targets are themselves modelled estimates. Mortality trends were forecast at global level, so every country received the same age-, sex-, and cause-specific relative changes, and the reconciled forecast was evaluated only in a short global holdout. Because only case fatality followed the forecast, with incidence held constant, the model's BAU CVD mortality declines less than the forecast cause-specific rates. Third, the allocation of the `r fmt_m(pp$added_total, 0)` million increment follows one rule, proportional to current control; no alternative allocation was run. Fourth, full adherence was assumed for blood pressure control, which probably overstates its benefit, whereas statin effects were reduced for adherence [@Basios2025; @Li2024HyperlipidemiaMedicinesAccess; @Reith2026StatinAdverseEffects]. The joint effect relies on the assumption of multiplicative independence. Fifth, the diabetes group was defined by assuming that hypertension and diabetes are independent within age and sex strata, and the model did not assign higher incidence to people with diabetes within a blood pressure category, which may understate the benefit of blood pressure control in this group. The age-specific diabetes input implies more adults with diabetes than GBD 2023 national prevalence (Table \@ref(tab:table1-targets)), so the size of this group may be overstated. Sixth, the statin scenario applies coverage to all adults aged `r pp$statin_age_min` years or older, not to a population defined by absolute cardiovascular risk, and scales primary-prevention effects by the fraction of disease attributable to high fasting plasma glucose; the complete eligible population cannot be estimated without joint risk-factor data, typically from individual-level surveys. Seventh, blood pressure distributions and other risk factors were held fixed, linear scale-up to `r pp$control_target_year` and the absence of health-system constraints make the scenarios statements of technical potential, and COVID-19 was represented only as excess mortality in 2020 and 2021. Finally, YLLs were based on national rather than standard life expectancy, which limits comparison with GBD DALYs, and effects on other cardiovascular and non-cardiovascular conditions were not counted.
+The study has several limitations. First, parameter uncertainty was not quantified probabilistically: the central results are point estimates, and the one-way deterministic sensitivity analysis gives deterministic scenario ranges, not uncertainty intervals; it also did not vary the 15-percentage-point higher baseline control in diabetes, the allocation rule, full blood pressure adherence, or multiplicative independence. Second, the calibration was assessed in sample only; the fit to the calibration targets does not validate the model's projections, `r fmt_pc(co$frac_any_bound, 0)` of calibrated age groups used a multiplier at the edge of the grid, and the targets are themselves modelled estimates. Mortality trends were forecast at global level, so every country received the same age-, sex-, and cause-specific relative changes, this may mask country-specific epidemiological transitions and differences in mortality trajectories and the reconciled forecast was evaluated only in a short global holdout. Because only case fatality followed the forecast, with incidence held constant, the model's BAU CVD mortality declines less than the forecast cause-specific rates. Third, the `r fmt_m(pp$added_total, 0)` million increment was allocated by one rule, proportional to current control; no alternative allocation, such as equal absolute increases, was run. Fourth, full adherence was assumed for blood pressure control, which probably overstates its benefit, whereas statin effects were reduced for adherence [@Basios2025; @Li2024HyperlipidemiaMedicinesAccess; @Reith2026StatinAdverseEffects].
 
-## Conclusion
+The joint effect relies on the assumption of multiplicative independence. Fifth, the diabetes group was defined by assuming that hypertension and diabetes are independent within age and sex strata, and the baseline control was assumed to be 15 percentage points higher than in adults without diabetes. The lower SBP target (<130 mmHg) and larger allocated increase in this group probably overstate its benefit relative to the group without diabetes, whereas the lack of higher incidence in people with diabetes within a blood pressure category may understate it, and relative risk reductions per mmHg may be attenuated in type 2 diabetes [@Emdin2015BPDiabetes]. The age-specific diabetes input implies more adults with diabetes than GBD 2023 national prevalence (Table \@ref(tab:table1-targets)), so the size of this group may be overstated. The statin scale-up was not examined separately in adults with and without diabetes. Sixth, the statin scenario applies coverage to all adults aged `r pp$statin_age_min` years or older, not to a population defined by absolute cardiovascular risk, and excludes younger adults at high risk; a baseline coverage of `r md(fmt_pc(sp_g$statin_coverage_2025))` applied to all adults, including those with established disease, in whom coverage is higher [@Marcus2022StatinsLMICs], may overstate the coverage gain and the case-fatality effect; and incidence reductions were scaled by the fraction of disease attributable to high fasting plasma glucose, and the ischaemic stroke effect by an assumed `r fmt_pc(pp$prop_athero_stroke, 0)` atherosclerotic share; neither adjustment is supported by trial evidence of similar relative statin effects across risk-factor levels [@Fulcher2015], and their influence should be tested. The complete eligible population cannot be estimated without joint risk-factor data, typically from individual-level surveys. Seventh, blood pressure distributions and other risk factors were held fixed, linear scale-up to `r pp$control_target_year` without health-system constraints make the scenarios statements of technical potential; COVID-19 was represented only as excess mortality in 2020 and 2021. Finally, YLLs were based on national rather than standard life expectancy, which limits comparison with GBD DALYs, and effects on other cardiovascular conditions (such as heart failure or atrial fibrillation), and other non-cardiovascular conditions were not counted. The effect of blood pressure lowering on intracerebral haemorrhage may be larger than modelled [@Qureshi2016ATACH2].
 
-Adding `r fmt_m(pp$added_total, 0)` million people with controlled hypertension and raising statin coverage among adults aged `r pp$statin_age_min` years or older to `r fmt_pc(pp$statin_target_coverage, 0)` by `r pp$control_target_year` could avert about `r fmt_m(total_all, 0)` million CVD deaths in `r n_countries` countries during `r study_years`, with complementary contributions from the two interventions. How the hypertension increment is allocated among countries shapes who benefits, and the projected gains depend on sustained control and adherence that current health systems do not yet deliver in most settings.
+# Conclusion
+
+Achieving blood pressure control in an additional `r fmt_m(pp$added_total, 0)` million adults and increasing statin coverage to `r fmt_pc(pp$statin_target_coverage, 0)` among eligible adults by `r pp$control_target_year` could avert approximately `r fmt_m(total_all)` million deaths and `r fmt_m(total_dalys_all, 0)` million DALYs worldwide from four major CVD across `r n_countries` countries during `r study_years`. These projections highlight the potential cardiovascular health gains from expanding both interventions, while underscoring the importance of equitable implementation, sustained treatment coverage, and effective health service delivery to realise these benefits.
 
 \newpage
 
 # Contributors
 
-Kouamivi Agboyibor, Alarcos Cieza, David Watkins and William Garcia conceptualised the manuscript. 
+Kouamivi Agboyibor, Alarcos Cieza, David Watkins and William Garcia **conceptualised the manuscript.**
 
-Kouamivi Agboyibor, David Watkins and William Garcia directly accessed, analysed and verified the data.
+David Watkins, William Garcia and Kouamivi Agboyibor **directly accessed, analysed and verified the** data.
 
-Kouamivi Agboyibor, and William Garcia wrote the initial manuscript. 
+Kouamivi Agboyibor, and William Garcia **wrote the initial manuscript.**
 
-reviewed, commented on, and critically revised the manuscript for important intellectual content:
-WHO: Kouamivi Agboyibor, Bochen Cao, Alarcos Cieza, Farshad Farzadfar, Seyyedhadi Ghamari, Filip Meheus, Sok-Cin Tye
-University of Washington: William Garcia, Greg Roth, David Watkins
-International Scientific Experts: Jean-Philippe Empana, Norman Campbell, Ana Olga Mocumbi, Dike Ojji, Gianfranco Parati, Dorairaj Prabhakaran, Alta Schutte, James E. Sharman, George Stergiou, Subodh Verma, Thomas Weber, Paul Whelton, Issifou Yaya
-Empana, Paul Whelton
+Reviewed, commented on, and critically revised the manuscript for important intellectual content:
 
-All authors approved the final version of the manuscript to be published. 
+***The WHO CVD Working Group***
+
+All authors approved the final version of the manuscript to be published.
 
 All authors are accountable for all aspects of the work in ensuring that questions related to the accuracy or integrity of any part of the work are appropriately investigated and resolved.
 
 # Funding
-This work is funded by the World Health Organization 
+
+This work is funded by the World Health Organization
 
 # Declaration of interest
 
@@ -407,14 +436,11 @@ t1_disp <- t1[, .(
   c25   = paste0(m1(controlled_2025), " (", p1(coverage_2025), "%)"),
   c30   = paste0(m1(controlled_2030), " (", p1(coverage_2030), "%)"),
   add   = m1(additional_2030),
-  pop40 = fifelse(is.na(pop40_2025), na_cell,
-                  paste0(m1(pop40_2025), " (", p1(statin_coverage_2025), "%)")),
   dm    = fifelse(is.na(diab40_2025), na_cell, paste0(m1(diab40_2025), " / ", m1(diab40_2030)))
 )]
-kable(t1_disp, align = c("l", "l", rep("r", 6)),
+kable(t1_disp, align = c("l", "l", rep("r", 5)),
       col.names = c("WHO region", "Group", "Hypertensive adults, 2025",
                     "Controlled, 2025 (%)", "Controlled, 2030 (%)", "Additional controlled by 2030",
-                    "Adults aged \u226540 years, 2025 (baseline statin coverage)",
                     "Adults with diabetes aged \u226540 years, 2025 / 2030"),
       caption = paste0("Hypertension control under the ", fmt_m(pp$added_total, 0),
                        " million increment and statin populations, by WHO region, 2025 and 2030"))
@@ -428,7 +454,13 @@ kable(t1_disp, align = c("l", "l", rep("r", 6)),
 tab2 <- copy(dt_cumul)[intervention %in% int_order]
 tab2[, intervention := factor(intervention, levels = int_order)]
 setorder(tab2, intervention)
-tab2 <- tab2[, .(label = int_display[as.character(intervention)], deaths = deaths_delayed,
+tab2_display <- c(
+  "HTN Control (No Diabetes)" = "Hypertension Control, without diabetes",
+  "HTN Control (Diabetes)"    = "Hypertension Control, with Diabetes",
+  "Improved Statin Uptake"    = "Improved Statin Uptake",
+  "All Interventions"         = "All Interventions combined"
+)
+tab2 <- tab2[, .(label = tab2_display[as.character(intervention)], deaths = deaths_delayed,
                  frac = fb[c("bp", "bpd", "stat", "all")][as.integer(intervention)])]
 tab2 <- rbind(tab2[1:2],
               data.table(label = "Hypertension control, both groups",
@@ -441,10 +473,12 @@ tab2_disp <- tab2[, .(
   pct      = fmt_pc(frac)
 )]
 kable(tab2_disp, align = c("l", "r", "r", "r"),
-      col.names = c("Scenario", "Deaths averted (millions)", "Mean per year (thousands)",
-                    "Share of BAU deaths"),
-      caption = paste0("Cumulative CVD deaths averted relative to BAU, by scenario, ", study_years))
+      col.names = c("Intervention", "Deaths averted (millions)", "Average per year (thousands)",
+                    "% of BAU deaths"),
+      caption = paste0("Cumulative CVD deaths averted relative to BAU, by scenario during ", study_years))
 ```
+
+*Note: Deaths averted = cumulative difference between business-as-usual and intervention scenario, `r study_years`. All four CVD causes combined: ischaemic heart disease, ischaemic stroke, intracerebral haemorrhage, hypertensive heart disease.*
 
 *Deaths averted are BAU deaths minus scenario deaths from the four modelled causes, summed over `r study_years` (`r n_years` years). BAU deaths were `r fmt_m(bau_total_deaths)` million. The two hypertension groups are mutually exclusive; "both groups" is the modelled `r fmt_m(pp$added_total, 0)` million increment and is shown for reference, not as an additional intervention. "All interventions combined" applies both hypertension groups and statin scale-up, combined multiplicatively; it is `r fmt_m(pd$subadditive_gap, 2)` million smaller than the sum of the three single-intervention rows. BAU = business as usual. CVD = cardiovascular disease.*
 
@@ -465,7 +499,7 @@ for (col in num_cols) tc_w[, (col) := minus(fmt_m(get(col), 2))]
 tc_w[, intervention := int_display[as.character(intervention)]]
 kable(tc_w, col.names = c("Scenario", num_cols[num_cols != "Total"], "All four causes"),
       align = c("l", rep("r", length(num_cols))),
-      caption = paste0("Cumulative CVD deaths averted relative to BAU, by scenario and cause (millions), ", study_years))
+      caption = paste0("Cumulative CVD deaths averted relative to BAU, by scenario and cause (millions) during ", study_years))
 ```
 
 *Negative values are net increases in deaths. Statins act only on IHD and ischaemic stroke; people who survive because of statins remain at risk of the other modelled causes, so deaths from intracerebral haemorrhage and hypertensive heart disease increase slightly. Rows sum to the all-cause total (four modelled causes). BAU = business as usual. CVD = cardiovascular disease. IHD = ischaemic heart disease.*
@@ -482,7 +516,7 @@ tb_disp <- tb[, .(
   YLDs = minus(fmt_m(YLDs)), DALYs = minus(fmt_m(DALYs))
 )]
 kable(tb_disp, align = c("l", "r", "r", "r", "r"),
-      caption = paste0("Cumulative deaths, YLLs, YLDs, and DALYs averted relative to BAU, by scenario (millions), ", study_years))
+      caption = paste0("Cumulative deaths, YLLs, YLDs, and DALYs averted relative to BAU, by scenario (millions) during ", study_years))
 ```
 
 *Averted = BAU minus scenario, summed over `r study_years`, undiscounted. YLLs use national remaining life expectancy from WPP 2024 (not the GBD standard life table). A negative YLD value is a net increase in years lived with disability, which occurs when averting deaths increases the number of people living with disease. BAU = business as usual. DALYs = disability-adjusted life-years. GBD = Global Burden of Disease. WPP = UN World Population Prospects. YLDs = years lived with disability. YLLs = years of life lost.*
@@ -517,19 +551,19 @@ kable(bi_disp, align = c("l", rep("r", 6)),
 
 # Figures
 
-```{r fig-cum-averted, echo=FALSE, fig.cap=paste0("Cumulative CVD deaths averted relative to BAU, by scenario, ", study_years, ". Lines show running totals for hypertension control in adults without diabetes and in adults with diabetes (mutually exclusive groups), statin scale-up, and all interventions combined. BAU = business as usual. CVD = cardiovascular disease.")}
+```{r fig-cum-averted, echo=FALSE, fig.cap=paste0("Cumulative CVD deaths averted over time by intervention scenario during ", study_years, ". Lines show running totals for hypertension control in adults with and without diabetes (mutually exclusive groups), statin scale-up, and all interventions combined. BAU = business as usual. CVD = cardiovascular disease.")}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig4_cum_averted.png"))
 ```
 
 \newpage
 
-```{r fig-age-sex, echo=FALSE, fig.cap=paste0("CVD deaths averted relative to business as usual, by age group, sex, and scenario, ", study_years, ". In every scenario, most deaths averted were in adults aged 70 years or older. CVD = cardiovascular disease.")}
+```{r fig-age-sex, echo=FALSE, fig.cap=paste0("Distribution of projected CVD deaths averted by age group, sex, and intervention scenario during ", study_years, ". In every scenario, most deaths averted were in adults aged 70 years or older. CVD = cardiovascular disease.")}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig5_demo_age.png"))
 ```
 
 \newpage
 
-```{r fig-region, echo=FALSE, fig.width=8, fig.height=4.6, fig.cap=paste0("CVD deaths averted by all interventions combined, by WHO region, ", study_years, ". Bars show cumulative deaths averted relative to BAU; labels give millions and, in parentheses, the share of the region's BAU deaths. Regional values, including BAU deaths, are in Supplementary Table \\@ref(tab:tab-region-supp). BAU = business as usual. CVD = cardiovascular disease.")}
+```{r fig-region, echo=FALSE, fig.width=8, fig.height=4.6, fig.cap=paste0("CVD deaths averted by all interventions combined, by WHO region during ", study_years, ". Bars show cumulative deaths averted relative to BAU; labels give millions and, in parentheses, the share of the region's BAU deaths. Regional values, including BAU deaths, are in Supplementary Table \\@ref(tab:tab-region-supp). BAU = business as usual. CVD = cardiovascular disease.")}
 rr <- strata_dat[stratum_type == "WHO region"]
 rr[, stratum := factor(stratum, levels = stratum[order(deaths_averted)])]
 ggplot(rr, aes(x = stratum, y = deaths_averted / 1e6)) +
@@ -568,7 +602,7 @@ region_disp <- sr[, .(
 kable(region_disp, align = c("l", rep("r", 5)),
       col.names = c("WHO region", "BAU deaths (millions)", "Deaths averted (millions)",
                     "Mean per year (thousands)", "Share of BAU deaths", "DALYs averted (millions)"),
-      caption = paste0("Cumulative CVD deaths and DALYs averted by all interventions combined, by WHO region, ", study_years))
+      caption = paste0("Cumulative CVD deaths and DALYs averted by all interventions combined, by WHO region during ", study_years))
 ```
 
 *These are the values summarised in Figure \@ref(fig:fig-region). BAU = business as usual. CVD = cardiovascular disease. DALYs = disability-adjusted life-years.*
@@ -613,13 +647,13 @@ ggplot() +
 
 \newpage
 
-```{r sfig-bau, echo=FALSE, fig.cap="Supplementary figure. Incident and prevalent cases of the four modelled causes combined under business as usual, 2019\u20132050 (solid lines, 2019; dashed lines, projection). Ages 20 years or older; population from UN World Population Prospects 2024; epidemiological inputs from the Global Burden of Disease Study 2023."}
+```{r sfig-bau, echo=FALSE, fig.cap="Supplementary figure. Incident and prevalent cases of the four modelled causes combined under business as usual during 2019\u20132050 (solid lines, 2019; dashed lines, projection). Ages 20 years or older; population from UN World Population Prospects 2024; epidemiological inputs from the Global Burden of Disease Study 2023."}
 knitr::include_graphics(paste0(wd_outp, "aim1_disease_trend.png"))
 ```
 
 \newpage
 
-```{r sfig-bar-averted, echo=FALSE, fig.cap=paste0("Supplementary figure. Cumulative deaths averted from the four modelled cardiovascular causes relative to business as usual, by scenario, ", study_years, ": hypertension control in adults without diabetes and in adults with diabetes (mutually exclusive groups sharing the ", fmt_m(pp$added_total, 0), " million increment), statin scale-up to ", fmt_pc(pp$statin_target_coverage, 0), " of adults aged ", pp$statin_age_min, " years or older, and all interventions combined.")}
+```{r sfig-bar-averted, echo=FALSE, fig.cap=paste0("Supplementary figure. Cumulative deaths averted from the four modelled cardiovascular causes relative to business as usual, by scenario during ", study_years, ": hypertension control in adults without diabetes and in adults with diabetes (mutually exclusive groups sharing the ", fmt_m(pp$added_total, 0), " million increment), statin scale-up to ", fmt_pc(pp$statin_target_coverage, 0), " of adults aged ", pp$statin_age_min, " years or older, and all interventions combined.")}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig1_deaths_intervention.png"))
 ```
 
@@ -631,25 +665,25 @@ knitr::include_graphics(paste0(wd_outp, "aim1_fig3_annual_averted.png"))
 
 \newpage
 
-```{r sfig-asmr, echo=FALSE, fig.cap="Supplementary figure. Age-standardised death rate from the four modelled cardiovascular causes, by scenario, 2019\u20132050 (solid lines, 2019; dashed lines, projection). Standardised to the WHO world standard population rescaled to ages 20 to 95+ years."}
+```{r sfig-asmr, echo=FALSE, fig.cap="Supplementary figure. Age-standardised death rate from the four modelled cardiovascular causes, by scenario during 2019\u20132050 (solid lines, 2019; dashed lines, projection). Standardised to the WHO world standard population rescaled to ages 20 to 95+ years."}
 knitr::include_graphics(paste0(wd_outp, "aim1_asmr_interventions.png"))
 ```
 
 \newpage
 
-```{r sfig-cause, echo=FALSE, fig.cap=paste0("Supplementary figure. Cumulative deaths averted relative to business as usual, by cause and scenario, ", study_years, ". Statin effects apply to ischaemic heart disease and ischaemic stroke; blood pressure control affects all four causes. Net increases in intracerebral haemorrhage and hypertensive heart disease deaths under statin scale-up are shown in Table \\@ref(tab:tab-deaths-cause).")}
+```{r sfig-cause, echo=FALSE, fig.cap=paste0("Supplementary figure. Cumulative deaths averted relative to business as usual, by cause and scenario during ", study_years, ". Statin effects apply to ischaemic heart disease and ischaemic stroke; blood pressure control affects all four causes. Net increases in intracerebral haemorrhage and hypertensive heart disease deaths under statin scale-up are shown in Table \\@ref(tab:tab-deaths-cause).")}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig2_deaths_cause.png"))
 ```
 
 \newpage
 
-```{r sfig-dalys, echo=FALSE, fig.cap=paste0("Supplementary figure. Cumulative disability-adjusted life-years (DALYs) averted relative to business as usual, by scenario, ", study_years, ". DALYs are years of life lost (national life expectancy, UN World Population Prospects 2024) plus years lived with disability, undiscounted.")}
+```{r sfig-dalys, echo=FALSE, fig.cap=paste0("Supplementary figure. Cumulative disability-adjusted life-years (DALYs) averted relative to business as usual, by scenario during ", study_years, ". DALYs are years of life lost (national life expectancy, UN World Population Prospects 2024) plus years lived with disability, undiscounted.")}
 knitr::include_graphics(paste0(wd_outp, "aim1_bod_fig1_dalys_ts.png"))
 ```
 
 \newpage
 
-```{r sfig-region-cumulative, echo=FALSE, fig.cap=paste0("Supplementary figure. Cumulative deaths averted from the four modelled cardiovascular causes by all interventions combined, by WHO region, ", study_years, ".")}
+```{r sfig-region-cumulative, echo=FALSE, fig.cap=paste0("Supplementary figure. Cumulative deaths averted from the four modelled cardiovascular causes by all interventions combined, by WHO region during ", study_years, ".")}
 knitr::include_graphics(paste0(wd_outp, "aim1_fig7_cum_region.png"))
 ```
 
@@ -678,7 +712,7 @@ kable(dsa_disp, align = c("l", "l", rep("r", 6)),
       col.names = c("Setting", "Family", "Deaths averted",
                     "Difference", "Difference (%)", "BAU deaths", "Share of BAU deaths",
                     "Difference in DALYs averted"),
-      caption = paste0("One-way DSA: cumulative CVD deaths and DALYs averted by all interventions combined, by setting, ",
+      caption = paste0("One-way DSA: cumulative CVD deaths and DALYs averted by all interventions combined, by setting during ",
                        study_years, " (", n_countries, " countries)"))
 ```
 
@@ -686,7 +720,7 @@ kable(dsa_disp, align = c("l", "l", rep("r", 6)),
 
 \newpage
 
-```{r sfig-dsa-tornado, echo=FALSE, fig.cap="Supplementary figure. One-way deterministic sensitivity analysis: difference in cumulative deaths averted relative to the reference (central analysis), 2026\u20132050, for the full hypertension increment (both groups), statin scale-up, and all interventions combined. Bars are deterministic scenario differences, not uncertainty intervals; perfect statin adherence is excluded. CF = case fatality. CVD = cardiovascular disease. HTN = hypertension."}
+```{r sfig-dsa-tornado, echo=FALSE, fig.cap=paste0("Supplementary figure. One-way deterministic sensitivity analysis: difference in cumulative deaths averted relative to the reference (central analysis) during ", study_years, ", for the full hypertension increment (both groups), statin scale-up, and all interventions combined. Bars are deterministic scenario differences, not uncertainty intervals; perfect statin adherence is excluded. CF = case fatality. CVD = cardiovascular disease. HTN = hypertension.")}
 knitr::include_graphics(paste0(dsa_dir, "dsa_fig_tornado.png"))
 ```
 
@@ -778,7 +812,7 @@ The table lists the base-case values used in the executed model run. All paramet
 ```{r param-appendix-table, echo=FALSE}
 fp  <- function(x, d = 2) formatC(x, format = "f", digits = d)
 fpc <- function(x) paste0(formatC(x * 100, format = "f", digits = 1), "%")
-params <- data.frame(
+param_tbl <- data.frame(   # not named `params`: that name is reserved for the YAML parameters
   Parameter = c(
     "Time step; age range; causes",
     "Initial prevalence, IR, CF",
@@ -865,7 +899,7 @@ params <- data.frame(
   ),
   stringsAsFactors = FALSE
 )
-kable(params, col.names = c("Parameter", "Value", "Source"), align = c("l", "l", "l"),
+kable(param_tbl, col.names = c("Parameter", "Value", "Source"), align = c("l", "l", "l"),
       caption = "Base-case parameter values used in the executed model run")
 ```
 

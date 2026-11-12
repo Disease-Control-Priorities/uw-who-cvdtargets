@@ -143,6 +143,7 @@ TP_EPS     <- 0.005           # headroom preserved by the final probability guar
 # here. (Kept in data/raw/GBD to avoid re-running the heavy stage-02 GBD build.)
 gbd_target_file <- paste0(wd_raw, "GBD/temp_1baseline_rates_gbd23.rds")
 calibration_deaths_source <- "WHO"  # "WHO" or "GBD" (sensitivity)
+#who_deaths_target_file <- file.path(wd_data, "dt_deaths_who_long.rds")
 who_deaths_target_file <- file.path(wd_data, "dt_deaths_who_long.rds")
 
 # File discovery / output chunking (scoped so stale files are never mixed in).

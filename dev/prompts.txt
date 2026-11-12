@@ -1,5 +1,19 @@
 ###################333
 
+Update Manuscript RMD
+I am working on updating the manuscript who_cvd_targets_paper1.Rmd
+From the existing version modified by co-authors v6 Word .docx document, port (copy and paste) the content of the V6 to update who_cvd_targets_paper1.Rmd. Copy and paste because the new updated who_cvd_targets_paper1.Rmd must be loyal to this version of v6 of Word that includes additions/comments from co-authors
+Keep manuscript who_cvd_targets_paper1. Rmd style, i.e., cross-reference with hyperlinks, APA citation style, etc 
+Preserve integrity, ie do not create separate files for figures and tables; preserve in separate pages as currently
+Numbers in the document should be dynamically calculated as currently; do not hard-code them, since it should be a reproducible document at compiling if new data comes
+If you add a new reference, add it to the references. bib file; do not hard-code it
+If you identify that I need to provide more files because I did not attach them for success in this task, ask for them before continuing. 
+
+
+saveRDS(a, file = "C:/Users/wrgar/OneDrive - UW/02Work/WHO-CVD/github/uw-who-cvdtargets/data/raw/WHO/ghe2023_cvd_fin_186.rds")
+
+###################333
+
 Update PSA
 
 write a prompt to ask claude to update probabilistic sensitivity scenarions and run 100

@@ -195,7 +195,7 @@ design <- data.table(
                 "Outcome","Time horizon"),
   Detail = c(
     "Discrete-time multi-state model (Well $\\to$ Sick $\\to$ Dead)",
-    "GBD 2023: incidence, case fatality, prevalence; all-cause \\& CVD-specific",
+    "WHO GHE 2023 CVD deaths (GBD 2023 where unavailable) \\& GBD 2023 prevalence; GBD 2023 input rates",
     "UNWPP 2024 single-year age/sex projections",
     "\\textbf{2026} --- first year intervention effects enter the projection",
     "Linear scale-up 2026 $\\to$ 2030; rates held constant 2030--2050",
@@ -227,7 +227,7 @@ kable(design, col.names=c("Component","Detail"),
 \textbf{Model}
 \begin{itemize}
   \item Discrete-time state transition (Well $\to$ Sick $\to$ Dead)
-  \item Calibrated to GBD 2023; projected with UNWPP 2024 populations
+  \item Calibrated to WHO GHE 2023 deaths; projected with UNWPP 2024 populations
   \item 8 blood-pressure bins
   \item Baseline treatment effects explicitly de-duplicated
 \end{itemize}
